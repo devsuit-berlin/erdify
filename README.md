@@ -317,4 +317,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-Made with ❤️ by [DevSuit Berlin](https://github.com/devsuit-berlin)
+Made with ❤️ by [Devsuit GmbH](https://github.com/devsuit-berlin)
