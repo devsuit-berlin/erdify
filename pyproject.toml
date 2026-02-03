@@ -1,0 +1,49 @@
+[project]
+name = "sqlmodel-to-erd"
+version = "0.1.0"
+description = "Generate PlantUML ERD diagrams from SQLModel/SQLAlchemy models"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Fabian Clemenz", email = "fabian.clemenz@devsuit.de" }
+]
+requires-python = ">=3.10"
+keywords = ["sqlmodel", "sqlalchemy", "erd", "plantuml", "diagram", "database"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = []  # No runtime dependencies - uses stdlib ast module
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel"]
+
+[project.scripts]
+sqlmodel-erd = "sqlmodel_to_erd.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/devsuit-berlin/sqlmodel-to-erd"
+Repository = "https://github.com/devsuit-berlin/sqlmodel-to-erd"
+Documentation = "https://github.com/devsuit-berlin/sqlmodel-to-erd#readme"
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
