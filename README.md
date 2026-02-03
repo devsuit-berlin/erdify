@@ -354,6 +354,19 @@ pre-commit run generate-erd --all-files
 | Link Tables | ✅ | Many-to-many detection |
 | Custom Table Names | ✅ | `__tablename__` attribute |
 
+## 🗺️ Roadmap
+
+We're actively working on expanding the capabilities of sqlmodel-to-erd. Here are some features we're planning to add:
+
+| Feature | Status | Description |
+| -------- | -------- | ------- |
+| Exclude Option | 🔜 Planned | Ability to exclude specific tables or entities from ERD generation using patterns |
+| SQLAlchemy Support | 🔜 Planned | Native support for SQLAlchemy models in addition to SQLModel |
+| Pydantic Support | 🔜 Planned | Generate ERDs from Pydantic models with database-like structures |
+| Dataclass Support | 🔜 Planned | Support for standard Python dataclasses with type annotations |
+
+Have a feature request? Please open an issue on [GitHub](https://github.com/devsuit-berlin/sqlmodel-to-erd/issues) to discuss it!
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
