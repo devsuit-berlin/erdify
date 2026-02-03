@@ -1,18 +1,19 @@
 [project]
 name = "sqlmodel-to-erd"
 version = "0.1.0"
-description = "Generate PlantUML ERD diagrams from SQLModel/SQLAlchemy models"
+description = "Generate PlantUML ERD diagrams from SQLModel models"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
     { name = "Fabian Clemenz", email = "fabian.clemenz@devsuit.de" }
 ]
 requires-python = ">=3.10"
-keywords = ["sqlmodel", "sqlalchemy", "erd", "plantuml", "diagram", "database"]
+keywords = ["sqlmodel", "erd", "plantuml", "diagram", "database"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
