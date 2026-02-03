@@ -1,0 +1,2 @@
+# Ignore malformed Python files used for testing error handling
+tests/fixtures/malformed/

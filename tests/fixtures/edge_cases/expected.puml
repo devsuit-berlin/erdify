@@ -1,0 +1,49 @@
+@startuml Edge Cases ERD
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define primary_key(x) <b><color:#b8861b><&key></color> x</b>
+!define foreign_key(x) <color:#aaaaaa><&key></color> x
+!define column(x) <color:#efefef><&media-record></color> x
+
+skinparam linetype ortho
+skinparam roundcorner 5
+skinparam class {
+    BackgroundColor White
+    ArrowColor Gray
+    BorderColor Gray
+}
+
+' Enums
+
+enum PaymentMethod << (E,#FFCC00) >> {
+  CREDIT_CARD
+  PAYPAL
+  BANK_TRANSFER
+}
+
+' Entities
+
+entity "empty_entity" as EmptyEntity {
+  primary_key(id) : int
+}
+
+entity "entity_with_positional" as EntityWithPositionalDefault {
+  primary_key(id) : int
+  column(status) : str = 'pending'
+  column(payment) : PaymentMethod = CREDIT_CARD
+}
+
+entity "three_key_link" as LinkTableWithThreeKeys << (L, #AAFFAA) link >> {
+  primary_key(entity_a_id) : int
+  primary_key(entity_b_id) : int
+  primary_key(entity_c_id) : int
+}
+
+entity "entity_with_no_table_name" as EntityWithNoTableName {
+  primary_key(id) : int
+  column(name) : str
+}
+
+' Relationships
+
+
+@enduml
