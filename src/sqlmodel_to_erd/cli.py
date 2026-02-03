@@ -12,7 +12,7 @@ def main() -> int:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         prog="sqlmodel-erd",
-        description="Generate PlantUML ERD diagrams from SQLModel/SQLAlchemy models",
+        description="Generate PlantUML ERD diagrams from SQLModel models",
         epilog="Example: sqlmodel-erd ./src/database -o database_erd.puml",
     )
     parser.add_argument(

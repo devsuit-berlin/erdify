@@ -6,13 +6,13 @@
 [![Tests](https://github.com/devsuit-berlin/sqlmodel-to-erd/actions/workflows/test.yml/badge.svg)](https://github.com/devsuit-berlin/sqlmodel-to-erd/actions)
 [![Linting](https://github.com/devsuit-berlin/sqlmodel-to-erd/actions/workflows/lint.yml/badge.svg)](https://github.com/devsuit-berlin/sqlmodel-to-erd/actions)
 
-> 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel/SQLAlchemy models automatically!
+> 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel models automatically!
 
-**sqlmodel-to-erd** parses your Python model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. No database connection required!
+**sqlmodel-to-erd** parses your SQLModel model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. No database connection required!
 
 ## ✨ Features
 
-- 📊 **Automatic ERD Generation** - Parse SQLModel/SQLAlchemy models and generate PlantUML diagrams
+- 📊 **Automatic ERD Generation** - Parse SQLModel models and generate PlantUML diagrams
 - 🔍 **AST-Based Parsing** - No imports needed, works with any valid Python code
 - 🎯 **Zero Runtime Dependencies** - Uses only Python standard library
 - 🔗 **Relationship Detection** - Automatically detects foreign keys and relationships
@@ -92,7 +92,7 @@ usage: sqlmodel-erd [-h] [-o OUTPUT] [--title TITLE] [--exclude [EXCLUDE ...]]
                     [--no-enums] [--no-relationships] [-v]
                     input
 
-Generate PlantUML ERD diagrams from SQLModel/SQLAlchemy models
+Generate PlantUML ERD diagrams from SQLModel models
 
 positional arguments:
   input                 Directory containing model files (searches for models.py recursively)
@@ -370,7 +370,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [SQLModel](https://sqlmodel.tiangolo.com/) - The awesome SQL database library
 - [PlantUML](https://plantuml.com/) - For the diagram rendering
-- [SQLAlchemy](https://www.sqlalchemy.org/) - The powerful ORM that SQLModel builds on
 
 ---
 
