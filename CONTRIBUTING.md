@@ -4,13 +4,13 @@ First off, thank you for considering contributing to sqlmodel-to-erd! 🎉
 
 ## 📋 Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [Making Changes](#making-changes)
-- [Testing](#testing)
-- [Submitting Changes](#submitting-changes)
-- [Style Guide](#style-guide)
+- [Code of Conduct](#-code-of-conduct)
+- [Getting Started](#-getting-started)
+- [Development Setup](#️-development-setup)
+- [Making Changes](#️-making-changes)
+- [Testing](#-testing)
+- [Submitting Changes](#-submitting-changes)
+- [Style Guide](#-style-guide)
 
 ## 📜 Code of Conduct
 
@@ -98,9 +98,14 @@ sqlmodel-to-erd/
 ├── tests/
 │   ├── fixtures/        # Test model files
 │   │   ├── ecommerce/   # E-commerce example models
-│   │   └── inheritance/ # Inheritance example models
+│   │   ├── edge_cases/  # Edge case models
+│   │   ├── empty/       # Empty models (no tables)
+│   │   ├── inheritance/ # Inheritance example models
+│   │   └── malformed/   # Malformed Python (error handling tests)
+│   ├── conftest.py      # Pytest fixtures
 │   ├── test_cli.py
 │   ├── test_config.py
+│   ├── test_edge_cases.py
 │   ├── test_generator.py
 │   ├── test_integration.py
 │   └── test_parser.py
