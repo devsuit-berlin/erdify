@@ -149,6 +149,10 @@ class Order(SQLModel, table=True):
 
 The tool generates:
 
+![Example ERD Image](example_erd.png "Example ERD Image")
+
+with following code:
+
 ```plantuml
 @startuml Database ERD
 !define primary_key(x) <b><color:#b8861b><&key></color> x</b>
@@ -281,6 +285,59 @@ jobs:
           commit_message: "docs: update ERD diagram"
           file_pattern: "docs/erd.*"
 ```
+
+### Integration with pre-commit hooks
+
+Keep your ERD diagrams automatically updated on every commit using [pre-commit](https://pre-commit.com/):
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: generate-erd
+        name: 🗃️ Generate ERD Diagram
+        entry: sqlmodel-erd ./src/database --title "Database Schema" -o docs/erd.puml
+        language: system
+        files: ^src/database/.*\.py$
+        pass_filenames: false
+```
+
+Or using uvx (no installation required):
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: generate-erd
+        name: 🗃️ Generate ERD Diagram
+        entry: uvx sqlmodel-to-erd ./src/database --title "Database Schema" -o docs/erd.puml
+        language: system
+        files: ^src/database/.*\.py$
+        pass_filenames: false
+```
+
+**Setup:**
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install the hooks
+pre-commit install
+
+# Run manually on all files
+pre-commit run generate-erd --all-files
+```
+
+**How it works:**
+- 🔍 Only triggers when files in `src/database/` change
+- 📝 Automatically regenerates `docs/erd.puml`
+- ✅ Stages the updated diagram with your commit
+- 🚫 Fails if the diagram would change (ensuring docs stay in sync)
+
+**Tip:** Add `docs/erd.puml` to your staged files before committing, or use the `--all-files` flag to regenerate.
 
 ## 📋 Supported Features
 

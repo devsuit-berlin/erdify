@@ -34,3 +34,15 @@ def empty_models_dir() -> Path:
 def models_with_inheritance_dir() -> Path:
     """Path to models with inheritance."""
     return FIXTURES_DIR / "inheritance"
+
+
+@pytest.fixture
+def edge_cases_dir() -> Path:
+    """Path to edge case models."""
+    return FIXTURES_DIR / "edge_cases"
+
+
+@pytest.fixture
+def malformed_models_dir() -> Path:
+    """Path to malformed Python models (syntax errors)."""
+    return FIXTURES_DIR / "malformed"
