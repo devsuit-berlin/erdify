@@ -1,0 +1,78 @@
+@startuml E-Commerce ERD
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define primary_key(x) <b><color:#b8861b><&key></color> x</b>
+!define foreign_key(x) <color:#aaaaaa><&key></color> x
+!define column(x) <color:#efefef><&media-record></color> x
+
+skinparam linetype ortho
+skinparam roundcorner 5
+skinparam class {
+    BackgroundColor White
+    ArrowColor Gray
+    BorderColor Gray
+}
+
+' Enums
+
+enum OrderStatus << (E,#FFCC00) >> {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+enum UserRole << (E,#FFCC00) >> {
+  ADMIN
+  USER
+  GUEST
+}
+
+' Entities
+
+entity "user" as User {
+  primary_key(id) : int
+  column(name) : str
+  column(email) : str
+  column(role) : UserRole = USER
+  column(is_active) : bool = True
+  column(bio) : str? = None
+}
+
+entity "product" as Product {
+  primary_key(id) : int
+  column(name) : str
+  column(price) : float
+  column(description) : str? = None
+  column(in_stock) : bool = True
+}
+
+entity "order" as Order {
+  primary_key(id) : int
+  foreign_key(user_id) : int
+  column(status) : OrderStatus = PENDING
+  column(total) : float
+  column(notes) : str? = None
+}
+
+entity "order_item" as OrderItem {
+  primary_key(id) : int
+  foreign_key(order_id) : int
+  foreign_key(product_id) : int
+  column(quantity) : int
+  column(unit_price) : float
+}
+
+entity "user_product_link" as UserProductLink << (L, #AAFFAA) link >> {
+  primary_key(user_id) : int
+  primary_key(product_id) : int
+}
+
+' Relationships
+
+Order }o--|| User : "user_id"
+OrderItem }o--|| Order : "order_id"
+OrderItem }o--|| Product : "product_id"
+User ||--o{ UserProductLink : "user_id"
+UserProductLink }o--|| Product : "product_id"
+
+@enduml

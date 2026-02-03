@@ -1,0 +1,28 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-toml
+      - id: check-yaml
+        args:
+          - --unsafe
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Check code with ruff
+        entry: uv run ruff check --force-exclude --fix --exit-non-zero-on-fix
+        requires_serial: true
+        language: system
+        types: [python]
+
+      - id: ruff-format
+        name: Format code with ruff
+        entry: uv run ruff format --force-exclude --exit-non-zero-on-format
+        requires_serial: true
+        language: system
+        types: [python]

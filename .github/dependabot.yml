@@ -1,0 +1,41 @@
+# This file is used by Dependabot to manage updates for your project.
+# For more information, see https://docs.github.com/en/code-security/supply-chain-security/keeping-your-dependencies-updated-automatically/configuration-options-for-dependency-updates
+# This configuration is for a project using the "uv" package ecosystem.
+# It schedules updates to run every Wednesday at 2 AM UTC.
+# It groups minor and patch updates into a single pull request, and does the same for security updates.
+# Major updates are not included in the groups and will be created as separate pull requests.
+version: 2
+updates:
+  - package-ecosystem: "uv" # See documentation for possible values
+    schedule:
+      interval: "cron"
+      cronjob: "0 2 * * 3"
+    groups:
+      version-updates:  # creates a grouped pr for minor and patch updates
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      security-updates:  # creates a grouped pr for minor and patch security updates
+        applies-to: security-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+  # Update Github Actions workflows on regular schedule
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cronjob: "0 2 1 * *"
+    groups:
+      version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
