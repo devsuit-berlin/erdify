@@ -38,7 +38,7 @@ Repository = "https://github.com/devsuit-berlin/sqlmodel-to-erd"
 Documentation = "https://github.com/devsuit-berlin/sqlmodel-to-erd#readme"
 
 [build-system]
-requires = ["uv_build>=0.9.28,<0.10.0"]
+requires = ["uv_build>=0.9.28,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.ruff]
