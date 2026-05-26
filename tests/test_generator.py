@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from sqlmodel_to_erd.generator import PlantUMLGenerator, generate_plantuml
-from sqlmodel_to_erd.parser import parse_models_directory
-from sqlmodel_to_erd.config import EntityInfo, FieldInfo
+from erdify.generator import PlantUMLGenerator, generate_plantuml
+from erdify.parser import parse_models_directory
+from erdify.config import EntityInfo, FieldInfo
 
 
 class TestPlantUMLGenerator:

@@ -32,4 +32,4 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
       - name: Run Tests
-        run: uv run pytest --cov=sqlmodel_to_erd tests/ --cov-report=xml
+        run: uv run pytest --cov=erdify tests/ --cov-report=xml

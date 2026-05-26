@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from sqlmodel_to_erd.parser import ASTDatabaseParser, parse_models_directory
+from erdify.parser import ASTDatabaseParser, parse_models_directory
 
 
 class TestASTDatabaseParser:

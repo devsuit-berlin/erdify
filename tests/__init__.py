@@ -1,1 +1,1 @@
-"""Tests for sqlmodel-to-erd."""
+"""Tests for erdify."""

@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from sqlmodel_to_erd import parse_models_directory, generate_plantuml
+from erdify import parse_models_directory, generate_plantuml
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -35,7 +35,7 @@ class TestGoldenFiles:
         assert generated == expected, (
             f"Generated output does not match {expected_file}.\n"
             f"To update the expected file, run:\n"
-            f"  sqlmodel-erd {fixture_dir} --title '{title}' -o {expected_file}"
+            f"  erdify {fixture_dir} --title '{title}' -o {expected_file}"
         )
 
     def test_ecommerce_entity_count(self):
@@ -109,5 +109,5 @@ class TestGoldenFileHelpers:
                 if has_tables:
                     assert expected_file.exists(), (
                         f"Missing expected.puml for {fixture_dir.name}. "
-                        f"Generate with: sqlmodel-erd {fixture_dir} -o {expected_file}"
+                        f"Generate with: erdify {fixture_dir} -o {expected_file}"
                     )

@@ -1,4 +1,4 @@
-"""Pytest fixtures for sqlmodel-to-erd tests."""
+"""Pytest fixtures for erdify tests."""
 
 import shutil
 import tempfile

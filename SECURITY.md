@@ -10,7 +10,7 @@ We release patches for security vulnerabilities in the following versions:
 
 ## 🛡️ Security Model
 
-### How sqlmodel-to-erd Works
+### How erdify Works
 
 This tool uses Python's `ast` module to parse model files as text. It:
 
@@ -60,7 +60,7 @@ We take security seriously. If you discover a security vulnerability, please rep
 
 ## 🔐 Best Practices for Users
 
-While sqlmodel-to-erd is designed to be safe, we recommend:
+While erdify is designed to be safe, we recommend:
 
 1. **Keep Updated**: Use the latest version
 2. **Review Output**: Check generated diagrams before sharing
@@ -86,4 +86,4 @@ We thank the following individuals for responsibly disclosing security issues:
 
 ---
 
-Thank you for helping keep sqlmodel-to-erd secure! 🙏
+Thank you for helping keep erdify secure! 🙏

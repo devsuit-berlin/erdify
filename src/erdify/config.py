@@ -1,4 +1,4 @@
-"""Data classes for SQLModel to ERD conversion."""
+"""Data classes for erdify."""
 
 from dataclasses import dataclass, field
 from typing import List, Tuple

@@ -1,4 +1,4 @@
-"""Entry point for python -m sqlmodel_to_erd."""
+"""Entry point for python -m erdify."""
 
 from .cli import main
 

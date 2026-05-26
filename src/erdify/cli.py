@@ -1,4 +1,4 @@
-"""Command-line interface for sqlmodel-to-erd."""
+"""Command-line interface for erdify."""
 
 import argparse
 import sys
@@ -11,9 +11,9 @@ from .parser import parse_models_directory
 def main() -> int:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
-        prog="sqlmodel-erd",
+        prog="erdify",
         description="Generate PlantUML ERD diagrams from SQLModel models",
-        epilog="Example: sqlmodel-erd ./src/database -o database_erd.puml",
+        epilog="Example: erdify ./src/database -o database_erd.puml",
     )
     parser.add_argument(
         "input",

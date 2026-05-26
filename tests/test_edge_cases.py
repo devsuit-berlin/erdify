@@ -5,19 +5,19 @@ import sys
 from pathlib import Path
 
 
-from sqlmodel_to_erd import parse_models_directory, generate_plantuml
-from sqlmodel_to_erd.config import EntityInfo, FieldInfo
-from sqlmodel_to_erd.generator import PlantUMLGenerator
-from sqlmodel_to_erd.parser import ASTDatabaseParser
+from erdify import parse_models_directory, generate_plantuml
+from erdify.config import EntityInfo, FieldInfo
+from erdify.generator import PlantUMLGenerator
+from erdify.parser import ASTDatabaseParser
 
 
 class TestMainModule:
     """Tests for __main__.py entry point."""
 
     def test_main_module_execution(self, sample_models_dir: Path):
-        """Test running as python -m sqlmodel_to_erd."""
+        """Test running as python -m erdify."""
         result = subprocess.run(
-            [sys.executable, "-m", "sqlmodel_to_erd", str(sample_models_dir)],
+            [sys.executable, "-m", "erdify", str(sample_models_dir)],
             capture_output=True,
             text=True,
         )
@@ -32,7 +32,7 @@ class TestMainModule:
             [
                 sys.executable,
                 "-m",
-                "sqlmodel_to_erd",
+                "erdify",
                 str(sample_models_dir),
                 "-o",
                 str(output_file),

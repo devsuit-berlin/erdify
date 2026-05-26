@@ -1,5 +1,5 @@
 [project]
-name = "sqlmodel-to-erd"
+name = "erdify"
 version = "0.1.0"
 description = "Generate PlantUML ERD diagrams from SQLModel models"
 readme = "README.md"
@@ -8,7 +8,7 @@ authors = [
     { name = "Fabian Clemenz", email = "fabian.clemenz@devsuit.de" }
 ]
 requires-python = ">=3.10"
-keywords = ["sqlmodel", "erd", "plantuml", "diagram", "database"]
+keywords = ["sqlmodel", "erd", "plantuml", "diagram", "database", "erdify"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -30,12 +30,12 @@ dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel"]
 dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel"]
 
 [project.scripts]
-sqlmodel-erd = "sqlmodel_to_erd.cli:main"
+erdify = "erdify.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/devsuit-berlin/sqlmodel-to-erd"
-Repository = "https://github.com/devsuit-berlin/sqlmodel-to-erd"
-Documentation = "https://github.com/devsuit-berlin/sqlmodel-to-erd#readme"
+Homepage = "https://github.com/devsuit-berlin/erdify"
+Repository = "https://github.com/devsuit-berlin/erdify"
+Documentation = "https://github.com/devsuit-berlin/erdify#readme"
 
 [build-system]
 requires = ["uv_build>=0.9.28,<0.11.0"]

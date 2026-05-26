@@ -1,14 +1,14 @@
-# 🗃️ SQLModel to ERD
+# 🗃️ erdify
 
-[![PyPI version](https://badge.fury.io/py/sqlmodel-to-erd.svg)](https://badge.fury.io/py/sqlmodel-to-erd)
+[![PyPI version](https://badge.fury.io/py/erdify.svg)](https://badge.fury.io/py/erdify)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/devsuit-berlin/sqlmodel-to-erd/actions/workflows/test.yml/badge.svg)](https://github.com/devsuit-berlin/sqlmodel-to-erd/actions)
-[![Linting](https://github.com/devsuit-berlin/sqlmodel-to-erd/actions/workflows/lint.yml/badge.svg)](https://github.com/devsuit-berlin/sqlmodel-to-erd/actions)
+[![Tests](https://github.com/devsuit-berlin/erdify/actions/workflows/test.yml/badge.svg)](https://github.com/devsuit-berlin/erdify/actions)
+[![Linting](https://github.com/devsuit-berlin/erdify/actions/workflows/lint.yml/badge.svg)](https://github.com/devsuit-berlin/erdify/actions)
 
 > 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel models automatically!
 
-**sqlmodel-to-erd** parses your SQLModel model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. No database connection required!
+**erdify** parses your SQLModel model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. No database connection required!
 
 ## ✨ Features
 
@@ -26,26 +26,26 @@
 ### Using pip
 
 ```bash
-pip install sqlmodel-to-erd
+pip install erdify
 ```
 
 ### Using uv
 
 ```bash
-uv add sqlmodel-to-erd
+uv add erdify
 ```
 
 ### Using pipx (recommended for CLI usage)
 
 ```bash
-pipx install sqlmodel-to-erd
+pipx install erdify
 ```
 
 ### Using uvx (no installation needed)
 
 ```bash
 # Run directly without installing
-uvx sqlmodel-to-erd ./src/database -o erd.puml
+uvx erdify ./src/database -o erd.puml
 ```
 
 ## 🚀 Quick Start
@@ -54,20 +54,20 @@ uvx sqlmodel-to-erd ./src/database -o erd.puml
 
 ```bash
 # Generate ERD from a models directory
-sqlmodel-erd ./src/database -o erd.puml
+erdify ./src/database -o erd.puml
 
 # With custom title
-sqlmodel-erd ./src/models --title "My Database Schema" -o schema.puml
+erdify ./src/models --title "My Database Schema" -o schema.puml
 
 # Output to stdout
-sqlmodel-erd ./src/database
+erdify ./src/database
 ```
 
 ### Python API
 
 ```python
 from pathlib import Path
-from sqlmodel_to_erd import parse_models_directory, generate_plantuml
+from erdify import parse_models_directory, generate_plantuml
 
 # Parse your models
 entities, enums = parse_models_directory(Path("./src/database"))
@@ -88,7 +88,7 @@ Path("erd.puml").write_text(diagram)
 ### CLI Options
 
 ```bash
-usage: sqlmodel-erd [-h] [-o OUTPUT] [--title TITLE] [--exclude [EXCLUDE ...]]
+usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [EXCLUDE ...]]
                     [--no-enums] [--no-relationships] [-v]
                     input
 
@@ -112,7 +112,7 @@ options:
 ### Running as Module
 
 ```bash
-python -m sqlmodel_to_erd ./src/database -o erd.puml
+python -m erdify ./src/database -o erd.puml
 ```
 
 ### Example Models
@@ -216,7 +216,7 @@ Install the [PlantUML extension](https://marketplace.visualstudio.com/items?item
 ### Programmatic Access
 
 ```python
-from sqlmodel_to_erd import (
+from erdify import (
     ASTDatabaseParser,
     PlantUMLGenerator,
     EntityInfo,
@@ -268,11 +268,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install sqlmodel-to-erd
-        run: pip install sqlmodel-to-erd
+      - name: Install erdify
+        run: pip install erdify
 
       - name: Generate ERD
-        run: sqlmodel-erd ./src/database --title "Database Schema" -o docs/erd.puml
+        run: erdify ./src/database --title "Database Schema" -o docs/erd.puml
 
       - name: Generate PNG
         run: |
@@ -297,7 +297,7 @@ repos:
     hooks:
       - id: generate-erd
         name: 🗃️ Generate ERD Diagram
-        entry: sqlmodel-erd ./src/database --title "Database Schema" -o docs/erd.puml
+        entry: erdify ./src/database --title "Database Schema" -o docs/erd.puml
         language: system
         files: ^src/database/.*\.py$
         pass_filenames: false
@@ -312,7 +312,7 @@ repos:
     hooks:
       - id: generate-erd
         name: 🗃️ Generate ERD Diagram
-        entry: uvx sqlmodel-to-erd ./src/database --title "Database Schema" -o docs/erd.puml
+        entry: uvx erdify ./src/database --title "Database Schema" -o docs/erd.puml
         language: system
         files: ^src/database/.*\.py$
         pass_filenames: false
@@ -356,7 +356,7 @@ pre-commit run generate-erd --all-files
 
 ## 🗺️ Roadmap
 
-We're actively working on expanding the capabilities of sqlmodel-to-erd. Here are some features we're planning to add:
+We're actively working on expanding the capabilities of erdify. Here are some features we're planning to add:
 
 | Feature | Status | Description |
 | -------- | -------- | ------- |
@@ -365,7 +365,7 @@ We're actively working on expanding the capabilities of sqlmodel-to-erd. Here ar
 | Pydantic Support | 🔜 Planned | Generate ERDs from Pydantic models with database-like structures |
 | Dataclass Support | 🔜 Planned | Support for standard Python dataclasses with type annotations |
 
-Have a feature request? Please open an issue on [GitHub](https://github.com/devsuit-berlin/sqlmodel-to-erd/issues) to discuss it!
+Have a feature request? Please open an issue on [GitHub](https://github.com/devsuit-berlin/erdify/issues) to discuss it!
 
 ## 🤝 Contributing
 

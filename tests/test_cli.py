@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 import sys
 
-from sqlmodel_to_erd.cli import main
+from erdify.cli import main
 
 
 class TestCLI:
@@ -15,7 +15,7 @@ class TestCLI:
         output_file = temp_dir / "output.puml"
 
         with patch.object(
-            sys, "argv", ["sqlmodel-erd", str(sample_models_dir), "-o", str(output_file)]
+            sys, "argv", ["erdify", str(sample_models_dir), "-o", str(output_file)]
         ):
             result = main()
 
@@ -27,7 +27,7 @@ class TestCLI:
 
     def test_cli_stdout(self, sample_models_dir: Path, capsys):
         """Test CLI output to stdout."""
-        with patch.object(sys, "argv", ["sqlmodel-erd", str(sample_models_dir)]):
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir)]):
             result = main()
 
         assert result == 0
@@ -38,7 +38,7 @@ class TestCLI:
     def test_cli_custom_title(self, sample_models_dir: Path, capsys):
         """Test CLI with custom title."""
         with patch.object(
-            sys, "argv", ["sqlmodel-erd", str(sample_models_dir), "--title", "My ERD"]
+            sys, "argv", ["erdify", str(sample_models_dir), "--title", "My ERD"]
         ):
             result = main()
 
@@ -50,7 +50,7 @@ class TestCLI:
         """Test CLI with nonexistent input path."""
         nonexistent = temp_dir / "does_not_exist"
 
-        with patch.object(sys, "argv", ["sqlmodel-erd", str(nonexistent)]):
+        with patch.object(sys, "argv", ["erdify", str(nonexistent)]):
             result = main()
 
         assert result == 1
@@ -61,7 +61,7 @@ class TestCLI:
         """Test CLI with file instead of directory."""
         file_path = sample_models_dir / "models.py"
 
-        with patch.object(sys, "argv", ["sqlmodel-erd", str(file_path)]):
+        with patch.object(sys, "argv", ["erdify", str(file_path)]):
             result = main()
 
         assert result == 1
@@ -73,7 +73,7 @@ class TestCLI:
         output_file = temp_dir / "nested" / "dir" / "output.puml"
 
         with patch.object(
-            sys, "argv", ["sqlmodel-erd", str(sample_models_dir), "-o", str(output_file)]
+            sys, "argv", ["erdify", str(sample_models_dir), "-o", str(output_file)]
         ):
             result = main()
 
@@ -82,7 +82,7 @@ class TestCLI:
 
     def test_cli_no_enums_flag(self, sample_models_dir: Path, capsys):
         """Test CLI with --no-enums flag."""
-        with patch.object(sys, "argv", ["sqlmodel-erd", str(sample_models_dir), "--no-enums"]):
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "--no-enums"]):
             result = main()
 
         assert result == 0
@@ -92,7 +92,7 @@ class TestCLI:
 
     def test_cli_empty_models_warning(self, empty_models_dir: Path, capsys):
         """Test CLI warns when no tables found."""
-        with patch.object(sys, "argv", ["sqlmodel-erd", str(empty_models_dir)]):
+        with patch.object(sys, "argv", ["erdify", str(empty_models_dir)]):
             result = main()
 
         assert result == 0  # Not an error, just a warning
@@ -111,7 +111,7 @@ class TestCLIIntegration:
             sys,
             "argv",
             [
-                "sqlmodel-erd",
+                "erdify",
                 str(sample_models_dir),
                 "-o",
                 str(output_file),

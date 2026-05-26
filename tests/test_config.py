@@ -1,6 +1,6 @@
 """Tests for config module (dataclasses)."""
 
-from sqlmodel_to_erd.config import FieldInfo, EnumInfo, EntityInfo
+from erdify.config import FieldInfo, EnumInfo, EntityInfo
 
 
 class TestFieldInfo:

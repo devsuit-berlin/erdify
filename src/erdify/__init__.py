@@ -1,4 +1,4 @@
-"""SQLModel to ERD - Generate PlantUML ERD diagrams from SQLModel models."""
+"""erdify - Generate PlantUML ERD diagrams from SQLModel models."""
 
 from .config import EntityInfo, EnumInfo, FieldInfo
 from .generator import PlantUMLGenerator, generate_plantuml

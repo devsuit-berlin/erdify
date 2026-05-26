@@ -1,6 +1,6 @@
-# 🤝 Contributing to SQLModel to ERD
+# 🤝 Contributing to erdify
 
-First off, thank you for considering contributing to sqlmodel-to-erd! 🎉
+First off, thank you for considering contributing to erdify! 🎉
 
 ## 📋 Table of Contents
 
@@ -26,7 +26,7 @@ This project and everyone participating in it is governed by our commitment to p
 
 ### Finding Something to Work On
 
-- 🐛 **Bug fixes**: Check the [issues](https://github.com/devsuit-berlin/sqlmodel-to-erd/issues) labeled `bug`
+- 🐛 **Bug fixes**: Check the [issues](https://github.com/devsuit-berlin/erdify/issues) labeled `bug`
 - ✨ **Features**: Look for issues labeled `enhancement`
 - 📖 **Documentation**: Help improve our docs
 - 🧪 **Tests**: Increase test coverage
@@ -37,8 +37,8 @@ This project and everyone participating in it is governed by our commitment to p
 
 ```bash
 # Fork the repository on GitHub, then:
-git clone https://github.com/YOUR_USERNAME/sqlmodel-to-erd.git
-cd sqlmodel-to-erd
+git clone https://github.com/YOUR_USERNAME/erdify.git
+cd erdify
 ```
 
 ### 2. Set Up Environment
@@ -87,8 +87,8 @@ git checkout -b fix/your-bug-fix
 ### 2. Project Structure
 
 ```bash
-sqlmodel-to-erd/
-├── src/sqlmodel_to_erd/
+erdify/
+├── src/erdify/
 │   ├── __init__.py      # Public API exports
 │   ├── __main__.py      # python -m entry point
 │   ├── cli.py           # Command-line interface
@@ -134,7 +134,7 @@ uv run pytest -v
 uv run pytest tests/test_parser.py
 
 # Run with coverage
-uv run pytest --cov=sqlmodel_to_erd --cov-report=html
+uv run pytest --cov=erdify --cov-report=html
 ```
 
 ### Writing Tests
@@ -149,7 +149,7 @@ For integration tests, we use golden files (expected output files):
 
 ```bash
 # If you intentionally change the output format, update golden files:
-sqlmodel-erd tests/fixtures/ecommerce --title 'E-Commerce ERD' -o tests/fixtures/ecommerce/expected.puml
+erdify tests/fixtures/ecommerce --title 'E-Commerce ERD' -o tests/fixtures/ecommerce/expected.puml
 ```
 
 ### Adding New Test Fixtures
@@ -159,7 +159,7 @@ sqlmodel-erd tests/fixtures/ecommerce --title 'E-Commerce ERD' -o tests/fixtures
 3. Generate the expected output:
 
    ```bash
-   sqlmodel-erd tests/fixtures/your_fixture -o tests/fixtures/your_fixture/expected.puml
+   erdify tests/fixtures/your_fixture -o tests/fixtures/your_fixture/expected.puml
    ```
 
 4. Add the fixture to `test_integration.py`
@@ -267,4 +267,4 @@ def parse_models_directory(
 
 ## 🎉 Thank You!
 
-Every contribution helps make sqlmodel-to-erd better. We appreciate your time and effort! 💪
+Every contribution helps make erdify better. We appreciate your time and effort! 💪
