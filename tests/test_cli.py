@@ -14,9 +14,7 @@ class TestCLI:
         """Test CLI with output file."""
         output_file = temp_dir / "output.puml"
 
-        with patch.object(
-            sys, "argv", ["erdify", str(sample_models_dir), "-o", str(output_file)]
-        ):
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "-o", str(output_file)]):
             result = main()
 
         assert result == 0
@@ -37,9 +35,7 @@ class TestCLI:
 
     def test_cli_custom_title(self, sample_models_dir: Path, capsys):
         """Test CLI with custom title."""
-        with patch.object(
-            sys, "argv", ["erdify", str(sample_models_dir), "--title", "My ERD"]
-        ):
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "--title", "My ERD"]):
             result = main()
 
         assert result == 0
@@ -72,9 +68,7 @@ class TestCLI:
         """Test that CLI creates output directory if needed."""
         output_file = temp_dir / "nested" / "dir" / "output.puml"
 
-        with patch.object(
-            sys, "argv", ["erdify", str(sample_models_dir), "-o", str(output_file)]
-        ):
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "-o", str(output_file)]):
             result = main()
 
         assert result == 0
