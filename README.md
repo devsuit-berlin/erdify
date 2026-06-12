@@ -173,7 +173,7 @@ class Order(SQLModel, table=True):
 
 The tool generates:
 
-![Example ERD Image](example_erd.png "Example ERD Image")
+![Example ERD Image](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/example_erd.png "Example ERD Image")
 
 with following code:
 
@@ -217,12 +217,12 @@ erdify supports four model frameworks. The snippets below all describe the
 **same** `User` / `Order` schema — only the syntax differs. Each one produces the
 **identical** diagram:
 
-![Framework comparison ERD](docs/examples/erd.png "The same ERD from all four frameworks")
+![Framework comparison ERD](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/examples/erd.png "The same ERD from all four frameworks")
 
 > ℹ️ The SQLModel and SQLAlchemy versions declare keys explicitly. Pydantic and
 > dataclasses have no key concept, so they are rendered with [`--infer-keys`](#inferring-keys---infer-keys)
 > (`id` → PK, `<x>_id` → FK) to match. The runnable sources live in
-> [`docs/examples/`](docs/examples).
+> [`docs/examples/`](https://github.com/devsuit-berlin/erdify/tree/main/docs/examples).
 
 <table>
 <tr><th>SQLModel</th><th>SQLAlchemy 2.0</th></tr>
