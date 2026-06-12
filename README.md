@@ -6,16 +6,19 @@
 [![Tests](https://github.com/devsuit-berlin/erdify/actions/workflows/test.yml/badge.svg)](https://github.com/devsuit-berlin/erdify/actions)
 [![Linting](https://github.com/devsuit-berlin/erdify/actions/workflows/lint.yml/badge.svg)](https://github.com/devsuit-berlin/erdify/actions)
 
-> 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel models automatically!
+> 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel, SQLAlchemy, Pydantic and dataclass models automatically!
 
-**erdify** parses your SQLModel model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. No database connection required!
+**erdify** parses your model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. It supports SQLModel, SQLAlchemy 2.0, Pydantic and standard-library dataclasses. No database connection required!
 
 ## ✨ Features
 
-- 📊 **Automatic ERD Generation** - Parse SQLModel models and generate PlantUML diagrams
+- 📊 **Automatic ERD Generation** - Parse your models and generate PlantUML diagrams
+- 🧬 **4 Frameworks** - SQLModel, SQLAlchemy 2.0 (`Mapped[...]`/`mapped_column()`), Pydantic and dataclasses
 - 🔍 **AST-Based Parsing** - No imports needed, works with any valid Python code
 - 🎯 **Zero Runtime Dependencies** - Uses only Python standard library
 - 🔗 **Relationship Detection** - Automatically detects foreign keys and relationships
+- 🔑 **Key Inference** - Optional `--infer-keys` derives PK/FK from field names for keyless models
+- 🚫 **Exclude Patterns** - Filter out entities by class or table name with glob patterns
 - 📦 **Inheritance Support** - Correctly resolves fields from base classes and mixins
 - 🏷️ **Enum Support** - Includes enum definitions in the diagram
 - 🔄 **Link Table Detection** - Identifies many-to-many relationship tables
@@ -88,11 +91,11 @@ Path("erd.puml").write_text(diagram)
 ### CLI Options
 
 ```bash
-usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [EXCLUDE ...]]
-                    [--no-enums] [--no-relationships] [-v]
+usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
+                    [--infer-keys] [--no-enums] [--no-relationships] [-v]
                     input
 
-Generate PlantUML ERD diagrams from SQLModel models
+Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Pydantic and dataclass models
 
 positional arguments:
   input                 Directory containing model files (searches for models.py recursively)
@@ -102,12 +105,33 @@ options:
   -o OUTPUT, --output OUTPUT
                         Output .puml file (default: stdout)
   --title TITLE         Diagram title (default: 'Database ERD')
-  --exclude [EXCLUDE ...]
-                        Patterns to exclude (not yet implemented)
+  --exclude [PATTERN ...]
+                        Glob patterns (case-sensitive) to exclude entities by
+                        class name or table name, e.g. --exclude '*Link' audit_log
+  --infer-keys          For keyless models (Pydantic/dataclass), infer a primary
+                        key from a field named 'id' and a foreign key from '<x>_id'
   --no-enums            Skip enum definitions in output
   --no-relationships    Skip relationship lines in output
   -v, --version         show program's version number and exit
 ```
+
+### Excluding Entities
+
+Use `--exclude` to drop tables/entities from the diagram. Each pattern is a
+case-sensitive [glob](https://docs.python.org/3/library/fnmatch.html) tested
+against both the **class name** and the **table name** — an entity is excluded
+if either matches. Any relationships pointing at an excluded entity are dropped
+too, so no dangling lines remain.
+
+```bash
+# Exclude all link tables (class names ending in "Link")
+erdify ./src/database --exclude '*Link'
+
+# Exclude by table name, with multiple patterns
+erdify ./src/database --exclude audit_log 'tmp_*' Session
+```
+
+> 💡 Quote patterns containing `*` so your shell doesn't expand them.
 
 ### Running as Module
 
@@ -186,6 +210,166 @@ Order }o--|| User : "user_id"
 
 @enduml
 ```
+
+## 🧬 One Schema, Four Frameworks
+
+erdify supports four model frameworks. The snippets below all describe the
+**same** `User` / `Order` schema — only the syntax differs. Each one produces the
+**identical** diagram:
+
+![Framework comparison ERD](docs/examples/erd.png "The same ERD from all four frameworks")
+
+> ℹ️ The SQLModel and SQLAlchemy versions declare keys explicitly. Pydantic and
+> dataclasses have no key concept, so they are rendered with [`--infer-keys`](#inferring-keys---infer-keys)
+> (`id` → PK, `<x>_id` → FK) to match. The runnable sources live in
+> [`docs/examples/`](docs/examples).
+
+<table>
+<tr><th>SQLModel</th><th>SQLAlchemy 2.0</th></tr>
+<tr><td>
+
+```python
+from sqlmodel import (
+    Field, Relationship, SQLModel,
+)
+
+
+class User(SQLModel, table=True):
+    __tablename__: str = "user"
+    id: int = Field(primary_key=True)
+    name: str
+    email: str
+    orders: list["Order"] = Relationship(
+        back_populates="user")
+
+
+class Order(SQLModel, table=True):
+    __tablename__: str = "order"
+    id: int = Field(primary_key=True)
+    user_id: int = Field(
+        foreign_key="user.id")
+    total: float
+    user: "User" = Relationship(
+        back_populates="orders")
+```
+
+</td><td>
+
+```python
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import (
+    DeclarativeBase, Mapped,
+    mapped_column, relationship,
+)
+
+
+class Base(DeclarativeBase): ...
+
+
+class User(Base):
+    __tablename__ = "user"
+    id: Mapped[int] = mapped_column(
+        primary_key=True)
+    name: Mapped[str] = mapped_column()
+    email: Mapped[str] = mapped_column()
+    orders: Mapped[list["Order"]] = (
+        relationship(back_populates="user"))
+
+
+class Order(Base):
+    __tablename__ = "order"
+    id: Mapped[int] = mapped_column(
+        primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id"))
+    total: Mapped[float] = mapped_column()
+    user: Mapped["User"] = relationship(
+        back_populates="orders")
+```
+
+</td></tr>
+<tr><th>Pydantic <code>--infer-keys</code></th><th>Dataclass <code>--infer-keys</code></th></tr>
+<tr><td>
+
+```python
+from pydantic import BaseModel
+
+
+class User(BaseModel):
+    id: int
+    name: str
+    email: str
+    orders: list["Order"] = []
+
+
+class Order(BaseModel):
+    id: int
+    user_id: int
+    total: float
+    user: "User"
+```
+
+</td><td>
+
+```python
+from dataclasses import dataclass, field
+
+
+@dataclass
+class User:
+    id: int
+    name: str
+    email: str
+    orders: list["Order"] = field(
+        default_factory=list)
+
+
+@dataclass
+class Order:
+    id: int
+    user_id: int
+    total: float
+    user: "User" = None
+```
+
+</td></tr>
+</table>
+
+**How each framework is detected & parsed:**
+
+| Framework | Detected by | Keys | Relationships |
+| --------- | ----------- | ---- | ------------- |
+| SQLModel | `table=True` | `Field(primary_key=…, foreign_key=…)` | `Relationship()` |
+| SQLAlchemy 2.0 | `__tablename__` + `Mapped[...]` columns | `mapped_column(primary_key=…)`, `ForeignKey(...)` | `relationship()` (lowercase) |
+| Pydantic | `BaseModel` subclass (incl. transitive) | `--infer-keys` only | nested model refs (`user: User`, `list["Order"]`) |
+| Dataclass | `@dataclass` decorator | `--infer-keys` only | nested model refs |
+
+> ℹ️ Mixins / abstract bases (e.g. a SQLAlchemy mixin without `__tablename__`)
+> are not drawn as tables, but their columns are inherited into concrete
+> entities. Imports aliased to other names (e.g. `mapped_column as mc`) are not
+> detected.
+
+### Inferring keys (`--infer-keys`)
+
+Pydantic models and dataclasses have **no database key concept**. By default all
+fields are rendered as plain columns and relationships come only from nested
+model references. If your models follow a database-like naming convention, pass
+`--infer-keys` to derive keys from field names:
+
+- a field named **`id`** → **primary key**
+- a field named **`<x>_id`** → **foreign key** targeting table **`<x>`**
+
+```bash
+# Plain columns (default)
+erdify ./src/schemas
+
+# Infer PK/FK from id / <x>_id naming
+erdify ./src/schemas --infer-keys
+```
+
+> ℹ️ `--infer-keys` only affects Pydantic/dataclass models. SQLModel and
+> SQLAlchemy keys are always read from the explicit definitions and never
+> overridden.
 
 ## 🎨 Viewing the Diagram
 
@@ -353,17 +537,23 @@ pre-commit run generate-erd --all-files
 | Inheritance | ✅ | Mixin classes supported |
 | Link Tables | ✅ | Many-to-many detection |
 | Custom Table Names | ✅ | `__tablename__` attribute |
+| Exclude Patterns | ✅ | `--exclude` glob on class/table name |
+| Key Inference | ✅ | `--infer-keys` for Pydantic/dataclass (`id`, `<x>_id`) |
+| SQLModel | ✅ | `Field()` / `Relationship()` |
+| SQLAlchemy 2.0 | ✅ | `Mapped[...]` / `mapped_column()` |
+| Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships |
+| Dataclass | ✅ | `@dataclass`, nested refs as relationships |
 
 ## 🗺️ Roadmap
 
-We're actively working on expanding the capabilities of erdify. Here are some features we're planning to add:
+Recently shipped:
 
 | Feature | Status | Description |
 | -------- | -------- | ------- |
-| Exclude Option | 🔜 Planned | Ability to exclude specific tables or entities from ERD generation using patterns |
-| SQLAlchemy Support | 🔜 Planned | Native support for SQLAlchemy models in addition to SQLModel |
-| Pydantic Support | 🔜 Planned | Generate ERDs from Pydantic models with database-like structures |
-| Dataclass Support | 🔜 Planned | Support for standard Python dataclasses with type annotations |
+| Exclude Option | ✅ Done | Exclude tables or entities from ERD generation using glob patterns |
+| SQLAlchemy Support | ✅ Done | Native support for SQLAlchemy 2.0 (`Mapped` / `mapped_column`) models |
+| Pydantic Support | ✅ Done | Generate ERDs from Pydantic models, with optional `--infer-keys` |
+| Dataclass Support | ✅ Done | Support for standard Python dataclasses with type annotations |
 
 Have a feature request? Please open an issue on [GitHub](https://github.com/devsuit-berlin/erdify/issues) to discuss it!
 
