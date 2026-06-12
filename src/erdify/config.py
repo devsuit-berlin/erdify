@@ -38,3 +38,4 @@ class EntityInfo:
     )  # (target, type, attribute_name)
     is_link_table: bool = False
     base_classes: List[str] = field(default_factory=list)
+    source: str = "sqlmodel"  # one of: sqlmodel, sqlalchemy, pydantic, dataclass

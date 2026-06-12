@@ -138,6 +138,51 @@ class TestPlantUMLGenerator:
         assert "= True" in output
 
 
+class TestRelationshipRendering:
+    """Tests for drawing relationships from entity.relationships (keyless sources)."""
+
+    def _rel_lines(self, output: str) -> list[str]:
+        """Return only the relationship/arrow lines from the output."""
+        return [line for line in output.splitlines() if "--" in line and ":" in line]
+
+    def test_pydantic_relationship_is_drawn(self, pydantic_models_dir: Path):
+        """Nested-ref relationships (no FK) still produce a relationship line."""
+        entities, enums = parse_models_directory(pydantic_models_dir)
+        output = generate_plantuml(entities, enums)
+
+        rel_lines = self._rel_lines(output)
+        customer_invoice = [line for line in rel_lines if "Customer" in line and "Invoice" in line]
+        assert customer_invoice, "expected a Customer<->Invoice relationship line"
+
+    def test_pydantic_relationship_not_duplicated(self, pydantic_models_dir: Path):
+        """A bidirectional nested ref yields exactly one line per entity pair."""
+        entities, enums = parse_models_directory(pydantic_models_dir)
+        output = generate_plantuml(entities, enums)
+
+        rel_lines = self._rel_lines(output)
+        customer_invoice = [line for line in rel_lines if "Customer" in line and "Invoice" in line]
+        assert len(customer_invoice) == 1
+
+    def test_sqlmodel_relationship_not_doubled_by_relationship_list(self, sample_models_dir: Path):
+        """SQLModel FK line must not be duplicated by the relationship-list rendering."""
+        entities, enums = parse_models_directory(sample_models_dir)
+        output = generate_plantuml(entities, enums)
+
+        rel_lines = self._rel_lines(output)
+        order_user = [line for line in rel_lines if "Order " in line and " User" in line]
+        # Exactly the single FK-derived line: Order }o--|| User : "user_id"
+        assert len(order_user) == 1
+
+    def test_dataclass_relationship_is_drawn(self, dataclass_models_dir: Path):
+        """Dataclass nested refs produce a relationship line."""
+        entities, enums = parse_models_directory(dataclass_models_dir)
+        output = generate_plantuml(entities, enums)
+
+        rel_lines = self._rel_lines(output)
+        warehouse_item = [line for line in rel_lines if "Warehouse" in line and "Item" in line]
+        assert len(warehouse_item) == 1
+
+
 class TestGeneratePlantuml:
     """Tests for generate_plantuml convenience function."""
 

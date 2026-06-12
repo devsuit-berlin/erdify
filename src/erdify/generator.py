@@ -80,6 +80,20 @@ class PlantUMLGenerator:
                         lines.append(relationship)
                         seen_relationships.add(relationship)
 
+        # Finally, draw declared relationships (Relationship()/relationship() and
+        # Pydantic/dataclass nested refs) for entity pairs not already connected by a
+        # foreign-key line. This gives keyless models their lines while avoiding
+        # duplicate lines for SQLModel/SQLAlchemy, whose relationships are already
+        # rendered from foreign keys above.
+        connected_pairs = self._connected_pairs()
+        for entity in self.entities.values():
+            for relationship, pair in self._generate_relationship_list_lines(entity):
+                if pair in connected_pairs or relationship in seen_relationships:
+                    continue
+                lines.append(relationship)
+                seen_relationships.add(relationship)
+                connected_pairs.add(pair)
+
         lines.append("")
         lines.append("@enduml")
 
@@ -208,6 +222,44 @@ class PlantUMLGenerator:
                     lines.append(rel_line)
 
         return lines
+
+    def _entity_by_table(self, table_name: str) -> EntityInfo | None:
+        """Find an entity by its table name."""
+        for entity in self.entities.values():
+            if entity.table_name == table_name:
+                return entity
+        return None
+
+    def _connected_pairs(self) -> "set[frozenset[str]]":
+        """Compute entity-name pairs already connected by a foreign-key line."""
+        pairs: set[frozenset[str]] = set()
+        for entity in self.entities.values():
+            for field in entity.fields:
+                if field.is_foreign_key and field.foreign_table:
+                    target = self._entity_by_table(field.foreign_table.split(".")[0])
+                    if target:
+                        pairs.add(frozenset((entity.name, target.name)))
+        return pairs
+
+    def _generate_relationship_list_lines(
+        self, entity: EntityInfo
+    ) -> "List[Tuple[str, frozenset[str]]]":
+        """Generate lines from an entity's declared relationships.
+
+        Returns (line, pair) tuples where pair is the frozenset of the two
+        connected entity names, so callers can skip already-connected pairs.
+        """
+        results: List[Tuple[str, frozenset[str]]] = []
+        for target_name, rel_type, attr in entity.relationships:
+            target = self.entities.get(target_name)
+            if not target:
+                continue
+            if rel_type == "many":
+                line = f'{entity.name} ||--o{{ {target.name} : "{attr}"'
+            else:
+                line = f'{entity.name} }}o--|| {target.name} : "{attr}"'
+            results.append((line, frozenset((entity.name, target.name))))
+        return results
 
     def _generate_link_table_relationships(self, link_entity: EntityInfo) -> List[str]:
         """Generate relationships through a link table (many-to-many)."""
