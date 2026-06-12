@@ -12,7 +12,7 @@ def main() -> int:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         prog="erdify",
-        description="Generate PlantUML ERD diagrams from SQLModel models",
+        description="Generate PlantUML ERD diagrams from SQLModel and SQLAlchemy models",
         epilog="Example: erdify ./src/database -o database_erd.puml",
     )
     parser.add_argument(
@@ -35,7 +35,19 @@ def main() -> int:
         "--exclude",
         nargs="*",
         default=[],
-        help="Patterns to exclude (not yet implemented)",
+        metavar="PATTERN",
+        help=(
+            "Glob patterns (case-sensitive) to exclude entities by class name "
+            "or table name, e.g. --exclude '*Link' audit_log"
+        ),
+    )
+    parser.add_argument(
+        "--infer-keys",
+        action="store_true",
+        help=(
+            "For keyless models (Pydantic/dataclass), infer a primary key from a "
+            "field named 'id' and a foreign key from '<x>_id' (target table '<x>')"
+        ),
     )
     parser.add_argument(
         "--no-enums",
@@ -67,14 +79,16 @@ def main() -> int:
 
     # Parse models
     try:
-        entities, enums = parse_models_directory(args.input, args.exclude)
+        entities, enums = parse_models_directory(
+            args.input, args.exclude, infer_keys=args.infer_keys
+        )
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)
         return 1
 
     if not entities:
         print(
-            f"Warning: No SQLModel tables found in {args.input}",
+            f"Warning: No tables found in {args.input}",
             file=sys.stderr,
         )
 

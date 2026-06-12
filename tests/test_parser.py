@@ -1,134 +1,97 @@
-"""Tests for parser module."""
+"""Tests for cross-cutting parser behavior (exclude patterns, convenience API).
+
+Model-type-specific parsing tests live in their own files:
+test_sqlmodel.py, test_sqlalchemy.py, test_pydantic.py, test_dataclass.py.
+"""
 
 from pathlib import Path
 
-from erdify.parser import ASTDatabaseParser, parse_models_directory
+from erdify.parser import parse_models_directory
 
 
-class TestASTDatabaseParser:
-    """Tests for ASTDatabaseParser class."""
+class TestExcludePatterns:
+    """Tests for the --exclude pattern filtering."""
 
-    def test_parse_entities(self, sample_models_dir: Path):
-        """Test parsing entities from models."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, enums = parser.parse_all_models()
+    def test_exclude_by_class_name_glob(self, sample_models_dir: Path):
+        """Entities whose class name matches a glob are removed."""
+        entities, _ = parse_models_directory(sample_models_dir, exclude_patterns=["*Link"])
 
-        # Check entities were found
+        assert "UserProductLink" not in entities
         assert "User" in entities
-        assert "Product" in entities
+
+    def test_exclude_by_table_name_glob(self, sample_models_dir: Path):
+        """Entities whose table name matches a glob are removed."""
+        entities, _ = parse_models_directory(sample_models_dir, exclude_patterns=["order_item"])
+
+        assert "OrderItem" not in entities
         assert "Order" in entities
-        assert "OrderItem" in entities
-        assert "UserProductLink" in entities
 
-    def test_parse_enums(self, sample_models_dir: Path):
-        """Test parsing enums from models."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, enums = parser.parse_all_models()
+    def test_exclude_is_case_sensitive_glob(self, sample_models_dir: Path):
+        """Patterns are case-sensitive; a lowercase pattern matches the table name."""
+        entities, _ = parse_models_directory(sample_models_dir, exclude_patterns=["user"])
 
-        # Check enums were found
-        assert "UserRole" in enums
-        assert "OrderStatus" in enums
+        # class name is "User" (capital U) so a lowercase exact pattern must not match it,
+        # but it DOES match the table name "user".
+        assert "User" not in entities  # matched via table_name "user"
 
-        # Check enum values
-        assert "ADMIN" in enums["UserRole"].values
-        assert "USER" in enums["UserRole"].values
-        assert "GUEST" in enums["UserRole"].values
+    def test_exclude_multiple_patterns(self, sample_models_dir: Path):
+        """Multiple patterns are OR-ed together."""
+        entities, _ = parse_models_directory(
+            sample_models_dir, exclude_patterns=["Product", "*Link"]
+        )
 
-        assert "PENDING" in enums["OrderStatus"].values
-        assert "COMPLETED" in enums["OrderStatus"].values
-        assert "PROCESSING" in enums["OrderStatus"].values
-        assert "CANCELLED" in enums["OrderStatus"].values
+        assert "Product" not in entities
+        assert "UserProductLink" not in entities
+        assert "User" in entities
 
-    def test_parse_table_names(self, sample_models_dir: Path):
-        """Test that table names are correctly parsed."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, _ = parser.parse_all_models()
+    def test_exclude_empty_patterns_keeps_all(self, sample_models_dir: Path):
+        """An empty/None pattern list excludes nothing."""
+        entities, _ = parse_models_directory(sample_models_dir, exclude_patterns=[])
+        all_entities, _ = parse_models_directory(sample_models_dir)
+        assert set(entities) == set(all_entities)
 
-        assert entities["User"].table_name == "user"
-        assert entities["Product"].table_name == "product"
-        assert entities["Order"].table_name == "order"
-        assert entities["OrderItem"].table_name == "order_item"
+    def test_exclude_strips_dangling_relationships(self, sample_models_dir: Path):
+        """Relationships pointing at an excluded entity are dropped."""
+        entities, _ = parse_models_directory(sample_models_dir, exclude_patterns=["Order"])
 
-    def test_parse_primary_keys(self, sample_models_dir: Path):
-        """Test that primary keys are correctly identified."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, _ = parser.parse_all_models()
+        # User.orders relationship targets the now-excluded Order entity.
+        user_rel_targets = {r[0] for r in entities["User"].relationships}
+        assert "Order" not in user_rel_targets
 
-        user_fields = {f.name: f for f in entities["User"].fields}
-        assert user_fields["id"].is_primary_key is True
-        assert user_fields["name"].is_primary_key is False
 
-    def test_parse_foreign_keys(self, sample_models_dir: Path):
-        """Test that foreign keys are correctly identified."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, _ = parser.parse_all_models()
+class TestInferKeys:
+    """Tests for the --infer-keys name-based PK/FK heuristic."""
 
+    def test_infer_pk_from_id(self, pydantic_models_dir: Path):
+        """With infer_keys, a field named 'id' becomes a primary key."""
+        entities, _ = parse_models_directory(pydantic_models_dir, infer_keys=True)
+        invoice_fields = {f.name: f for f in entities["Invoice"].fields}
+        assert invoice_fields["id"].is_primary_key is True
+
+    def test_infer_fk_from_suffix(self, pydantic_models_dir: Path):
+        """With infer_keys, '<x>_id' becomes a foreign key to table '<x>'."""
+        entities, _ = parse_models_directory(pydantic_models_dir, infer_keys=True)
+        invoice_fields = {f.name: f for f in entities["Invoice"].fields}
+        assert invoice_fields["customer_id"].is_foreign_key is True
+        assert invoice_fields["customer_id"].foreign_table == "customer.id"
+
+    def test_infer_keys_works_for_dataclass(self, dataclass_models_dir: Path):
+        """Inference also applies to dataclasses."""
+        entities, _ = parse_models_directory(dataclass_models_dir, infer_keys=True)
+        item_fields = {f.name: f for f in entities["Item"].fields}
+        assert item_fields["id"].is_primary_key is True
+        assert item_fields["warehouse_id"].is_foreign_key is True
+        assert item_fields["warehouse_id"].foreign_table == "warehouse.id"
+
+    def test_infer_keys_does_not_touch_sqlmodel(self, sample_models_dir: Path):
+        """Inference is scoped to keyless sources; SQLModel keys are unchanged."""
+        entities, _ = parse_models_directory(sample_models_dir, infer_keys=True)
+        # 'total' in Order is a plain float column, must not become a key.
         order_fields = {f.name: f for f in entities["Order"].fields}
+        assert order_fields["total"].is_primary_key is False
+        assert order_fields["total"].is_foreign_key is False
+        # Explicit FK stays intact.
         assert order_fields["user_id"].is_foreign_key is True
-        assert order_fields["user_id"].foreign_table == "user.id"
-
-    def test_parse_link_table(self, sample_models_dir: Path):
-        """Test that link tables are correctly identified."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, _ = parser.parse_all_models()
-
-        assert entities["UserProductLink"].is_link_table is True
-        assert entities["User"].is_link_table is False
-
-    def test_parse_nullable_fields(self, sample_models_dir: Path):
-        """Test that nullable fields are correctly identified."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, _ = parser.parse_all_models()
-
-        product_fields = {f.name: f for f in entities["Product"].fields}
-        assert product_fields["description"].is_nullable is True
-        assert product_fields["name"].is_nullable is False
-
-    def test_parse_indexed_fields(self, sample_models_dir: Path):
-        """Test that indexed fields are correctly identified."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, _ = parser.parse_all_models()
-
-        user_fields = {f.name: f for f in entities["User"].fields}
-        assert user_fields["email"].index is True
-        assert user_fields["name"].index is False
-
-    def test_parse_relationships(self, sample_models_dir: Path):
-        """Test that relationships are correctly parsed."""
-        parser = ASTDatabaseParser(sample_models_dir)
-        entities, _ = parser.parse_all_models()
-
-        # User has many Orders
-        user_rels = {r[2]: r for r in entities["User"].relationships}
-        assert "orders" in user_rels
-        assert user_rels["orders"][0] == "Order"  # target
-        assert user_rels["orders"][1] == "many"  # type
-
-    def test_parse_empty_models(self, empty_models_dir: Path):
-        """Test parsing an empty models file."""
-        parser = ASTDatabaseParser(empty_models_dir)
-        entities, enums = parser.parse_all_models()
-
-        assert len(entities) == 0
-        assert len(enums) == 0
-
-    def test_parse_inheritance(self, models_with_inheritance_dir: Path):
-        """Test parsing models with inheritance."""
-        parser = ASTDatabaseParser(models_with_inheritance_dir)
-        entities, _ = parser.parse_all_models()
-
-        # Article should have inherited fields
-        assert "Article" in entities
-        article_fields = {f.name: f for f in entities["Article"].fields}
-
-        # Should have own fields
-        assert "title" in article_fields
-        assert "content" in article_fields
-
-        # Should have inherited fields from BaseEntity and TimestampMixin
-        assert "id" in article_fields
-        assert "created_at" in article_fields
-        assert "updated_at" in article_fields
 
 
 class TestParseModelsDirectory:

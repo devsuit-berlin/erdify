@@ -84,6 +84,35 @@ class TestCLI:
         # Enum definitions should not be present
         assert "enum UserRole" not in captured.out
 
+    def test_cli_exclude_pattern(self, sample_models_dir: Path, capsys):
+        """Test CLI --exclude removes matching entities from output."""
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "--exclude", "*Link"]):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "UserProductLink" not in captured.out
+        assert "as User " in captured.out or "as User{" in captured.out
+
+    def test_cli_infer_keys_pydantic(self, pydantic_models_dir: Path, capsys):
+        """--infer-keys turns id/<x>_id into keys for Pydantic models."""
+        with patch.object(sys, "argv", ["erdify", str(pydantic_models_dir), "--infer-keys"]):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "primary_key(id)" in captured.out
+        assert "foreign_key(customer_id)" in captured.out
+
+    def test_cli_pydantic_without_infer_keys(self, pydantic_models_dir: Path, capsys):
+        """Without --infer-keys, Pydantic id/<x>_id stay plain columns."""
+        with patch.object(sys, "argv", ["erdify", str(pydantic_models_dir)]):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "foreign_key(customer_id)" not in captured.out
+
     def test_cli_empty_models_warning(self, empty_models_dir: Path, capsys):
         """Test CLI warns when no tables found."""
         with patch.object(sys, "argv", ["erdify", str(empty_models_dir)]):
@@ -91,7 +120,7 @@ class TestCLI:
 
         assert result == 0  # Not an error, just a warning
         captured = capsys.readouterr()
-        assert "No SQLModel tables found" in captured.err
+        assert "No tables found" in captured.err
 
 
 class TestCLIIntegration:

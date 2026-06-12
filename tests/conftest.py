@@ -46,3 +46,21 @@ def edge_cases_dir() -> Path:
 def malformed_models_dir() -> Path:
     """Path to malformed Python models (syntax errors)."""
     return FIXTURES_DIR / "malformed"
+
+
+@pytest.fixture
+def sqlalchemy_models_dir() -> Path:
+    """Path to SQLAlchemy 2.0 (Mapped/mapped_column) models directory."""
+    return FIXTURES_DIR / "sqlalchemy"
+
+
+@pytest.fixture
+def pydantic_models_dir() -> Path:
+    """Path to Pydantic models directory."""
+    return FIXTURES_DIR / "pydantic"
+
+
+@pytest.fixture
+def dataclass_models_dir() -> Path:
+    """Path to dataclass models directory."""
+    return FIXTURES_DIR / "dataclasses"

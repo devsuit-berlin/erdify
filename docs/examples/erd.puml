@@ -1,0 +1,33 @@
+@startuml Framework Comparison ERD
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define primary_key(x) <b><color:#b8861b><&key></color> x</b>
+!define foreign_key(x) <color:#aaaaaa><&key></color> x
+!define column(x) <color:#efefef><&media-record></color> x
+
+skinparam linetype ortho
+skinparam roundcorner 5
+skinparam class {
+    BackgroundColor White
+    ArrowColor Gray
+    BorderColor Gray
+}
+
+' Entities
+
+entity "user" as User {
+  primary_key(id) : int
+  column(name) : str
+  column(email) : str
+}
+
+entity "order" as Order {
+  primary_key(id) : int
+  foreign_key(user_id) : int
+  column(total) : float
+}
+
+' Relationships
+
+Order }o--|| User : "user_id"
+
+@enduml
