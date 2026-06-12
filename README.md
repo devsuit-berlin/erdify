@@ -573,8 +573,33 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
+erdify stands on the shoulders of great open-source projects:
+
+**Supported model frameworks**
+
 - [SQLModel](https://sqlmodel.tiangolo.com/) - The awesome SQL database library
+- [SQLAlchemy](https://www.sqlalchemy.org/) - The Python SQL toolkit and ORM
+- [Pydantic](https://docs.pydantic.dev/) - Data validation using Python type hints
+- [dataclasses](https://docs.python.org/3/library/dataclasses.html) - Python standard-library data classes
+
+**Rendering & output**
+
 - [PlantUML](https://plantuml.com/) - For the diagram rendering
+- [Graphviz](https://graphviz.org/) - Layout engine behind PlantUML's ER diagrams
+
+**Tooling & infrastructure**
+
+- [uv](https://docs.astral.sh/uv/) - Packaging, builds and dependency management
+- [Ruff](https://docs.astral.sh/ruff/) - Linting and formatting
+- [mypy](https://mypy-lang.org/) - Static type checking
+- [pytest](https://docs.pytest.org/) - Testing framework
+- [pre-commit](https://pre-commit.com/) - Git hook management
+
+**Community**
+
+- [Contributor Covenant](https://www.contributor-covenant.org/) - Our Code of Conduct
+- [Keep a Changelog](https://keepachangelog.com/) - Changelog format
+- And everyone who [contributes](CONTRIBUTING.md) issues, ideas and pull requests 💜
 
 ---
 
