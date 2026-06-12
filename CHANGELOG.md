@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Release publishing uses token auth (`PYPI_API_TOKEN` / `PYPI_TEST_API_TOKEN`);
+  the published version is stamped from the release tag (`vX.Y.Z` → `X.Y.Z`).
+- CI test matrix extended to Python 3.14 and 3.15 (3.15 pre-release, non-blocking).
+
 ## [0.2.0]
 
 ### Added
