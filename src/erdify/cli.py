@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import __version__
 from .generator import generate_plantuml
 from .parser import parse_models_directory
 
@@ -63,7 +64,7 @@ def main() -> int:
         "-v",
         "--version",
         action="version",
-        version="%(prog)s 0.1.0",
+        version=f"%(prog)s {__version__}",
     )
 
     args = parser.parse_args()

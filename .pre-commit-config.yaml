@@ -24,3 +24,10 @@ repos:
         entry: uv run ruff format --force-exclude --exit-non-zero-on-format
         language: system
         types: [python]
+
+      - id: mypy
+        name: Type check with mypy
+        entry: uv run mypy src/
+        language: system
+        types: [python]
+        pass_filenames: false

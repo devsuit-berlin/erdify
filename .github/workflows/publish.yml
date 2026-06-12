@@ -6,9 +6,16 @@ on:
 
 jobs:
   publish:
+    name: Publish to PyPI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
-      - run: uv build
-      - run: uv publish --token ${{ secrets.PYPI_TOKEN }}
+      - name: Set version from release tag
+        # The published version is taken from the release tag (e.g. v0.3.0 -> 0.3.0),
+        # so pyproject.toml does not need a manual bump before each release.
+        run: uv version "${GITHUB_REF_NAME#v}"
+      - name: Build distributions
+        run: uv build
+      - name: Publish to PyPI
+        run: uv publish --token ${{ secrets.PYPI_API_TOKEN }}

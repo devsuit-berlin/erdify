@@ -1,0 +1,26 @@
+name: Publish to TestPyPI
+
+# Manual dry-run: validate the full build + publish path against TestPyPI
+# before cutting a real release.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (optional; TestPyPI rejects duplicates, so bump for re-runs, e.g. 0.2.0.dev1)"
+        required: false
+        type: string
+
+jobs:
+  testpypi:
+    name: Publish to TestPyPI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - name: Override version (optional)
+        if: inputs.version != ''
+        run: uv version "${{ inputs.version }}"
+      - name: Build distributions
+        run: uv build
+      - name: Publish to TestPyPI
+        run: uv publish --publish-url https://test.pypi.org/legacy/ --token ${{ secrets.PYPI_TEST_API_TOKEN }}

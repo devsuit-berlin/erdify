@@ -214,11 +214,11 @@ class ASTDatabaseParser:
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 if node.target.id == "__tablename__" and isinstance(node.value, ast.Constant):
-                    table_name = node.value.value
+                    table_name = str(node.value.value)
             elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
                 for target in node.targets:
                     if isinstance(target, ast.Name) and target.id == "__tablename__":
-                        table_name = node.value.value
+                        table_name = str(node.value.value)
 
         if not table_name:
             table_name = self._to_snake_case(class_node.name)
@@ -255,7 +255,7 @@ class ASTDatabaseParser:
         self.entities[class_node.name] = entity
 
     def _collect_fields_recursive(
-        self, class_node: ast.ClassDef, visited: set, model_kind: str
+        self, class_node: ast.ClassDef, visited: set[str], model_kind: str
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
         """Recursively collect fields from a class and all its ancestors."""
         fields_dict: Dict[str, FieldInfo] = {}
@@ -352,12 +352,12 @@ class ASTDatabaseParser:
             ):
                 for keyword in node.value.keywords:
                     if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
-                        is_primary_key = keyword.value.value
+                        is_primary_key = bool(keyword.value.value)
                     elif keyword.arg == "foreign_key" and isinstance(keyword.value, ast.Constant):
                         is_foreign_key = True
-                        foreign_table = keyword.value.value
+                        foreign_table = str(keyword.value.value)
                     elif keyword.arg == "index" and isinstance(keyword.value, ast.Constant):
-                        index = keyword.value.value
+                        index = bool(keyword.value.value)
 
                 # SQLAlchemy: ForeignKey("table.col") passed to mapped_column()
                 fk_target = self._extract_foreign_key_arg(node.value)
@@ -407,7 +407,7 @@ class ASTDatabaseParser:
                 and arg.args
                 and isinstance(arg.args[0], ast.Constant)
             ):
-                return arg.args[0].value
+                return str(arg.args[0].value)
         return None
 
     def _extract_default_value(self, node: ast.AnnAssign) -> str | None:
