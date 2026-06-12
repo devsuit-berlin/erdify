@@ -62,7 +62,7 @@ class PlantUMLGenerator:
         link_table_map = self._build_link_table_map()
 
         # Generate relationships
-        seen_relationships: set = set()
+        seen_relationships: set[str] = set()
 
         # First, generate direct foreign key relationships (not through link tables)
         for entity in self.entities.values():
@@ -131,9 +131,9 @@ class PlantUMLGenerator:
         lines.append("}")
         return lines
 
-    def _get_used_enums(self) -> set:
+    def _get_used_enums(self) -> "set[str]":
         """Get set of enum names used by entity fields."""
-        used_enums: set = set()
+        used_enums: set[str] = set()
         for entity in self.entities.values():
             for field in entity.fields:
                 # Check if field type matches a known enum

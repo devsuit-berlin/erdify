@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 import sys
 
+import pytest
+
 from erdify.cli import main
 
 
@@ -121,6 +123,30 @@ class TestCLI:
         assert result == 0  # Not an error, just a warning
         captured = capsys.readouterr()
         assert "No tables found" in captured.err
+
+
+class TestCLIVersion:
+    """Tests for version reporting (single-sourced from package metadata)."""
+
+    def test_version_matches_metadata(self):
+        """__version__ is read from the installed package metadata."""
+        from importlib.metadata import version
+
+        import erdify
+
+        assert erdify.__version__ == version("erdify")
+
+    def test_cli_version_flag(self, capsys):
+        """--version prints the package version and exits cleanly."""
+        import erdify
+
+        with patch.object(sys, "argv", ["erdify", "--version"]):
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 0
+        captured = capsys.readouterr()
+        assert erdify.__version__ in captured.out
 
 
 class TestCLIIntegration:
