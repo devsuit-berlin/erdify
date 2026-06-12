@@ -7,19 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [0.3.0] - 2026-06-12
 
-- Release publishing uses token auth (`PYPI_API_TOKEN` / `PYPI_TEST_API_TOKEN`);
-  the published version is stamped from the release tag (`vX.Y.Z` → `X.Y.Z`).
-- CI test matrix extended to Python 3.14 and 3.15 (3.15 pre-release, non-blocking).
-
-## [0.2.0]
+First public PyPI release. Extends erdify well beyond SQLModel into a
+multi-framework ERD generator, and adds the tooling and project setup for
+open-source maintenance.
 
 ### Added
 
 - **SQLAlchemy 2.0 support** — parse `Mapped[...]` / `mapped_column()` models,
-  including positional `ForeignKey(...)` and lowercase `relationship()`.
-  Detected automatically.
+  including positional `ForeignKey(...)` and lowercase `relationship()`. Mixins
+  and abstract bases are inherited but not drawn. Detected automatically.
 - **Pydantic support** — every `BaseModel` subclass (including transitive)
   becomes an entity; fields typed as another model become relationships.
 - **Dataclass support** — every `@dataclass` becomes an entity; nested model
@@ -30,20 +28,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--infer-keys` — opt-in name heuristic for keyless models (Pydantic/dataclass):
   `id` → primary key, `<x>_id` → foreign key targeting table `<x>`. Does not
   affect SQLModel/SQLAlchemy.
-- Framework comparison docs with runnable examples in `docs/examples/`.
+- Framework comparison docs with runnable examples in `docs/examples/` (the same
+  schema in all four frameworks renders an identical ERD).
 
 ### Changed
 
-- The package version is now single-sourced from the installed metadata
+- `--exclude` is now implemented (previously a no-op placeholder).
+- The package version is single-sourced from the installed metadata
   (`importlib.metadata`); `erdify --version` and `erdify.__version__` no longer
   hardcode the number.
-- `--exclude` is now implemented (previously a no-op placeholder).
 - Project metadata: SPDX `license = "MIT"` (PEP 639), updated description and
-  keywords.
+  keywords, added `devsuit GmbH` as author.
 
 ### Fixed
 
-- `mypy --strict` now passes with no errors; type checking is enforced in CI.
+- `mypy --strict` passes with no errors; type checking is enforced in CI.
+
+### Internal
+
+- CI test matrix covers Python 3.10–3.15 (3.15 pre-release, non-blocking);
+  coverage gate at 90%.
+- Release publishing via GitHub Actions with the version stamped from the release
+  tag (`vX.Y.Z` → `X.Y.Z`); a manual TestPyPI dry-run workflow.
 
 ## [0.1.0]
 
@@ -51,6 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/devsuit-berlin/erdify/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/devsuit-berlin/erdify/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/devsuit-berlin/erdify/releases/tag/v0.1.0
