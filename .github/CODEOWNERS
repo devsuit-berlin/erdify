@@ -1,0 +1,4 @@
+# Default owners for everything in the repo.
+# Required by the "Protect Main Branch" ruleset (code-owner review).
+# The team must have write access to this repository to be a valid code owner.
+* @devsuit-berlin/devs
