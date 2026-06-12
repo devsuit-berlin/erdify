@@ -1,0 +1,54 @@
+name: 🐛 Bug Report
+description: Report a problem with erdify
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug report!
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A minimal model snippet (anonymized) and the exact erdify command you ran.
+      render: python
+    validations:
+      required: true
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Model framework
+      options:
+        - SQLModel
+        - SQLAlchemy 2.0
+        - Pydantic
+        - dataclass
+        - Other / mixed
+    validations:
+      required: true
+  - type: input
+    id: erdify-version
+    attributes:
+      label: erdify version
+      description: Output of `erdify --version`.
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      description: Output of `python --version`.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output / error
+      description: Relevant generated output or error message. Please redact any sensitive data.
+      render: shell
