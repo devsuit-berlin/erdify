@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-15
+
+### Added
+
+- `--sources` flag to restrict which model kinds become entities (`sqlmodel`,
+  `sqlalchemy`, `dataclass`, `pydantic`). Default is unchanged (all kinds). Use
+  `--sources sqlmodel sqlalchemy` for a pure DB-table ERD that excludes Pydantic
+  DTOs and `@dataclass` query wrappers by kind rather than by name.
+
+### Fixed
+
+- Type strings for generic columns lost their closing bracket (`list[str]` was
+  rendered as `list[str`). The optional-wrapper cleanup no longer strips every
+  `]`; it unwraps only a leading `Optional[...]`.
+
 ## [0.3.1] - 2026-06-15
 
 ### Changed

@@ -10,6 +10,10 @@ from typing import Dict, List, Tuple
 from .config import EntityInfo, EnumInfo, FieldInfo
 
 
+#: Model frameworks erdify can recognize, in classification order.
+MODEL_SOURCES = ("sqlmodel", "sqlalchemy", "dataclass", "pydantic")
+
+
 class ASTDatabaseParser:
     """Parses database models using AST to extract schema information."""
 
@@ -18,10 +22,13 @@ class ASTDatabaseParser:
         database_path: Path,
         exclude_patterns: List[str] | None = None,
         infer_keys: bool = False,
+        sources: List[str] | None = None,
     ):
         self.database_path = database_path
         self.exclude_patterns = exclude_patterns or []
         self.infer_keys = infer_keys
+        #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
+        self.sources = set(sources) if sources else None
         self.entities: Dict[str, EntityInfo] = {}
         self.enums: Dict[str, EnumInfo] = {}
         self.all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
@@ -52,7 +59,7 @@ class ASTDatabaseParser:
                 self._parse_enum_class(class_node)
                 continue
             source = self._classify_source(class_node)
-            if source is not None:
+            if source is not None and (self.sources is None or source in self.sources):
                 self._parse_table_class(class_node, source)
 
         # Third pass: apply exclude patterns
@@ -377,8 +384,11 @@ class ASTDatabaseParser:
         # Extract default value
         default_value = self._extract_default_value(node)
 
-        # Clean up type string
-        type_str = type_str.replace(" | None", "").replace("Optional[", "").replace("]", "")
+        # Clean up type string: drop the optional wrapper without mangling
+        # generic args (e.g. list[str] must keep its closing bracket).
+        type_str = type_str.replace(" | None", "").strip()
+        if type_str.startswith("Optional[") and type_str.endswith("]"):
+            type_str = type_str[len("Optional[") : -1]
 
         return FieldInfo(
             name=field_name,
@@ -501,6 +511,7 @@ def parse_models_directory(
     path: Path,
     exclude_patterns: List[str] | None = None,
     infer_keys: bool = False,
+    sources: List[str] | None = None,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
     Parse SQLModel, SQLAlchemy, Pydantic and dataclass models in a directory.
@@ -511,9 +522,13 @@ def parse_models_directory(
             excluded if a pattern matches its class name or its table name.
         infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
             key from a field named ``id`` and a foreign key from ``<x>_id``.
+        sources: Restrict which model kinds become entities (subset of
+            ``MODEL_SOURCES``). ``None`` includes all kinds.
 
     Returns:
         Tuple of (entities dict, enums dict)
     """
-    parser = ASTDatabaseParser(path, exclude_patterns=exclude_patterns, infer_keys=infer_keys)
+    parser = ASTDatabaseParser(
+        path, exclude_patterns=exclude_patterns, infer_keys=infer_keys, sources=sources
+    )
     return parser.parse_all_models()

@@ -1,8 +1,11 @@
 """Tests for edge cases and error handling."""
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 from erdify import parse_models_directory, generate_plantuml
@@ -258,3 +261,34 @@ class Entity(BaseB, table=True):
         fields = {f.name for f in entities["Entity"].fields}
         assert "field_a" in fields
         assert "field_b" in fields
+
+
+class TestTypeStringCleanup:
+    """Type-string cleanup must strip the optional wrapper without mangling
+    generic args (regression: ``list[str]`` lost its closing bracket).
+    """
+
+    @pytest.mark.parametrize(
+        "annotation, expected_type, expected_nullable",
+        [
+            ("list[str]", "list[str]", False),
+            ("list[str] | None = None", "list[str]", True),
+            ("Optional[list[str]] = None", "list[str]", True),
+            ("dict[str, int]", "dict[str, int]", False),
+            ("str | None", "str", True),
+            ("Optional[str]", "str", True),
+            ("str", "str", False),
+        ],
+    )
+    def test_generic_brackets_preserved(
+        self, annotation: str, expected_type: str, expected_nullable: bool
+    ):
+        parser = ASTDatabaseParser.__new__(ASTDatabaseParser)
+        parser.infer_keys = False
+
+        node = ast.parse(f"x: {annotation}").body[0]
+        field = parser._parse_field(node, "pydantic")
+
+        assert field is not None
+        assert field.type_str == expected_type
+        assert field.is_nullable is expected_nullable

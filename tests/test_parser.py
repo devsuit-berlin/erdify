@@ -6,7 +6,40 @@ test_sqlmodel.py, test_sqlalchemy.py, test_pydantic.py, test_dataclass.py.
 
 from pathlib import Path
 
-from erdify.parser import parse_models_directory
+import pytest
+
+from erdify.parser import MODEL_SOURCES, parse_models_directory
+
+
+MIXED_SOURCES_MODELS = """\
+from dataclasses import dataclass
+from pydantic import BaseModel
+from sqlmodel import SQLModel, Field
+
+
+class Restaurant(SQLModel, table=True):
+    __tablename__ = "restaurant"
+    id: int = Field(primary_key=True)
+    name: str
+
+
+@dataclass
+class RestaurantWithDistance:
+    restaurant: Restaurant
+    distance_km: float | None = None
+
+
+class RestaurantDTO(BaseModel):
+    id: int
+    name: str
+"""
+
+
+@pytest.fixture
+def mixed_sources_dir(temp_dir: Path) -> Path:
+    """A models.py mixing a SQLModel table, a @dataclass DTO and a Pydantic model."""
+    (temp_dir / "models.py").write_text(MIXED_SOURCES_MODELS)
+    return temp_dir
 
 
 class TestExcludePatterns:
@@ -111,3 +144,31 @@ class TestParseModelsDirectory:
         entities, enums = parse_models_directory(temp_dir)
         assert len(entities) == 0
         assert len(enums) == 0
+
+
+class TestSourceFilter:
+    """Tests for the --sources model-kind filter."""
+
+    def test_default_includes_all_sources(self, mixed_sources_dir: Path):
+        """Without a filter, every recognized model kind becomes an entity."""
+        entities, _ = parse_models_directory(mixed_sources_dir)
+        assert set(entities) == {"Restaurant", "RestaurantWithDistance", "RestaurantDTO"}
+
+    def test_sqlmodel_only_drops_dataclass_and_pydantic(self, mixed_sources_dir: Path):
+        """Restricting to sqlmodel keeps DB tables and drops DTO/dataclass wrappers."""
+        entities, _ = parse_models_directory(mixed_sources_dir, sources=["sqlmodel"])
+        assert set(entities) == {"Restaurant"}
+
+    def test_multiple_sources(self, mixed_sources_dir: Path):
+        """Multiple kinds can be combined."""
+        entities, _ = parse_models_directory(mixed_sources_dir, sources=["sqlmodel", "pydantic"])
+        assert set(entities) == {"Restaurant", "RestaurantDTO"}
+
+    def test_empty_sources_list_behaves_like_no_filter(self, mixed_sources_dir: Path):
+        """An empty list is falsy and must not exclude everything (CLI default)."""
+        entities, _ = parse_models_directory(mixed_sources_dir, sources=[])
+        assert set(entities) == {"Restaurant", "RestaurantWithDistance", "RestaurantDTO"}
+
+    def test_model_sources_constant(self):
+        """The public constant lists every classifiable kind."""
+        assert set(MODEL_SOURCES) == {"sqlmodel", "sqlalchemy", "pydantic", "dataclass"}
