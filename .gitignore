@@ -3,3 +3,5 @@
 .coverage
 .ruff_cache
 .vscode
+dist/
+*.egg-info/
