@@ -21,9 +21,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 EXCLUDED = {"malformed"}
 
 FIXTURE_MODULES = sorted(
-    path
-    for path in FIXTURES_DIR.glob("*/models.py")
-    if path.parent.name not in EXCLUDED
+    path for path in FIXTURES_DIR.glob("*/models.py") if path.parent.name not in EXCLUDED
 )
 
 
