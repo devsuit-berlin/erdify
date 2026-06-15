@@ -86,6 +86,13 @@ class PlantUMLGenerator:
         # duplicate lines for SQLModel/SQLAlchemy, whose relationships are already
         # rendered from foreign keys above.
         connected_pairs = self._connected_pairs()
+        # Entity pairs already joined through a link table (many-to-many) must not
+        # also receive a direct declared edge - that path is drawn above.
+        for table_a, table_b in link_table_map:
+            entity_a = self._entity_by_table(table_a)
+            entity_b = self._entity_by_table(table_b)
+            if entity_a and entity_b:
+                connected_pairs.add(frozenset((entity_a.name, entity_b.name)))
         for entity in self.entities.values():
             for relationship, pair in self._generate_relationship_list_lines(entity):
                 if pair in connected_pairs or relationship in seen_relationships:

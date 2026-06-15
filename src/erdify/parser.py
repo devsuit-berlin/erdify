@@ -461,8 +461,19 @@ class ASTDatabaseParser:
         return None
 
     def _parse_relationship(self, node: ast.AnnAssign) -> Tuple[str, str, str] | None:
-        """Parse a relationship from an annotated assignment."""
+        """Parse a relationship from an annotated assignment.
+
+        A relationship that declares ``link_model=`` (SQLModel) or ``secondary=``
+        (SQLAlchemy) is a many-to-many association already expressed by the link
+        table. It must not be emitted as a direct edge - that would duplicate the
+        link-table path and misrepresent the cardinality as 1:N - so it is skipped.
+        """
         if not isinstance(node.target, ast.Name):
+            return None
+
+        if isinstance(node.value, ast.Call) and any(
+            kw.arg in ("link_model", "secondary") for kw in node.value.keywords
+        ):
             return None
 
         field_name = node.target.id

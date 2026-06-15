@@ -64,3 +64,15 @@ def pydantic_models_dir() -> Path:
 def dataclass_models_dir() -> Path:
     """Path to dataclass models directory."""
     return FIXTURES_DIR / "dataclasses"
+
+
+@pytest.fixture
+def m2m_link_model_dir() -> Path:
+    """Path to SQLModel many-to-many (Relationship link_model=) models."""
+    return FIXTURES_DIR / "m2m_link_model"
+
+
+@pytest.fixture
+def m2m_secondary_dir() -> Path:
+    """Path to SQLAlchemy many-to-many (relationship secondary=) models."""
+    return FIXTURES_DIR / "m2m_secondary"

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Many-to-many relationships declared via `Relationship(link_model=...)`
+  (SQLModel) or `relationship(secondary=...)` (SQLAlchemy) no longer emit a
+  spurious, mis-cardinalized direct edge between the two endpoints. The
+  association is drawn solely through the link table. Such relationships are
+  skipped during parsing, and the generator also suppresses any direct edge for
+  entity pairs already joined by a link table.
+
 ## [0.4.0] - 2026-06-15
 
 ### Added

@@ -1,0 +1,35 @@
+@startuml Database ERD
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define primary_key(x) <b><color:#b8861b><&key></color> x</b>
+!define foreign_key(x) <color:#aaaaaa><&key></color> x
+!define column(x) <color:#efefef><&media-record></color> x
+
+skinparam linetype ortho
+skinparam roundcorner 5
+skinparam class {
+    BackgroundColor White
+    ArrowColor Gray
+    BorderColor Gray
+}
+
+' Entities
+
+entity "restaurant_staff_link" as RestaurantStaffLink << (L, #AAFFAA) link >> {
+  primary_key(restaurant_id) : UUID
+  primary_key(staff_id) : UUID
+}
+
+entity "restaurant" as Restaurant {
+  primary_key(id) : UUID
+}
+
+entity "staff" as Staff {
+  primary_key(id) : UUID
+}
+
+' Relationships
+
+Restaurant ||--o{ RestaurantStaffLink : "restaurant_id"
+RestaurantStaffLink }o--|| Staff : "staff_id"
+
+@enduml
