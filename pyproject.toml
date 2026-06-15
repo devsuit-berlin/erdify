@@ -35,11 +35,8 @@ classifiers = [
 ]
 dependencies = []  # No runtime dependencies - uses stdlib ast module
 
-[project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel"]
-
 [dependency-groups]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel", "sqlalchemy", "pydantic"]
 
 [project.scripts]
 erdify = "erdify.cli:main"
