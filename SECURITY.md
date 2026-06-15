@@ -7,6 +7,7 @@ We release patches for security vulnerabilities in the following versions:
 | Version | Supported          |
 | ------- | ------------------ |
 | 0.3.x   | ✅ Yes             |
+| < 0.3   | ❌ No              |
 
 ## 🛡️ Security Model
 
