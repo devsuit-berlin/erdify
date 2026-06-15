@@ -11,6 +11,12 @@ repos:
           - --unsafe
       - id: end-of-file-fixer
       - id: trailing-whitespace
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.21
+    hooks:
+      # Fail the commit if uv.lock is out of sync with pyproject.toml
+      # (e.g. after a version bump) - runs regardless of which files changed.
+      - id: uv-lock
   - repo: local
     hooks:
       - id: ruff-check
