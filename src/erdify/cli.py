@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import __version__
 from .generator import generate_plantuml
-from .parser import parse_models_directory
+from .parser import MODEL_SOURCES, parse_models_directory
 
 
 def main() -> int:
@@ -40,6 +40,17 @@ def main() -> int:
         help=(
             "Glob patterns (case-sensitive) to exclude entities by class name "
             "or table name, e.g. --exclude '*Link' audit_log"
+        ),
+    )
+    parser.add_argument(
+        "--sources",
+        nargs="*",
+        choices=MODEL_SOURCES,
+        metavar="KIND",
+        help=(
+            "Restrict which model kinds become entities. Choices: "
+            f"{', '.join(MODEL_SOURCES)}. Default: all. "
+            "e.g. --sources sqlmodel sqlalchemy for DB tables only"
         ),
     )
     parser.add_argument(
@@ -81,7 +92,7 @@ def main() -> int:
     # Parse models
     try:
         entities, enums = parse_models_directory(
-            args.input, args.exclude, infer_keys=args.infer_keys
+            args.input, args.exclude, infer_keys=args.infer_keys, sources=args.sources
         )
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)

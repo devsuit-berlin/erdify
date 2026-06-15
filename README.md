@@ -21,6 +21,7 @@
 - 🔗 **Relationship Detection** - Automatically detects foreign keys and relationships
 - 🔑 **Key Inference** - Optional `--infer-keys` derives PK/FK from field names for keyless models
 - 🚫 **Exclude Patterns** - Filter out entities by class or table name with glob patterns
+- 🎚️ **Source Filtering** - Restrict the diagram to specific model kinds with `--sources` (e.g. ORM tables only)
 - 📦 **Inheritance Support** - Correctly resolves fields from base classes and mixins
 - 🏷️ **Enum Support** - Includes enum definitions in the diagram
 - 🔄 **Link Table Detection** - Identifies many-to-many relationship tables
@@ -94,7 +95,8 @@ Path("erd.puml").write_text(diagram)
 
 ```bash
 usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
-                    [--infer-keys] [--no-enums] [--no-relationships] [-v]
+                    [--sources [KIND ...]] [--infer-keys] [--no-enums]
+                    [--no-relationships] [-v]
                     input
 
 Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Pydantic and dataclass models
@@ -110,6 +112,9 @@ options:
   --exclude [PATTERN ...]
                         Glob patterns (case-sensitive) to exclude entities by
                         class name or table name, e.g. --exclude '*Link' audit_log
+  --sources [KIND ...]  Restrict which model kinds become entities. Choices:
+                        sqlmodel, sqlalchemy, dataclass, pydantic. Default: all,
+                        e.g. --sources sqlmodel sqlalchemy for DB tables only
   --infer-keys          For keyless models (Pydantic/dataclass), infer a primary
                         key from a field named 'id' and a foreign key from '<x>_id'
   --no-enums            Skip enum definitions in output
@@ -134,6 +139,23 @@ erdify ./src/database --exclude audit_log 'tmp_*' Session
 ```
 
 > 💡 Quote patterns containing `*` so your shell doesn't expand them.
+
+### Filtering by Model Kind
+
+Use `--sources` to restrict the diagram to specific model frameworks. By default
+all recognized kinds are drawn (`sqlmodel`, `sqlalchemy`, `dataclass`,
+`pydantic`). This is the precise alternative to `--exclude` when you want a pure
+DB-table ERD and don't want Pydantic DTOs or `@dataclass` query wrappers to leak in.
+
+```bash
+# Only real DB tables — drops Pydantic/dataclass models entirely
+erdify ./src/database --sources sqlmodel sqlalchemy
+
+# ORM tables plus your Pydantic schemas, but no dataclasses
+erdify ./src/database --sources sqlmodel pydantic
+```
+
+> 💡 `--sources` filters by *kind*; `--exclude` filters by *name*. Combine them freely.
 
 ### Running as Module
 

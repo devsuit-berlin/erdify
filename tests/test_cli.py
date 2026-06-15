@@ -96,6 +96,23 @@ class TestCLI:
         assert "UserProductLink" not in captured.out
         assert "as User " in captured.out or "as User{" in captured.out
 
+    def test_cli_sources_filter(self, sample_models_dir: Path, capsys):
+        """--sources restricts output to the given model kinds."""
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "--sources", "sqlmodel"]):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "as User " in captured.out or "as User{" in captured.out
+
+    def test_cli_sources_rejects_unknown_kind(self, sample_models_dir: Path):
+        """argparse choices reject an unknown model kind (exits non-zero)."""
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "--sources", "django"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code != 0
+
     def test_cli_infer_keys_pydantic(self, pydantic_models_dir: Path, capsys):
         """--infer-keys turns id/<x>_id into keys for Pydantic models."""
         with patch.object(sys, "argv", ["erdify", str(pydantic_models_dir), "--infer-keys"]):
