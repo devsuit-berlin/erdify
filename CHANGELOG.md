@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-15
+
+### Changed
+
+- Packaging: dev tooling is no longer published as installable extras. The
+  `[project.optional-dependencies]` table was removed (it surfaced
+  `mypy`/`pytest`/`pytest-cov`/`ruff`/`sqlmodel` as public `erdify[dev]` extras
+  on PyPI); dev dependencies now live solely in the PEP 735 `[dependency-groups]`
+  table. No change to runtime dependencies — erdify still has none.
+
+### Internal
+
+- Added `sqlalchemy` and `pydantic` as explicit dev dependencies (previously
+  only pulled in transitively via `sqlmodel`).
+- Added a fixture smoke test that imports every non-malformed test fixture to
+  guard against fixtures rotting into non-importable code.
+
 ## [0.3.0] - 2026-06-12
 
 First public PyPI release. Extends erdify well beyond SQLModel into a
@@ -57,6 +74,7 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/devsuit-berlin/erdify/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/devsuit-berlin/erdify/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/devsuit-berlin/erdify/releases/tag/v0.1.0
