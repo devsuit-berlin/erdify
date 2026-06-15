@@ -35,7 +35,7 @@ We take security seriously. If you discover a security vulnerability, please rep
 ### How to Report
 
 1. **DO NOT** open a public GitHub issue for security vulnerabilities
-2. Email us at: [security@devsuit.de](mailto://security@devsuit.de)
+2. Email us at: [tech@devsuit.de](mailto:tech@devsuit.de)
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
