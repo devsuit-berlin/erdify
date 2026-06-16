@@ -9,7 +9,7 @@ authors = [
     { name = "devsuit GmbH", email = "tech@devsuit.de" },
     { name = "Fabian Clemenz", email = "fabian.clemenz@devsuit.de" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = [
     "sqlmodel",
     "sqlalchemy",
@@ -26,7 +26,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -57,7 +56,7 @@ target-version = "py310"
 exclude = ["tests/fixtures/malformed/"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 
 [tool.coverage.report]
