@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-06-16
+
+### Changed
+
+- Refined the PyPI project summary to "A zero-dependency ERD generator for your
+  Python models — pure AST, no database required." No code changes — this release
+  refreshes the published project metadata.
+
 ## [0.7.1] - 2026-06-16
 
 ### Changed
