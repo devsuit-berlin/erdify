@@ -1,7 +1,7 @@
 [project]
 name = "erdify"
 version = "0.7.1"
-description = "Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and dataclass models"
+description = "A zero-dependency ERD generator for your Python models — pure AST, no database required."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
