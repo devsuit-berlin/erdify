@@ -43,6 +43,7 @@ nav:
 
 markdown_extensions:
   - admonition
+  - md_in_html
   - toc:
       permalink: true
   - pymdownx.highlight
