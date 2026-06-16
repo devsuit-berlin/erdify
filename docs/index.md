@@ -6,6 +6,7 @@
 
 - [Installation](installation.md) — install via pip, uv, pipx or run with uvx
 - [CLI & Python API](usage/cli.md) — command-line options, running as a module, and the Python API (incl. programmatic access)
+- [Output Formats](usage/output-formats.md) — PlantUML and Mermaid, `--format`, output naming
 - [Filtering & Key Inference](usage/filtering.md) — `--exclude`, `--exclude-paths`, `--sources`, and `--infer-keys`
 - [Viewing the Diagram](usage/viewing.md) — render online, locally with PlantUML, or in VS Code
 - [CI/CD & pre-commit](usage/ci.md) — keep ERDs up to date in CI and via pre-commit hooks

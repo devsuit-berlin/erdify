@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Mermaid output via `--format` (`plantuml` and/or `mermaid`). Mermaid
+  `erDiagram` renders natively in GitHub/GitLab markdown. `--format` accepts
+  multiple values; with `-o` the file extension is set per format (`.puml` /
+  `.mmd`) and multiple formats are written side by side; `--check` validates all
+  targets. Configurable via `format` in `[tool.erdify]`.
 - Configuration via `[tool.erdify]` in `pyproject.toml`. erdify reads the nearest
   `pyproject.toml` (searching upward from the input) for `title`, `output`,
   `sources`, `exclude`, `exclude_paths`, `infer_keys`, `django_raw_types`,

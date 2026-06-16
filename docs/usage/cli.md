@@ -41,6 +41,9 @@ options:
                         TextField) instead of mapped Python types (str, int)
   --no-enums            Skip enum definitions in output
   --no-relationships    Skip relationship lines in output
+  --format FMT [FMT ...]
+                        Output format(s): plantuml (.puml) and/or mermaid (.mmd).
+                        Default: plantuml. See Output Formats.
   --check               Don't write; exit non-zero if the --output file is
                         missing or differs from the freshly generated diagram
   -v, --version         show program's version number and exit
@@ -55,7 +58,8 @@ the nearest `pyproject.toml` and reads that table.
 ```toml
 [tool.erdify]
 title = "My Database Schema"
-output = "docs/database_erd.puml"   # relative paths resolve from the project root
+output = "docs/database_erd"        # relative paths resolve from the project root
+format = ["plantuml", "mermaid"]    # one or both
 sources = ["django"]
 exclude = ["audit_log", "*Link"]
 exclude_paths = ["migrations", "legacy"]
