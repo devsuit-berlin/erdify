@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-16
+
+### Changed
+
+- Documentation now lives at a dedicated site, **<https://erdify.devsuit.io>**
+  (MkDocs Material, auto-deployed). The README links point there and its footer
+  credits devsuit GmbH. No code changes — this release refreshes the published
+  project metadata/README.
+
 ## [0.7.0] - 2026-06-16
 
 ### Added
@@ -183,7 +192,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/devsuit-berlin/erdify/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/devsuit-berlin/erdify/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/devsuit-berlin/erdify/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/devsuit-berlin/erdify/compare/v0.4.2...v0.5.0
