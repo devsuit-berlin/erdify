@@ -230,9 +230,6 @@ class ASTDatabaseParser:
         if not table_name:
             table_name = self._to_snake_case(class_node.name)
 
-        # Check if link table
-        is_link_table = "Link" in class_node.name
-
         # Get base classes
         base_classes: List[str] = []
         for base in class_node.bases:
@@ -242,7 +239,6 @@ class ASTDatabaseParser:
         entity = EntityInfo(
             name=class_node.name,
             table_name=table_name,
-            is_link_table=is_link_table,
             base_classes=base_classes,
             source=source,
         )
@@ -259,7 +255,20 @@ class ASTDatabaseParser:
         entity.fields = list(fields_dict.values())
         entity.relationships = list(relationships_dict.values())
 
+        # Detect join tables structurally: an entity whose columns are exactly
+        # two foreign keys, both part of the primary key, is an association
+        # table regardless of its class name (#35).
+        entity.is_link_table = self._is_structural_link_table(entity.fields)
+
         self.entities[class_node.name] = entity
+
+    @staticmethod
+    def _is_structural_link_table(fields: List[FieldInfo]) -> bool:
+        """Return True if fields describe a join table: exactly two columns,
+        both foreign keys and both part of the primary key."""
+        if len(fields) != 2:
+            return False
+        return all(f.is_foreign_key and f.is_primary_key for f in fields)
 
     def _collect_fields_recursive(
         self, class_node: ast.ClassDef, visited: set[str], model_kind: str
