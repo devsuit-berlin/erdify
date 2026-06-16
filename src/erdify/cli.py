@@ -19,8 +19,8 @@ FORMATS = {
 }
 
 
-def main() -> int:
-    """Main entry point for the CLI."""
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argument parser (shared by the CLI and docs generation)."""
     parser = argparse.ArgumentParser(
         prog="erdify",
         description=(
@@ -137,7 +137,12 @@ def main() -> int:
         action="version",
         version=f"%(prog)s {__version__}",
     )
+    return parser
 
+
+def main() -> int:
+    """Main entry point for the CLI."""
+    parser = build_parser()
     args = parser.parse_args()
 
     # Validate input path
