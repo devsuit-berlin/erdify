@@ -8,14 +8,14 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://img.shields.io/badge/mypy-checked-blue)](https://mypy-lang.org/)
 
-> 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel, SQLAlchemy, Pydantic and dataclass models automatically!
+> 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel, SQLAlchemy, Django, Pydantic and dataclass models automatically!
 
-**erdify** parses your model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. It supports SQLModel, SQLAlchemy 2.0, Pydantic and standard-library dataclasses. No database connection required!
+**erdify** parses your model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. It supports SQLModel, SQLAlchemy 2.0, Django ORM, Pydantic and standard-library dataclasses. No database connection required!
 
 ## ✨ Features
 
 - 📊 **Automatic ERD Generation** - Parse your models and generate PlantUML diagrams
-- 🧬 **4 Frameworks** - SQLModel, SQLAlchemy 2.0 (`Mapped[...]`/`mapped_column()`), Pydantic and dataclasses
+- 🧬 **5 Frameworks** - SQLModel, SQLAlchemy 2.0 (`Mapped[...]`/`mapped_column()`), Django ORM, Pydantic and dataclasses
 - 🔍 **AST-Based Parsing** - No imports needed, works with any valid Python code
 - 🎯 **Zero Runtime Dependencies** - Uses only Python standard library
 - 🔗 **Relationship Detection** - Automatically detects foreign keys and relationships
@@ -95,11 +95,11 @@ Path("erd.puml").write_text(diagram)
 
 ```bash
 usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
-                    [--sources [KIND ...]] [--infer-keys] [--no-enums]
-                    [--no-relationships] [-v]
+                    [--sources [KIND ...]] [--infer-keys] [--django-raw-types]
+                    [--no-enums] [--no-relationships] [-v]
                     input
 
-Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Pydantic and dataclass models
+Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and dataclass models
 
 positional arguments:
   input                 Directory containing model files (searches for models.py recursively)
@@ -113,10 +113,13 @@ options:
                         Glob patterns (case-sensitive) to exclude entities by
                         class name or table name, e.g. --exclude '*Link' audit_log
   --sources [KIND ...]  Restrict which model kinds become entities. Choices:
-                        sqlmodel, sqlalchemy, dataclass, pydantic. Default: all,
-                        e.g. --sources sqlmodel sqlalchemy for DB tables only
+                        sqlmodel, sqlalchemy, django, dataclass, pydantic.
+                        Default: all, e.g. --sources sqlmodel sqlalchemy for DB
+                        tables only
   --infer-keys          For keyless models (Pydantic/dataclass), infer a primary
                         key from a field named 'id' and a foreign key from '<x>_id'
+  --django-raw-types    For Django models, show original field names (CharField,
+                        TextField) instead of mapped Python types (str, int)
   --no-enums            Skip enum definitions in output
   --no-relationships    Skip relationship lines in output
   -v, --version         show program's version number and exit
@@ -143,7 +146,7 @@ erdify ./src/database --exclude audit_log 'tmp_*' Session
 ### Filtering by Model Kind
 
 Use `--sources` to restrict the diagram to specific model frameworks. By default
-all recognized kinds are drawn (`sqlmodel`, `sqlalchemy`, `dataclass`,
+all recognized kinds are drawn (`sqlmodel`, `sqlalchemy`, `django`, `dataclass`,
 `pydantic`). This is the precise alternative to `--exclude` when you want a pure
 DB-table ERD and don't want Pydantic DTOs or `@dataclass` query wrappers to leak in.
 
@@ -235,11 +238,13 @@ Order }o--|| User : "user_id"
 @enduml
 ```
 
-## 🧬 One Schema, Four Frameworks
+## 🧬 One Schema, Five Frameworks
 
-erdify supports four model frameworks. The snippets below all describe the
+erdify supports five model frameworks. The four snippets below all describe the
 **same** `User` / `Order` schema — only the syntax differs. Each one produces the
-**identical** diagram:
+**identical** diagram. Django ORM is the fifth framework; because it adds an
+implicit `id` key and maps field types, it is covered in its own section just
+below:
 
 ![Framework comparison ERD](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/examples/erd.png "The same ERD from all four frameworks")
 
@@ -365,13 +370,51 @@ class Order:
 | --------- | ----------- | ---- | ------------- |
 | SQLModel | `table=True` | `Field(primary_key=…, foreign_key=…)` | `Relationship()` |
 | SQLAlchemy 2.0 | `__tablename__` + `Mapped[...]` columns | `mapped_column(primary_key=…)`, `ForeignKey(...)` | `relationship()` (lowercase) |
+| Django ORM | `models.Model` subclass | `primary_key=True` or implicit `id`, `ForeignKey`/`OneToOneField` | `ForeignKey` (N:1), `OneToOneField` (1:1), `ManyToManyField` (M:N, incl. `through=`) |
 | Pydantic | `BaseModel` subclass (incl. transitive) | `--infer-keys` only | nested model refs (`user: User`, `list["Order"]`) |
 | Dataclass | `@dataclass` decorator | `--infer-keys` only | nested model refs |
 
-> ℹ️ Mixins / abstract bases (e.g. a SQLAlchemy mixin without `__tablename__`)
-> are not drawn as tables, but their columns are inherited into concrete
-> entities. Imports aliased to other names (e.g. `mapped_column as mc`) are not
-> detected.
+> ℹ️ Mixins / abstract bases (e.g. a SQLAlchemy mixin without `__tablename__`,
+> or a Django `class Meta: abstract = True` base) are not drawn as tables, but
+> their columns are inherited into concrete entities. Imports aliased to other
+> names (e.g. `mapped_column as mc`) are not detected.
+
+### Django ORM
+
+erdify parses Django models from source — no Django runtime, settings, or app
+registry required. A `models.Model` subclass becomes an entity; abstract bases
+(`class Meta: abstract = True`) are inherited but not drawn, and a `class Meta:
+db_table = "..."` overrides the table name.
+
+```python
+from django.db import models
+
+
+class Author(models.Model):          # implicit `id` primary key (int)
+    name = models.CharField(max_length=100)
+
+
+class Book(models.Model):
+    title = models.CharField(max_length=200)
+    author = models.ForeignKey(Author, on_delete=models.CASCADE)   # N:1
+    tags = models.ManyToManyField("Tag")                            # M:N
+    profile = models.OneToOneField("Profile", on_delete=models.CASCADE)  # 1:1
+
+    class Meta:
+        db_table = "catalog_book"
+```
+
+Relationship targets are resolved by class name, including `"self"` and
+`"app.Model"` string references. A `ManyToManyField(through=LinkModel)` is drawn
+through the link model's own foreign keys (no spurious direct edge), exactly like
+SQLAlchemy `secondary=`.
+
+By default Django field types are mapped to readable Python types
+(`CharField` → `str`, `IntegerField`/`AutoField` → `int`, `DateTimeField` →
+`datetime`, …) so mixed-source diagrams stay consistent. Ambiguous or unknown
+fields (`JSONField`, `FileField`, custom/third-party fields) keep their Django
+name rather than fake a type. Pass `--django-raw-types` to show the original
+Django field names everywhere instead.
 
 ### Inferring keys (`--infer-keys`)
 

@@ -107,7 +107,7 @@ class TestCLI:
 
     def test_cli_sources_rejects_unknown_kind(self, sample_models_dir: Path):
         """argparse choices reject an unknown model kind (exits non-zero)."""
-        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "--sources", "django"]):
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "--sources", "nonsense"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
 
@@ -122,6 +122,25 @@ class TestCLI:
         captured = capsys.readouterr()
         assert "primary_key(id)" in captured.out
         assert "foreign_key(customer_id)" in captured.out
+
+    def test_cli_django_default_maps_python_types(self, django_models_dir: Path, capsys):
+        """By default Django field types render as Python types."""
+        with patch.object(sys, "argv", ["erdify", str(django_models_dir)]):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "column(name) : str" in captured.out
+        assert "CharField" not in captured.out
+
+    def test_cli_django_raw_types(self, django_models_dir: Path, capsys):
+        """--django-raw-types keeps the original Django field names."""
+        with patch.object(sys, "argv", ["erdify", str(django_models_dir), "--django-raw-types"]):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "column(name) : CharField" in captured.out
 
     def test_cli_pydantic_without_infer_keys(self, pydantic_models_dir: Path, capsys):
         """Without --infer-keys, Pydantic id/<x>_id stay plain columns."""

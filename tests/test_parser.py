@@ -171,4 +171,10 @@ class TestSourceFilter:
 
     def test_model_sources_constant(self):
         """The public constant lists every classifiable kind."""
-        assert set(MODEL_SOURCES) == {"sqlmodel", "sqlalchemy", "pydantic", "dataclass"}
+        assert set(MODEL_SOURCES) == {
+            "sqlmodel",
+            "sqlalchemy",
+            "django",
+            "pydantic",
+            "dataclass",
+        }

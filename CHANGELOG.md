@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Django ORM is now a supported model source. `models.Model` subclasses become
+  entities; columns, `primary_key=True` / implicit `id`, `ForeignKey` (N:1),
+  `OneToOneField` (1:1) and `ManyToManyField` (M:N, including `through=`) are
+  translated. `class Meta: db_table` overrides the table name and `class Meta:
+  abstract = True` bases are inherited but not drawn; `"self"` and `"app.Model"`
+  relationship targets are resolved. Django participates in `--sources` (the
+  `django` kind). Field types are mapped to readable Python types by default
+  (`CharField` → `str`, `AutoField` → `int`, `DateTimeField` → `datetime`, …),
+  with ambiguous/unknown fields falling back to their Django name; pass
+  `--django-raw-types` to show the original Django field names instead.
+
 ## [0.4.2] - 2026-06-16
 
 ### Fixed
