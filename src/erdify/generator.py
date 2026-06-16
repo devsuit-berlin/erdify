@@ -268,7 +268,11 @@ class PlantUMLGenerator:
                 continue
             if rel_type == "many":
                 line = f'{entity.name} ||--o{{ {target.name} : "{attr}"'
-            else:
+            elif rel_type == "one_to_one":
+                line = f'{entity.name} ||--|| {target.name} : "{attr}"'
+            elif rel_type == "many_to_many":
+                line = f'{entity.name} }}o--o{{ {target.name} : "{attr}"'
+            else:  # "one"
                 line = f'{entity.name} }}o--|| {target.name} : "{attr}"'
             results.append((line, frozenset((entity.name, target.name))))
         return results

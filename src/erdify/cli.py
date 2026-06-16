@@ -13,7 +13,10 @@ def main() -> int:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         prog="erdify",
-        description="Generate PlantUML ERD diagrams from SQLModel and SQLAlchemy models",
+        description=(
+            "Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, "
+            "Pydantic and dataclass models"
+        ),
         epilog="Example: erdify ./src/database -o database_erd.puml",
     )
     parser.add_argument(
@@ -62,6 +65,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--django-raw-types",
+        action="store_true",
+        help=(
+            "For Django models, show original field names (CharField, TextField) "
+            "instead of mapped Python types (str, int, datetime)"
+        ),
+    )
+    parser.add_argument(
         "--no-enums",
         action="store_true",
         help="Skip enum definitions in output",
@@ -92,7 +103,11 @@ def main() -> int:
     # Parse models
     try:
         entities, enums = parse_models_directory(
-            args.input, args.exclude, infer_keys=args.infer_keys, sources=args.sources
+            args.input,
+            args.exclude,
+            infer_keys=args.infer_keys,
+            sources=args.sources,
+            django_raw_types=args.django_raw_types,
         )
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)

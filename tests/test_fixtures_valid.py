@@ -17,8 +17,11 @@ import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# Contains deliberate syntax errors to exercise the parser's error handling.
-EXCLUDED = {"malformed"}
+# malformed: contains deliberate syntax errors to exercise the parser's error
+# handling. django: Django models cannot be imported standalone (they require a
+# configured settings module / app registry); erdify only ever reads them as
+# text, and the django fixture is exercised end-to-end by test_django.py.
+EXCLUDED = {"malformed", "django"}
 
 FIXTURE_MODULES = sorted(
     path for path in FIXTURES_DIR.glob("*/models.py") if path.parent.name not in EXCLUDED

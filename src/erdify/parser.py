@@ -1,4 +1,4 @@
-"""AST-based parser for SQLModel, SQLAlchemy, Pydantic and dataclass models."""
+"""AST-based parser for SQLModel, SQLAlchemy, Django, Pydantic and dataclass models."""
 
 import ast
 import re
@@ -11,7 +11,43 @@ from .config import EntityInfo, EnumInfo, FieldInfo
 
 
 #: Model frameworks erdify can recognize, in classification order.
-MODEL_SOURCES = ("sqlmodel", "sqlalchemy", "dataclass", "pydantic")
+MODEL_SOURCES = ("sqlmodel", "sqlalchemy", "django", "dataclass", "pydantic")
+
+#: Django relationship field constructs (everything else ending in "Field" is a column).
+DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
+
+#: Conservative Django field -> Python type map for readable, source-consistent
+#: output. Ambiguous/lossy fields (JSONField, FileField, ImageField, custom or
+#: third-party fields) are intentionally omitted so they fall back to the Django
+#: field name rather than fake a concrete type. Use --django-raw-types to keep the
+#: original Django field names instead.
+DJANGO_FIELD_TYPE_MAP = {
+    "CharField": "str",
+    "TextField": "str",
+    "SlugField": "str",
+    "EmailField": "str",
+    "URLField": "str",
+    "GenericIPAddressField": "str",
+    "FilePathField": "str",
+    "IntegerField": "int",
+    "BigIntegerField": "int",
+    "SmallIntegerField": "int",
+    "PositiveIntegerField": "int",
+    "PositiveSmallIntegerField": "int",
+    "PositiveBigIntegerField": "int",
+    "AutoField": "int",
+    "BigAutoField": "int",
+    "SmallAutoField": "int",
+    "FloatField": "float",
+    "DecimalField": "Decimal",
+    "BooleanField": "bool",
+    "DateTimeField": "datetime",
+    "DateField": "date",
+    "TimeField": "time",
+    "DurationField": "timedelta",
+    "UUIDField": "UUID",
+    "BinaryField": "bytes",
+}
 
 
 class ASTDatabaseParser:
@@ -23,10 +59,13 @@ class ASTDatabaseParser:
         exclude_patterns: List[str] | None = None,
         infer_keys: bool = False,
         sources: List[str] | None = None,
+        django_raw_types: bool = False,
     ):
         self.database_path = database_path
         self.exclude_patterns = exclude_patterns or []
         self.infer_keys = infer_keys
+        #: Show original Django field names (CharField) instead of mapped Python types.
+        self.django_raw_types = django_raw_types
         #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
         self.sources = set(sources) if sources else None
         self.entities: Dict[str, EntityInfo] = {}
@@ -137,6 +176,13 @@ class ASTDatabaseParser:
         if self._has_tablename(class_node) and self._has_mapped_field(class_node):
             return "sqlalchemy"
 
+        # Django: subclasses django.db.models.Model. An abstract base
+        # (class Meta: abstract = True) is inherited but not drawn itself.
+        if self._inherits_django_model(class_node):
+            if self._meta_flag(class_node, "abstract"):
+                return None
+            return "django"
+
         # Plain @dataclass
         if self._is_dataclass(class_node):
             return "dataclass"
@@ -145,6 +191,52 @@ class ASTDatabaseParser:
         if self._inherits_basemodel(class_node):
             return "pydantic"
 
+        return None
+
+    def _inherits_django_model(
+        self, class_node: ast.ClassDef, visited: set[str] | None = None
+    ) -> bool:
+        """Check if a class inherits from Django's models.Model, directly or via ancestors."""
+        visited = visited if visited is not None else set()
+        if class_node.name in visited:
+            return False
+        visited.add(class_node.name)
+
+        for base in class_node.bases:
+            # models.Model / django.db.models.Model
+            if isinstance(base, ast.Attribute) and base.attr == "Model":
+                return True
+            if isinstance(base, ast.Name):
+                if base.id == "Model":
+                    return True
+                ancestor = self.all_classes.get(base.id)
+                if ancestor is not None and self._inherits_django_model(ancestor, visited):
+                    return True
+        return False
+
+    @staticmethod
+    def _get_meta_class(class_node: ast.ClassDef) -> ast.ClassDef | None:
+        """Return the nested ``class Meta`` of a Django model, if present."""
+        for node in class_node.body:
+            if isinstance(node, ast.ClassDef) and node.name == "Meta":
+                return node
+        return None
+
+    def _meta_flag(self, class_node: ast.ClassDef, attr: str) -> bool:
+        """Read a boolean attribute (e.g. ``abstract``) from a model's ``class Meta``."""
+        value = self._meta_value(class_node, attr)
+        return bool(value) if isinstance(value, bool) else False
+
+    def _meta_value(self, class_node: ast.ClassDef, attr: str) -> object | None:
+        """Read a constant attribute (e.g. ``db_table``) from a model's ``class Meta``."""
+        meta = self._get_meta_class(class_node)
+        if meta is None:
+            return None
+        for node in meta.body:
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == attr:
+                        return node.value.value
         return None
 
     @staticmethod
@@ -231,6 +323,12 @@ class ASTDatabaseParser:
                     if isinstance(target, ast.Name) and target.id == "__tablename__":
                         table_name = str(node.value.value)
 
+        # Django: table name comes from `class Meta: db_table = "..."`.
+        if not table_name and source == "django":
+            db_table = self._meta_value(class_node, "db_table")
+            if isinstance(db_table, str):
+                table_name = db_table
+
         if not table_name:
             table_name = self._to_snake_case(class_node.name)
 
@@ -258,6 +356,18 @@ class ASTDatabaseParser:
 
         entity.fields = list(fields_dict.values())
         entity.relationships = list(relationships_dict.values())
+
+        # Django implicitly adds an `id` primary key (BigAutoField since Django 3.2)
+        # when no field declares primary_key=True.
+        if source == "django" and not any(f.is_primary_key for f in entity.fields):
+            entity.fields.insert(
+                0,
+                FieldInfo(
+                    name="id",
+                    type_str=self._django_display_type("BigAutoField"),
+                    is_primary_key=True,
+                ),
+            )
 
         # Detect join tables structurally: an entity whose columns are exactly
         # two foreign keys, both part of the primary key, is an association
@@ -408,6 +518,9 @@ class ASTDatabaseParser:
         self, class_node: ast.ClassDef, model_kind: str
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
         """Extract fields and relationships from a class definition."""
+        if model_kind == "django":
+            return self._extract_django_fields(class_node)
+
         fields: Dict[str, FieldInfo] = {}
         relationships: Dict[str, Tuple[str, str, str]] = {}
 
@@ -447,6 +560,177 @@ class ASTDatabaseParser:
                     fields[field_name] = field
 
         return fields, relationships
+
+    def _extract_django_fields(
+        self, class_node: ast.ClassDef
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
+        """Extract fields and relationships from a Django model.
+
+        Django fields are plain assignments (``name = models.CharField(...)``),
+        not annotated. Relationship fields (ForeignKey/OneToOneField/
+        ManyToManyField) become relationships; every other ``*Field`` is a column.
+        """
+        fields: Dict[str, FieldInfo] = {}
+        relationships: Dict[str, Tuple[str, str, str]] = {}
+
+        for node in class_node.body:
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, ast.Name) or target.id.startswith("_"):
+                continue
+            if not isinstance(node.value, ast.Call):
+                continue
+
+            field_type = self._django_field_type(node.value)
+            if field_type is None:
+                continue
+
+            name = target.id
+            if field_type == "ForeignKey":
+                # A ForeignKey is a real `<name>_id` column in the DB; model it as
+                # such (like SQLAlchemy) so it renders consistently across sources.
+                fk = self._parse_django_fk_column(name, node.value, class_node.name)
+                if fk:
+                    fields[fk.name] = fk
+            elif field_type in DJANGO_RELATIONSHIP_FIELDS:
+                rel = self._parse_django_relationship(name, field_type, node.value, class_node.name)
+                if rel:
+                    relationships[name] = rel
+            else:
+                fields[name] = self._parse_django_column(name, field_type, node.value)
+
+        return fields, relationships
+
+    def _parse_django_fk_column(
+        self, name: str, call: ast.Call, current_class: str
+    ) -> FieldInfo | None:
+        """Model a Django ``ForeignKey`` as the ``<name>_id`` column it creates in the DB."""
+        target = self._resolve_django_relationship_target(call, current_class)
+        if target is None:
+            return None
+
+        is_nullable = False
+        for keyword in call.keywords:
+            if keyword.arg == "null" and isinstance(keyword.value, ast.Constant):
+                is_nullable = bool(keyword.value.value)
+
+        return FieldInfo(
+            name=f"{name}_id",
+            type_str=self._django_display_type("BigAutoField"),
+            is_foreign_key=True,
+            is_nullable=is_nullable,
+            foreign_table=f"{self._django_target_table(target)}.id",
+        )
+
+    def _django_target_table(self, class_name: str) -> str:
+        """Resolve a target class name to its table name (Meta.db_table or snake_case)."""
+        node = self.all_classes.get(class_name)
+        if node is not None:
+            db_table = self._meta_value(node, "db_table")
+            if isinstance(db_table, str):
+                return db_table
+        return self._to_snake_case(class_name)
+
+    @staticmethod
+    def _django_field_type(call: ast.Call) -> str | None:
+        """Return the Django field class name (e.g. "CharField", "ForeignKey").
+
+        Only constructs that are relationship fields or end in "Field" qualify,
+        which filters out non-field assignments such as ``objects = Manager()``.
+        """
+        func = call.func
+        if isinstance(func, ast.Attribute):
+            name = func.attr
+        elif isinstance(func, ast.Name):
+            name = func.id
+        else:
+            return None
+        if name in DJANGO_RELATIONSHIP_FIELDS or name.endswith("Field"):
+            return name
+        return None
+
+    def _parse_django_column(self, name: str, field_type: str, call: ast.Call) -> FieldInfo:
+        """Parse a Django column field (``models.CharField(...)``, etc.)."""
+        is_primary_key = False
+        is_nullable = False
+        default_value = None
+
+        for keyword in call.keywords:
+            if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
+                is_primary_key = bool(keyword.value.value)
+            elif keyword.arg == "null" and isinstance(keyword.value, ast.Constant):
+                is_nullable = bool(keyword.value.value)
+            elif keyword.arg == "default" and isinstance(keyword.value, ast.Constant):
+                default_value = repr(keyword.value.value)
+
+        return FieldInfo(
+            name=name,
+            type_str=self._django_display_type(field_type),
+            is_primary_key=is_primary_key,
+            is_nullable=is_nullable,
+            default_value=default_value,
+        )
+
+    def _django_display_type(self, field_type: str) -> str:
+        """Map a Django field type to a readable Python type.
+
+        Falls back to the original Django field name for ambiguous/unknown fields,
+        or always returns it when ``--django-raw-types`` is set.
+        """
+        if self.django_raw_types:
+            return field_type
+        return DJANGO_FIELD_TYPE_MAP.get(field_type, field_type)
+
+    def _parse_django_relationship(
+        self, name: str, field_type: str, call: ast.Call, current_class: str
+    ) -> Tuple[str, str, str] | None:
+        """Parse a Django relationship field into a (target, rel_type, attr) tuple.
+
+        ``ManyToManyField(through=...)`` is skipped - that M:N is drawn through
+        the through-model's own foreign keys, exactly like SQLAlchemy ``secondary=``.
+        """
+        target = self._resolve_django_relationship_target(call, current_class)
+        if target is None:
+            return None
+
+        if field_type == "ManyToManyField":
+            if any(keyword.arg == "through" for keyword in call.keywords):
+                return None
+            rel_type = "many_to_many"
+        elif field_type == "OneToOneField":
+            rel_type = "one_to_one"
+        else:  # ForeignKey
+            rel_type = "one"
+
+        return (target, rel_type, name)
+
+    def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
+        """Resolve a relationship field's target from its first positional or ``to=`` arg."""
+        if call.args:
+            return self._resolve_django_target(call.args[0], current_class)
+        for keyword in call.keywords:
+            if keyword.arg == "to":
+                return self._resolve_django_target(keyword.value, current_class)
+        return None
+
+    @staticmethod
+    def _resolve_django_target(node: ast.expr, current_class: str) -> str | None:
+        """Resolve a Django relationship target to a class name.
+
+        Handles ``"self"``, ``"app.Model"`` / ``"Model"`` string references and a
+        direct class reference (``ForeignKey(Author, ...)``).
+        """
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            value = node.value
+            if value == "self":
+                return current_class
+            return value.split(".")[-1]
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return node.attr
+        return None
 
     def _parse_field(self, node: ast.AnnAssign, model_kind: str) -> FieldInfo | None:
         """Parse a field from an annotated assignment."""
@@ -636,9 +920,10 @@ def parse_models_directory(
     exclude_patterns: List[str] | None = None,
     infer_keys: bool = False,
     sources: List[str] | None = None,
+    django_raw_types: bool = False,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
-    Parse SQLModel, SQLAlchemy, Pydantic and dataclass models in a directory.
+    Parse SQLModel, SQLAlchemy, Django, Pydantic and dataclass models in a directory.
 
     Args:
         path: Path to directory containing model files
@@ -648,11 +933,17 @@ def parse_models_directory(
             key from a field named ``id`` and a foreign key from ``<x>_id``.
         sources: Restrict which model kinds become entities (subset of
             ``MODEL_SOURCES``). ``None`` includes all kinds.
+        django_raw_types: Show original Django field names (``CharField``)
+            instead of mapped Python types (``str``).
 
     Returns:
         Tuple of (entities dict, enums dict)
     """
     parser = ASTDatabaseParser(
-        path, exclude_patterns=exclude_patterns, infer_keys=infer_keys, sources=sources
+        path,
+        exclude_patterns=exclude_patterns,
+        infer_keys=infer_keys,
+        sources=sources,
+        django_raw_types=django_raw_types,
     )
     return parser.parse_all_models()

@@ -1,7 +1,7 @@
 [project]
 name = "erdify"
 version = "0.4.2"
-description = "Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Pydantic and dataclass models"
+description = "Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and dataclass models"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -13,6 +13,7 @@ requires-python = ">=3.10"
 keywords = [
     "sqlmodel",
     "sqlalchemy",
+    "django",
     "pydantic",
     "dataclass",
     "erd",
@@ -36,7 +37,7 @@ classifiers = [
 dependencies = []  # No runtime dependencies - uses stdlib ast module
 
 [dependency-groups]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel", "sqlalchemy", "pydantic"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel", "sqlalchemy", "pydantic", "django"]
 
 [project.scripts]
 erdify = "erdify.cli:main"
