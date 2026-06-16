@@ -241,22 +241,13 @@ For a worked example with the generated PlantUML, see the [Frameworks Overview](
 | Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships |
 | Dataclass | ✅ | `@dataclass`, nested refs as relationships |
 
-## 🗺️ Roadmap
-
-Recently shipped:
-
-| Feature | Status | Description |
-| -------- | -------- | ------- |
-| Exclude Option | ✅ Done | Exclude tables or entities from ERD generation using glob patterns |
-| SQLAlchemy Support | ✅ Done | Native support for SQLAlchemy 2.0 (`Mapped` / `mapped_column`) models |
-| Pydantic Support | ✅ Done | Generate ERDs from Pydantic models, with optional `--infer-keys` |
-| Dataclass Support | ✅ Done | Support for standard Python dataclasses with type annotations |
-
-Have a feature request? Please open an issue on [GitHub](https://github.com/devsuit-berlin/erdify/issues) to discuss it!
-
 ## 🤝 Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](https://github.com/devsuit-berlin/erdify/blob/main/CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Have a bug or a feature request? Please
+[open an issue](https://github.com/devsuit-berlin/erdify/issues), and see
+[CONTRIBUTING.md](https://github.com/devsuit-berlin/erdify/blob/main/CONTRIBUTING.md)
+for guidelines. Shipped changes are tracked in the
+[changelog](https://github.com/devsuit-berlin/erdify/blob/main/CHANGELOG.md).
 
 ## 🔒 Security
 
