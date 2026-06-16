@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Configuration via `[tool.erdify]` in `pyproject.toml`. erdify reads the nearest
+  `pyproject.toml` (searching upward from the input) for `title`, `output`,
+  `sources`, `exclude`, `exclude_paths`, `infer_keys`, `django_raw_types`,
+  `no_enums`, `no_relationships` and `no_default_excludes`. Precedence is explicit
+  CLI flag > config value > default; a relative `output` resolves from the project
+  root.
+- `--check` mode: regenerate in memory and compare to the `--output` file without
+  writing, exiting non-zero if it is missing or stale — for CI / pre-commit drift
+  checks.
 - Django `models.TextChoices` / `models.IntegerChoices` classes are now rendered
   as enums, and a field referencing one via `choices=Status.choices` (or
   `choices=Status`) is linked to that enum. Inline `choices=[("a", "A"), …]`
@@ -16,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Minimum Python is now 3.11** (was 3.10), enabling the stdlib `tomllib` parser
+  for `[tool.erdify]` config with no new runtime dependency.
 - Documentation restructured: the README is slimmed to a quickstart, the
   framework showcase and feature/roadmap overview, with the detailed reference
   (CLI, filtering, viewing, CI, framework specifics) moved into a `docs/` tree.

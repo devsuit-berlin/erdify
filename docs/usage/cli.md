@@ -8,7 +8,7 @@ erdify ships a command-line interface, a module entry point, and a Python API fo
 usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
                     [--exclude-paths [PATTERN ...]] [--no-default-excludes]
                     [--sources [KIND ...]] [--infer-keys] [--django-raw-types]
-                    [--no-enums] [--no-relationships] [-v]
+                    [--no-enums] [--no-relationships] [--check] [-v]
                     input
 
 Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and dataclass models
@@ -41,7 +41,40 @@ options:
                         TextField) instead of mapped Python types (str, int)
   --no-enums            Skip enum definitions in output
   --no-relationships    Skip relationship lines in output
+  --check               Don't write; exit non-zero if the --output file is
+                        missing or differs from the freshly generated diagram
   -v, --version         show program's version number and exit
+```
+
+## Configuration via `pyproject.toml`
+
+Instead of passing flags every time, commit them under `[tool.erdify]` in your
+project's `pyproject.toml`. erdify searches upward from the input directory for
+the nearest `pyproject.toml` and reads that table.
+
+```toml
+[tool.erdify]
+title = "My Database Schema"
+output = "docs/database_erd.puml"   # relative paths resolve from the project root
+sources = ["django"]
+exclude = ["audit_log", "*Link"]
+exclude_paths = ["migrations", "legacy"]
+infer_keys = true
+django_raw_types = false
+```
+
+With that in place, `erdify .` uses these settings. Precedence is **explicit CLI
+flag > `[tool.erdify]` value > built-in default**. (Boolean flags merge by OR: a
+flag enabled in config can be added to on the CLI but not turned off there.)
+
+## Keeping the diagram in sync (`--check`)
+
+`--check` regenerates the diagram in memory and compares it to the existing
+`--output` file without writing. It exits `0` when they match and non-zero when
+the file is missing or stale — ideal for CI or a pre-commit hook.
+
+```bash
+erdify ./src/database -o docs/erd.puml --check
 ```
 
 ## Running as Module

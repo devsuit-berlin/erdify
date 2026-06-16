@@ -22,6 +22,8 @@
 - 🔑 **Key Inference** - `--infer-keys` derives PK/FK from field names for keyless models
 - 🚫 **Exclude Patterns** - Filter out entities by class or table name with glob patterns
 - 🎚️ **Source Filtering** - Restrict the diagram to specific model kinds with `--sources`
+- ⚙️ **Config File** - Commit options under `[tool.erdify]` in `pyproject.toml`
+- ✅ **Drift Check** - `--check` fails CI/pre-commit when the committed diagram is stale
 - 📦 **Inheritance Support** - Resolves fields from base classes and mixins
 - 🏷️ **Enum Support** - Includes enum definitions in the diagram
 - 🔄 **Link Table Detection** - Identifies many-to-many association tables structurally
