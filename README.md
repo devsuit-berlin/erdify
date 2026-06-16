@@ -698,6 +698,7 @@ erdify stands on the shoulders of great open-source projects:
 
 - [SQLModel](https://sqlmodel.tiangolo.com/) - The awesome SQL database library
 - [SQLAlchemy](https://www.sqlalchemy.org/) - The Python SQL toolkit and ORM
+- [Django](https://www.djangoproject.com/) - The web framework whose ORM models erdify parses
 - [Pydantic](https://docs.pydantic.dev/) - Data validation using Python type hints
 - [dataclasses](https://docs.python.org/3/library/dataclasses.html) - Python standard-library data classes
 
