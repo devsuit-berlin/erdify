@@ -37,3 +37,12 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+      - id: gen-cli-docs
+        name: Sync CLI reference in docs with erdify --help
+        # Regenerates the cli-help block; fails (like uv-lock) if it changed,
+        # so the refreshed docs get staged. CI runs this via pre-commit too.
+        entry: uv run python scripts/gen_cli_docs.py
+        language: system
+        always_run: true
+        pass_filenames: false
