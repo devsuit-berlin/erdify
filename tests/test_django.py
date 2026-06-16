@@ -88,10 +88,17 @@ class TestDjangoRawTypes:
 
 
 class TestDjangoForeignKey:
+    def test_foreign_key_is_modeled_as_id_column(self, django_models_dir: Path):
+        entities, _ = parse_models_directory(django_models_dir)
+        post_fields = {f.name: f for f in entities["Post"].fields}
+        assert "author_id" in post_fields
+        assert post_fields["author_id"].is_foreign_key is True
+        assert post_fields["author_id"].foreign_table == "author.id"
+
     def test_foreign_key_renders_n_to_one(self, django_models_dir: Path):
         entities, enums = parse_models_directory(django_models_dir)
         output = PlantUMLGenerator(entities, enums).generate()
-        assert 'Post }o--|| Author : "author"' in output
+        assert 'Post }o--|| Author : "author_id"' in output
 
     def test_self_reference_foreign_key(self, django_models_dir: Path):
         entities, enums = parse_models_directory(django_models_dir)

@@ -240,16 +240,15 @@ Order }o--|| User : "user_id"
 
 ## 🧬 One Schema, Five Frameworks
 
-erdify supports five model frameworks. The four snippets below all describe the
+erdify supports five model frameworks. The snippets below all describe the
 **same** `User` / `Order` schema — only the syntax differs. Each one produces the
-**identical** diagram. Django ORM is the fifth framework; because it adds an
-implicit `id` key and maps field types, it is covered in its own section just
-below:
+**identical** diagram:
 
-![Framework comparison ERD](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/examples/erd.png "The same ERD from all four frameworks")
+![Framework comparison ERD](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/examples/erd.png "The same ERD from all five frameworks")
 
-> ℹ️ The SQLModel and SQLAlchemy versions declare keys explicitly. Pydantic and
-> dataclasses have no key concept, so they are rendered with [`--infer-keys`](#inferring-keys---infer-keys)
+> ℹ️ The SQLModel, SQLAlchemy and Django versions declare keys explicitly (Django
+> via its implicit `id` and `ForeignKey`). Pydantic and dataclasses have no key
+> concept, so they are rendered with [`--infer-keys`](#inferring-keys---infer-keys)
 > (`id` → PK, `<x>_id` → FK) to match. The runnable sources live in
 > [`docs/examples/`](https://github.com/devsuit-berlin/erdify/tree/main/docs/examples).
 
@@ -359,6 +358,31 @@ class Order:
     user_id: int
     total: float
     user: "User" = None
+```
+
+</td></tr>
+<tr><th colspan="2">Django ORM</th></tr>
+<tr><td colspan="2">
+
+```python
+from django.db import models
+
+
+class User(models.Model):       # implicit `id` PK; CharField/EmailField -> str
+    name = models.CharField(max_length=100)
+    email = models.EmailField()
+
+    class Meta:
+        db_table = "user"
+
+
+class Order(models.Model):
+    user = models.ForeignKey(    # -> user_id : int foreign key column
+        User, on_delete=models.CASCADE)
+    total = models.FloatField()  # -> float
+
+    class Meta:
+        db_table = "order"
 ```
 
 </td></tr>

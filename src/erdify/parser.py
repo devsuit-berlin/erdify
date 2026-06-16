@@ -587,7 +587,13 @@ class ASTDatabaseParser:
                 continue
 
             name = target.id
-            if field_type in DJANGO_RELATIONSHIP_FIELDS:
+            if field_type == "ForeignKey":
+                # A ForeignKey is a real `<name>_id` column in the DB; model it as
+                # such (like SQLAlchemy) so it renders consistently across sources.
+                fk = self._parse_django_fk_column(name, node.value, class_node.name)
+                if fk:
+                    fields[fk.name] = fk
+            elif field_type in DJANGO_RELATIONSHIP_FIELDS:
                 rel = self._parse_django_relationship(name, field_type, node.value, class_node.name)
                 if rel:
                     relationships[name] = rel
@@ -595,6 +601,36 @@ class ASTDatabaseParser:
                 fields[name] = self._parse_django_column(name, field_type, node.value)
 
         return fields, relationships
+
+    def _parse_django_fk_column(
+        self, name: str, call: ast.Call, current_class: str
+    ) -> FieldInfo | None:
+        """Model a Django ``ForeignKey`` as the ``<name>_id`` column it creates in the DB."""
+        target = self._resolve_django_relationship_target(call, current_class)
+        if target is None:
+            return None
+
+        is_nullable = False
+        for keyword in call.keywords:
+            if keyword.arg == "null" and isinstance(keyword.value, ast.Constant):
+                is_nullable = bool(keyword.value.value)
+
+        return FieldInfo(
+            name=f"{name}_id",
+            type_str=self._django_display_type("BigAutoField"),
+            is_foreign_key=True,
+            is_nullable=is_nullable,
+            foreign_table=f"{self._django_target_table(target)}.id",
+        )
+
+    def _django_target_table(self, class_name: str) -> str:
+        """Resolve a target class name to its table name (Meta.db_table or snake_case)."""
+        node = self.all_classes.get(class_name)
+        if node is not None:
+            db_table = self._meta_value(node, "db_table")
+            if isinstance(db_table, str):
+                return db_table
+        return self._to_snake_case(class_name)
 
     @staticmethod
     def _django_field_type(call: ast.Call) -> str | None:
@@ -654,14 +690,7 @@ class ASTDatabaseParser:
         ``ManyToManyField(through=...)`` is skipped - that M:N is drawn through
         the through-model's own foreign keys, exactly like SQLAlchemy ``secondary=``.
         """
-        target = None
-        if call.args:
-            target = self._resolve_django_target(call.args[0], current_class)
-        else:
-            for keyword in call.keywords:
-                if keyword.arg == "to":
-                    target = self._resolve_django_target(keyword.value, current_class)
-                    break
+        target = self._resolve_django_relationship_target(call, current_class)
         if target is None:
             return None
 
@@ -675,6 +704,15 @@ class ASTDatabaseParser:
             rel_type = "one"
 
         return (target, rel_type, name)
+
+    def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
+        """Resolve a relationship field's target from its first positional or ``to=`` arg."""
+        if call.args:
+            return self._resolve_django_target(call.args[0], current_class)
+        for keyword in call.keywords:
+            if keyword.arg == "to":
+                return self._resolve_django_target(keyword.value, current_class)
+        return None
 
     @staticmethod
     def _resolve_django_target(node: ast.expr, current_class: str) -> str | None:
