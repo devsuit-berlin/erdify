@@ -27,7 +27,7 @@
 - 📦 **Inheritance Support** - Resolves fields from base classes and mixins
 - 🏷️ **Enum Support** - Includes enum definitions in the diagram
 - 🔄 **Link Table Detection** - Identifies many-to-many association tables structurally
-- 🧜 **PlantUML & Mermaid** - `--format` outputs PlantUML and/or Mermaid (renders natively on GitHub)
+- 🧜 **4 Output Formats** - `--format` emits PlantUML, Mermaid (renders natively on GitHub), JSON, or a self-contained HTML preview
 - 🎨 **Beautiful Output** - Clean, readable diagrams with proper styling
 
 ## 🚀 Quick Start
@@ -241,9 +241,16 @@ For a worked example with the generated PlantUML, see the [Frameworks Overview](
 | Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships |
 | Dataclass | ✅ | `@dataclass`, nested refs as relationships |
 
+## 💬 Community
+
+Questions, ideas, or want to show off an ERD erdify generated? Join the
+[**Discussions**](https://github.com/devsuit-berlin/erdify/discussions). For
+open-ended topics and feature direction, Discussions are the place; concrete
+bugs and proposals go to [Issues](https://github.com/devsuit-berlin/erdify/issues).
+
 ## 🤝 Contributing
 
-Contributions are welcome! Have a bug or a feature request? Please
+Contributions are welcome! Have a bug or a concrete feature request? Please
 [open an issue](https://github.com/devsuit-berlin/erdify/issues), and see
 [CONTRIBUTING.md](https://github.com/devsuit-berlin/erdify/blob/main/CONTRIBUTING.md)
 for guidelines. Shipped changes are tracked in the

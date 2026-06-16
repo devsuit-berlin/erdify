@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .generator import generate_mermaid, generate_plantuml
+from .generator import generate_html, generate_json, generate_mermaid, generate_plantuml
 from .parser import MODEL_SOURCES, parse_models_directory
 from .pyproject import load_config
 
@@ -14,6 +14,8 @@ from .pyproject import load_config
 FORMATS = {
     "plantuml": (generate_plantuml, ".puml"),
     "mermaid": (generate_mermaid, ".mmd"),
+    "json": (generate_json, ".json"),
+    "html": (generate_html, ".html"),
 }
 
 
@@ -116,9 +118,9 @@ def main() -> int:
         choices=tuple(FORMATS),
         metavar="FMT",
         help=(
-            "Output format(s): plantuml (.puml) and/or mermaid (.mmd). Default: "
-            "plantuml. With -o the extension is set per format; multiple formats "
-            "require -o, e.g. --format plantuml mermaid"
+            "Output format(s): plantuml (.puml), mermaid (.mmd), json (.json), "
+            "html (.html). Default: plantuml. With -o the extension is set per "
+            "format; multiple formats require -o, e.g. --format plantuml mermaid"
         ),
     )
     parser.add_argument(

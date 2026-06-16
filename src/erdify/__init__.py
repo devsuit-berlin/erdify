@@ -6,6 +6,8 @@ from .config import EntityInfo, EnumInfo, FieldInfo
 from .generator import (
     MermaidGenerator,
     PlantUMLGenerator,
+    generate_html,
+    generate_json,
     generate_mermaid,
     generate_plantuml,
 )
@@ -29,6 +31,8 @@ __all__ = [
     "generate_plantuml",
     "MermaidGenerator",
     "generate_mermaid",
+    "generate_json",
+    "generate_html",
     # Version
     "__version__",
 ]

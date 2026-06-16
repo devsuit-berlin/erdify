@@ -208,6 +208,29 @@ class TestCLI:
         assert (temp_dir / "erd.mmd").exists()
         assert not (temp_dir / "erd.txt").exists()
 
+    def test_cli_format_json_writes_valid_json(self, sample_models_dir: Path, temp_dir: Path):
+        """--format json writes a parseable .json file."""
+        import json as _json
+
+        with patch.object(
+            sys,
+            "argv",
+            ["erdify", str(sample_models_dir), "-o", str(temp_dir / "erd"), "--format", "json"],
+        ):
+            assert main() == 0
+        data = _json.loads((temp_dir / "erd.json").read_text())
+        assert "entities" in data
+
+    def test_cli_format_html_writes_page(self, sample_models_dir: Path, temp_dir: Path):
+        """--format html writes a self-contained .html page."""
+        with patch.object(
+            sys,
+            "argv",
+            ["erdify", str(sample_models_dir), "-o", str(temp_dir / "erd"), "--format", "html"],
+        ):
+            assert main() == 0
+        assert '<pre class="mermaid">' in (temp_dir / "erd.html").read_text()
+
     def test_cli_multiple_formats_require_output(self, sample_models_dir: Path, capsys):
         """Multiple formats to stdout is an error."""
         with patch.object(
