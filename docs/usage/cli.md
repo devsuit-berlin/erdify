@@ -42,8 +42,9 @@ options:
   --no-enums            Skip enum definitions in output
   --no-relationships    Skip relationship lines in output
   --format FMT [FMT ...]
-                        Output format(s): plantuml (.puml) and/or mermaid (.mmd).
-                        Default: plantuml. See Output Formats.
+                        Output format(s): plantuml (.puml), mermaid (.mmd),
+                        json (.json), html (.html). Default: plantuml.
+                        See Output Formats.
   --check               Don't write; exit non-zero if the --output file is
                         missing or differs from the freshly generated diagram
   -v, --version         show program's version number and exit

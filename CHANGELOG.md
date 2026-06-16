@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--format json` — emit the parsed model (entities, columns with PK/FK/nullable/
+  default, relationships, enums) as structured JSON, so downstream tools can
+  consume erdify's model without re-parsing.
+- `--format html` — wrap the Mermaid diagram in a self-contained HTML page
+  (pinned Mermaid CDN) that renders in a browser. Composes with multi-format
+  output, `--check` and `[tool.erdify]` like the other formats.
+
 ## [0.6.0] - 2026-06-16
 
 ### Added

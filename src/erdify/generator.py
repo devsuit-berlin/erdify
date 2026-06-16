@@ -1,9 +1,14 @@
-"""ERD diagram generators (PlantUML and Mermaid)."""
+"""ERD diagram generators (PlantUML, Mermaid, JSON and an HTML preview)."""
 
+import html
+import json
 import re
 from typing import Dict, List, Tuple
 
 from .config import EntityInfo, EnumInfo, FieldInfo
+
+#: Pinned Mermaid CDN major version used by the HTML preview format.
+MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
 
 
 class _ERGenerator:
@@ -417,3 +422,96 @@ def generate_mermaid(
         title=title,
     )
     return generator.generate()
+
+
+def generate_json(
+    entities: Dict[str, EntityInfo],
+    enums: Dict[str, EnumInfo] | None = None,
+    title: str = "Database ERD",
+    include_enums: bool = True,
+    include_relationships: bool = True,
+) -> str:
+    """
+    Serialize the parsed model as JSON (a stable, documented schema).
+
+    Shape: ``{title, entities: [{name, table_name, source, is_link_table,
+    fields: [{name, type, primary_key, foreign_key, nullable, foreign_table,
+    index, default}], relationships: [{target, type, attribute}]}], enums:
+    [{name, values}]}``. Downstream tools can consume this without re-parsing.
+    """
+    model = {
+        "title": title,
+        "entities": [
+            {
+                "name": entity.name,
+                "table_name": entity.table_name,
+                "source": entity.source,
+                "is_link_table": entity.is_link_table,
+                "fields": [
+                    {
+                        "name": f.name,
+                        "type": f.type_str,
+                        "primary_key": f.is_primary_key,
+                        "foreign_key": f.is_foreign_key,
+                        "nullable": f.is_nullable,
+                        "foreign_table": f.foreign_table,
+                        "index": f.index,
+                        "default": f.default_value,
+                    }
+                    for f in entity.fields
+                ],
+                "relationships": (
+                    [
+                        {"target": target, "type": rel_type, "attribute": attr}
+                        for target, rel_type, attr in entity.relationships
+                    ]
+                    if include_relationships
+                    else []
+                ),
+            }
+            for entity in entities.values()
+        ],
+        "enums": (
+            [{"name": e.name, "values": e.values} for e in (enums or {}).values()]
+            if include_enums
+            else []
+        ),
+    }
+    return json.dumps(model, indent=2)
+
+
+def generate_html(
+    entities: Dict[str, EntityInfo],
+    enums: Dict[str, EnumInfo] | None = None,
+    title: str = "Database ERD",
+    include_enums: bool = True,
+    include_relationships: bool = True,
+) -> str:
+    """
+    Render a self-contained HTML page that draws the ERD with Mermaid.
+
+    The page loads Mermaid from a pinned CDN (``MERMAID_CDN``), so it needs
+    internet access to render. Open it in a browser to view the diagram.
+    """
+    diagram = generate_mermaid(entities, enums, title, include_enums, include_relationships)
+    safe_title = html.escape(title)
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="en">\n'
+        "<head>\n"
+        '  <meta charset="utf-8">\n'
+        '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"  <title>{safe_title}</title>\n"
+        f'  <script src="{MERMAID_CDN}"></script>\n'
+        "  <style>body{font-family:system-ui,sans-serif;margin:2rem;color:#222}"
+        "h1{font-size:1.1rem;color:#555;font-weight:600}</style>\n"
+        "</head>\n"
+        "<body>\n"
+        f"  <h1>{safe_title}</h1>\n"
+        '  <pre class="mermaid">\n'
+        f"{diagram}\n"
+        "  </pre>\n"
+        "  <script>mermaid.initialize({ startOnLoad: true });</script>\n"
+        "</body>\n"
+        "</html>\n"
+    )
