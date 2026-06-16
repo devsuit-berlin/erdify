@@ -2,7 +2,7 @@
 
 erdify recognizes five model frameworks from source and renders them into the
 same ERD format. For the side-by-side framework comparison and the
-detection/parsing table, see the [main README](../../README.md#-one-schema-five-frameworks).
+detection/parsing table, see the [main README](https://github.com/devsuit-berlin/erdify/blob/main/README.md#-one-schema-five-frameworks).
 This page shows a worked example with the generated PlantUML output; for
 Django-specific details see [Django ORM](django.md).
 
