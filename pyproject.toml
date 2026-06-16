@@ -37,6 +37,7 @@ dependencies = []  # No runtime dependencies - uses stdlib ast module
 
 [dependency-groups]
 dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel", "sqlalchemy", "pydantic", "django"]
+docs = ["mkdocs-material"]
 
 [project.scripts]
 erdify = "erdify.cli:main"

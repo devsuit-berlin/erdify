@@ -1,0 +1,55 @@
+site_name: erdify
+site_description: Generate PlantUML & Mermaid ERD diagrams from your Python models
+site_url: https://erdify.devsuit.io/
+repo_url: https://github.com/devsuit-berlin/erdify
+repo_name: devsuit-berlin/erdify
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - content.code.copy
+    - search.suggest
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Usage:
+      - CLI & Python API: usage/cli.md
+      - Output Formats: usage/output-formats.md
+      - Filtering & Key Inference: usage/filtering.md
+      - Viewing the Diagram: usage/viewing.md
+      - CI/CD & pre-commit: usage/ci.md
+  - Frameworks:
+      - Overview: frameworks/index.md
+      - Django ORM: frameworks/django.md
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search

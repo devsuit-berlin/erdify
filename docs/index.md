@@ -10,5 +10,5 @@
 - [Filtering & Key Inference](usage/filtering.md) — `--exclude`, `--exclude-paths`, `--sources`, and `--infer-keys`
 - [Viewing the Diagram](usage/viewing.md) — render online, locally with PlantUML, or in VS Code
 - [CI/CD & pre-commit](usage/ci.md) — keep ERDs up to date in CI and via pre-commit hooks
-- [Frameworks Overview](frameworks/index.md) — a worked example with the generated PlantUML (the framework comparison lives in the [README](../README.md#-one-schema-five-frameworks))
+- [Frameworks Overview](frameworks/index.md) — a worked example with the generated PlantUML (the framework comparison lives in the [README](https://github.com/devsuit-berlin/erdify/blob/main/README.md#-one-schema-five-frameworks))
 - [Django ORM](frameworks/django.md) — Django-specific parsing details (FK mapping, type mapping, enums, abstract bases, `db_table`)
