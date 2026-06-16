@@ -4,6 +4,7 @@ site_url: https://erdify.devsuit.io/
 repo_url: https://github.com/devsuit-berlin/erdify
 repo_name: devsuit-berlin/erdify
 edit_uri: edit/main/docs/
+copyright: 'Created &amp; maintained with ❤️ by <a href="https://devsuit.de" target="_blank" rel="noopener">devsuit GmbH</a>'
 
 theme:
   name: material
