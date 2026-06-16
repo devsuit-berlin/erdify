@@ -142,6 +142,36 @@ class TestCLI:
         captured = capsys.readouterr()
         assert "column(name) : CharField" in captured.out
 
+    def test_cli_auto_skips_site_packages(self, scan_filter_dir: Path, capsys):
+        """By default models.py under site-packages is skipped."""
+        with patch.object(sys, "argv", ["erdify", str(scan_filter_dir)]):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Widget" in captured.out
+        assert "ThirdPartyModel" not in captured.out
+
+    def test_cli_exclude_paths(self, scan_filter_dir: Path, capsys):
+        """--exclude-paths skips a project folder by segment."""
+        with patch.object(
+            sys, "argv", ["erdify", str(scan_filter_dir), "--exclude-paths", "legacy"]
+        ):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "LegacyThing" not in captured.out
+
+    def test_cli_no_default_excludes(self, scan_filter_dir: Path, capsys):
+        """--no-default-excludes scans site-packages too."""
+        with patch.object(sys, "argv", ["erdify", str(scan_filter_dir), "--no-default-excludes"]):
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "ThirdPartyModel" in captured.out
+
     def test_cli_pydantic_without_infer_keys(self, pydantic_models_dir: Path, capsys):
         """Without --infer-keys, Pydantic id/<x>_id stay plain columns."""
         with patch.object(sys, "argv", ["erdify", str(pydantic_models_dir)]):

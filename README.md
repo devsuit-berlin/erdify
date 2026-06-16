@@ -95,6 +95,7 @@ Path("erd.puml").write_text(diagram)
 
 ```bash
 usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
+                    [--exclude-paths [PATTERN ...]] [--no-default-excludes]
                     [--sources [KIND ...]] [--infer-keys] [--django-raw-types]
                     [--no-enums] [--no-relationships] [-v]
                     input
@@ -112,6 +113,13 @@ options:
   --exclude [PATTERN ...]
                         Glob patterns (case-sensitive) to exclude entities by
                         class name or table name, e.g. --exclude '*Link' audit_log
+  --exclude-paths [PATTERN ...]
+                        Glob patterns for models.py files to skip before parsing,
+                        matched against the path relative to input or any path
+                        segment, e.g. --exclude-paths migrations legacy
+  --no-default-excludes
+                        Do not auto-skip models.py under venv/site-packages/cache
+                        dirs (.venv, site-packages, __pycache__, ...); scan them too
   --sources [KIND ...]  Restrict which model kinds become entities. Choices:
                         sqlmodel, sqlalchemy, django, dataclass, pydantic.
                         Default: all, e.g. --sources sqlmodel sqlalchemy for DB
@@ -142,6 +150,28 @@ erdify ./src/database --exclude audit_log 'tmp_*' Session
 ```
 
 > 💡 Quote patterns containing `*` so your shell doesn't expand them.
+
+### Excluding by Path (`--exclude-paths`)
+
+`--exclude` filters by name **after** parsing. To skip whole folders **before**
+the scan — e.g. so erdify never reads a virtualenv's third-party `models.py` —
+use `--exclude-paths`. Patterns are case-sensitive globs matched against each
+`models.py` path relative to the input **or** any single path segment.
+
+```bash
+# Skip migrations and a legacy app, anywhere in the tree
+erdify ./backend --exclude-paths migrations legacy
+
+# Precise path glob
+erdify ./backend --exclude-paths 'apps/experimental/*'
+```
+
+By default erdify already auto-skips `models.py` under common non-project
+directories — `site-packages`, `.venv`, `venv`, `env`, `virtualenv`,
+`node_modules`, `__pycache__`, `.git`, `.tox`, `.mypy_cache`, `.pytest_cache` —
+so running on a Django project picks up only your own apps, not installed
+packages like `django.contrib.*`, `constance` or `django_celery_beat`. Pass
+`--no-default-excludes` to scan those directories too.
 
 ### Filtering by Model Kind
 
