@@ -24,7 +24,7 @@
 - 🎚️ **Source Filtering** - Restrict the diagram to specific model kinds with `--sources` (e.g. ORM tables only)
 - 📦 **Inheritance Support** - Correctly resolves fields from base classes and mixins
 - 🏷️ **Enum Support** - Includes enum definitions in the diagram
-- 🔄 **Link Table Detection** - Identifies many-to-many relationship tables
+- 🔄 **Link Table Detection** - Identifies many-to-many association tables structurally (two FK columns that form the primary key), regardless of class name
 - 🎨 **Beautiful Output** - Clean, readable PlantUML with proper styling
 
 ## 📦 Installation
