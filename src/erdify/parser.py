@@ -13,6 +13,25 @@ from .config import EntityInfo, EnumInfo, FieldInfo
 #: Model frameworks erdify can recognize, in classification order.
 MODEL_SOURCES = ("sqlmodel", "sqlalchemy", "django", "dataclass", "pydantic")
 
+#: Directory names skipped during the models.py scan unless --no-default-excludes
+#: is set. `site-packages` alone catches all third-party models inside a
+#: virtualenv regardless of the venv directory name.
+DEFAULT_EXCLUDE_DIRS = frozenset(
+    {
+        "site-packages",
+        ".venv",
+        "venv",
+        "env",
+        "virtualenv",
+        "node_modules",
+        "__pycache__",
+        ".git",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+    }
+)
+
 #: Django relationship field constructs (everything else ending in "Field" is a column).
 DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
 
@@ -60,12 +79,18 @@ class ASTDatabaseParser:
         infer_keys: bool = False,
         sources: List[str] | None = None,
         django_raw_types: bool = False,
+        exclude_paths: List[str] | None = None,
+        use_default_excludes: bool = True,
     ):
         self.database_path = database_path
         self.exclude_patterns = exclude_patterns or []
         self.infer_keys = infer_keys
         #: Show original Django field names (CharField) instead of mapped Python types.
         self.django_raw_types = django_raw_types
+        #: Glob patterns (path or segment) for models.py files to skip during the scan.
+        self.exclude_paths = exclude_paths or []
+        #: Whether to skip DEFAULT_EXCLUDE_DIRS (venv/site-packages/caches) during the scan.
+        self.use_default_excludes = use_default_excludes
         #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
         self.sources = set(sources) if sources else None
         self.entities: Dict[str, EntityInfo] = {}
@@ -75,7 +100,9 @@ class ASTDatabaseParser:
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
         """Parse all model files in the database directory."""
-        model_files = list(self.database_path.rglob("models.py"))
+        model_files = [
+            f for f in self.database_path.rglob("models.py") if not self._is_path_excluded(f)
+        ]
 
         # First pass: parse all files and collect class definitions
         for model_file in model_files:
@@ -109,6 +136,28 @@ class ASTDatabaseParser:
         self._apply_exclude_patterns()
 
         return self.entities, self.enums
+
+    def _is_path_excluded(self, model_file: Path) -> bool:
+        """Decide whether a discovered models.py should be skipped before parsing.
+
+        Skips files under a default non-project directory (venv/site-packages/
+        caches, unless disabled) or matching an ``exclude_paths`` glob against the
+        path relative to the input or any single path segment.
+        """
+        try:
+            rel = model_file.relative_to(self.database_path).as_posix()
+        except ValueError:
+            rel = model_file.as_posix()
+        segments = rel.split("/")[:-1]  # directory segments only (drop "models.py")
+
+        if self.use_default_excludes and any(seg in DEFAULT_EXCLUDE_DIRS for seg in segments):
+            return True
+
+        for pattern in self.exclude_paths:
+            if fnmatchcase(rel, pattern) or any(fnmatchcase(seg, pattern) for seg in segments):
+                return True
+
+        return False
 
     def _apply_exclude_patterns(self) -> None:
         """Remove excluded entities and strip relationships pointing at them.
@@ -921,6 +970,8 @@ def parse_models_directory(
     infer_keys: bool = False,
     sources: List[str] | None = None,
     django_raw_types: bool = False,
+    exclude_paths: List[str] | None = None,
+    use_default_excludes: bool = True,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
     Parse SQLModel, SQLAlchemy, Django, Pydantic and dataclass models in a directory.
@@ -935,6 +986,11 @@ def parse_models_directory(
             ``MODEL_SOURCES``). ``None`` includes all kinds.
         django_raw_types: Show original Django field names (``CharField``)
             instead of mapped Python types (``str``).
+        exclude_paths: Case-sensitive globs matched against each ``models.py``
+            path (relative to ``path``) or any single path segment; matches are
+            skipped before parsing.
+        use_default_excludes: Skip ``models.py`` files under known non-project
+            directories (venv/site-packages/caches). Set ``False`` to scan them.
 
     Returns:
         Tuple of (entities dict, enums dict)
@@ -945,5 +1001,7 @@ def parse_models_directory(
         infer_keys=infer_keys,
         sources=sources,
         django_raw_types=django_raw_types,
+        exclude_paths=exclude_paths,
+        use_default_excludes=use_default_excludes,
     )
     return parser.parse_all_models()

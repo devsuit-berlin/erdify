@@ -46,6 +46,25 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--exclude-paths",
+        nargs="*",
+        default=[],
+        metavar="PATTERN",
+        help=(
+            "Glob patterns (case-sensitive) for models.py files to skip before "
+            "parsing, matched against the path relative to input or any path "
+            "segment, e.g. --exclude-paths migrations legacy 'apps/experimental/*'"
+        ),
+    )
+    parser.add_argument(
+        "--no-default-excludes",
+        action="store_true",
+        help=(
+            "Do not auto-skip models.py under venv/site-packages/cache dirs "
+            "(.venv, site-packages, __pycache__, ...); scan them too"
+        ),
+    )
+    parser.add_argument(
         "--sources",
         nargs="*",
         choices=MODEL_SOURCES,
@@ -108,6 +127,8 @@ def main() -> int:
             infer_keys=args.infer_keys,
             sources=args.sources,
             django_raw_types=args.django_raw_types,
+            exclude_paths=args.exclude_paths,
+            use_default_excludes=not args.no_default_excludes,
         )
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)

@@ -94,3 +94,9 @@ def m2m_secondary_table_dir() -> Path:
 def django_models_dir() -> Path:
     """Path to Django ORM models directory (#36)."""
     return FIXTURES_DIR / "django"
+
+
+@pytest.fixture
+def scan_filter_dir() -> Path:
+    """Path-based scan filtering fixture: app/, legacy/, site-packages/ (#43)."""
+    return FIXTURES_DIR / "scan_filter"

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Path-based scan filtering. `models.py` files under common non-project
+  directories (`site-packages`, `.venv`, `venv`, `node_modules`, `__pycache__`,
+  `.git`, …) are now auto-skipped, so running on a Django project picks up only
+  your own apps and not installed third-party packages. `--exclude-paths` skips
+  additional folders by path/segment glob (e.g. `--exclude-paths migrations
+  legacy`), and `--no-default-excludes` disables the built-in skip list. Unlike
+  `--exclude` (which filters by class/table name after parsing), this filters
+  files before the scan.
 - Django ORM is now a supported model source. `models.Model` subclasses become
   entities; columns, `primary_key=True` / implicit `id`, `ForeignKey` (N:1),
   `OneToOneField` (1:1) and `ManyToManyField` (M:N, including `through=`) are
