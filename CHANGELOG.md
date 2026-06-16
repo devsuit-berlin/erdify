@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-16
+
+### Fixed
+
+- Link tables are now detected **structurally** — an entity whose columns are
+  exactly two foreign keys, both part of the primary key — instead of by the
+  `*Link*` class-name heuristic. Association tables not named `*Link*` (e.g.
+  `PostTag`) are now drawn as a proper M:N path, and normal entities that merely
+  contain "Link" in their name (e.g. `LinkPreview`) are no longer misclassified
+  as link tables (#35).
+- A SQLAlchemy `relationship(secondary=Table(...))` that references a module-level
+  Core `Table(...)` (rather than a mapped link-table class) is now modelled: the
+  association table is synthesized into a link entity and the M:N is drawn through
+  it. Previously the table was not parsed at all, so the relationship was dropped
+  and the two endpoints were left disconnected (#34).
+- Columns with no known type (an untyped Core `Column`) no longer render a
+  dangling `:` with an empty type.
+
 ## [0.4.1] - 2026-06-15
 
 ### Fixed
@@ -100,7 +118,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/devsuit-berlin/erdify/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/devsuit-berlin/erdify/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/devsuit-berlin/erdify/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/devsuit-berlin/erdify/compare/v0.3.0...v0.3.1
