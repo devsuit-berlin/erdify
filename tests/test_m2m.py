@@ -76,6 +76,41 @@ class TestSQLAlchemySecondary:
         assert entities["Tag"].relationships == []
 
 
+class TestSQLAlchemySecondaryCoreTable:
+    """relationship(secondary=Table(...)) where the association is a Core Table.
+
+    The module-level ``Table(...)`` must be synthesized into a link entity so the
+    M:N is drawn through it - never dropped and never a direct 1:N edge (#34).
+    """
+
+    def test_core_table_modeled_as_link_entity(self, m2m_secondary_table_dir: Path):
+        entities, _ = parse_models_directory(m2m_secondary_table_dir)
+
+        assert "post_tag" in entities
+        assert entities["post_tag"].is_link_table is True
+
+    def test_link_table_path_present(self, m2m_secondary_table_dir: Path):
+        entities, enums = parse_models_directory(m2m_secondary_table_dir)
+        output = PlantUMLGenerator(entities, enums).generate()
+
+        assert 'Post ||--o{ post_tag : "post_id"' in output
+        assert 'post_tag }o--|| Tag : "tag_id"' in output
+
+    def test_no_spurious_direct_edge(self, m2m_secondary_table_dir: Path):
+        entities, enums = parse_models_directory(m2m_secondary_table_dir)
+        output = PlantUMLGenerator(entities, enums).generate()
+
+        assert frozenset(("Post", "Tag")) not in _edges(output)
+
+    def test_untyped_columns_have_no_dangling_colon(self, m2m_secondary_table_dir: Path):
+        entities, enums = parse_models_directory(m2m_secondary_table_dir)
+        output = PlantUMLGenerator(entities, enums).generate()
+
+        # Core Column(...) without an explicit type must not render "name : ".
+        assert "primary_key(post_id)" in output
+        assert "primary_key(post_id) :" not in output
+
+
 class TestRegularRelationshipsStillDrawn:
     """The fix must not suppress ordinary (non-link-table) relationships."""
 
