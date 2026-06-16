@@ -172,6 +172,50 @@ class TestCLI:
         captured = capsys.readouterr()
         assert "ThirdPartyModel" in captured.out
 
+    def test_cli_format_mermaid_stdout(self, sample_models_dir: Path, capsys):
+        """--format mermaid emits an erDiagram to stdout."""
+        with patch.object(sys, "argv", ["erdify", str(sample_models_dir), "--format", "mermaid"]):
+            assert main() == 0
+        assert capsys.readouterr().out.lstrip().startswith("erDiagram")
+
+    def test_cli_format_both_writes_two_files(self, sample_models_dir: Path, temp_dir: Path):
+        """--format plantuml mermaid writes <base>.puml and <base>.mmd."""
+        base = temp_dir / "erd.puml"
+        with patch.object(
+            sys,
+            "argv",
+            ["erdify", str(sample_models_dir), "-o", str(base), "--format", "plantuml", "mermaid"],
+        ):
+            assert main() == 0
+        assert (temp_dir / "erd.puml").exists()
+        assert (temp_dir / "erd.mmd").exists()
+
+    def test_cli_output_extension_normalized(self, sample_models_dir: Path, temp_dir: Path):
+        """The output extension is forced to match the format."""
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "erdify",
+                str(sample_models_dir),
+                "-o",
+                str(temp_dir / "erd.txt"),
+                "--format",
+                "mermaid",
+            ],
+        ):
+            assert main() == 0
+        assert (temp_dir / "erd.mmd").exists()
+        assert not (temp_dir / "erd.txt").exists()
+
+    def test_cli_multiple_formats_require_output(self, sample_models_dir: Path, capsys):
+        """Multiple formats to stdout is an error."""
+        with patch.object(
+            sys, "argv", ["erdify", str(sample_models_dir), "--format", "plantuml", "mermaid"]
+        ):
+            assert main() != 0
+        assert "--output" in capsys.readouterr().err
+
     def test_cli_pydantic_without_infer_keys(self, pydantic_models_dir: Path, capsys):
         """Without --infer-keys, Pydantic id/<x>_id stay plain columns."""
         with patch.object(sys, "argv", ["erdify", str(pydantic_models_dir)]):

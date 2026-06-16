@@ -6,9 +6,15 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .generator import generate_plantuml
+from .generator import generate_mermaid, generate_plantuml
 from .parser import MODEL_SOURCES, parse_models_directory
 from .pyproject import load_config
+
+#: Supported output formats: name -> (generator function, file extension).
+FORMATS = {
+    "plantuml": (generate_plantuml, ".puml"),
+    "mermaid": (generate_mermaid, ".mmd"),
+}
 
 
 def main() -> int:
@@ -104,6 +110,18 @@ def main() -> int:
         help="Skip relationship lines in output",
     )
     parser.add_argument(
+        "--format",
+        nargs="+",
+        default=None,
+        choices=tuple(FORMATS),
+        metavar="FMT",
+        help=(
+            "Output format(s): plantuml (.puml) and/or mermaid (.mmd). Default: "
+            "plantuml. With -o the extension is set per format; multiple formats "
+            "require -o, e.g. --format plantuml mermaid"
+        ),
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help=(
@@ -146,6 +164,18 @@ def main() -> int:
     no_relationships = args.no_relationships or bool(config.get("no_relationships", False))
     no_default_excludes = args.no_default_excludes or bool(config.get("no_default_excludes", False))
 
+    # Resolve output format(s); a config value may be a single string or a list.
+    formats = pick(args.format, "format", ["plantuml"])
+    if isinstance(formats, str):
+        formats = [formats]
+    valid_formats = []
+    for fmt in formats:
+        if fmt in FORMATS:
+            valid_formats.append(fmt)
+        else:
+            print(f"Warning: unknown format '{fmt}', ignoring", file=sys.stderr)
+    formats = valid_formats or ["plantuml"]
+
     # Output: CLI path (relative to cwd) > config path (relative to the project) > stdout.
     output_path: Path | None = args.output
     if output_path is None and "output" in config:
@@ -158,6 +188,10 @@ def main() -> int:
             "Error: --check requires --output (or 'output' in [tool.erdify])",
             file=sys.stderr,
         )
+        return 2
+
+    if output_path is None and len(formats) > 1:
+        print("Error: multiple --format values require --output", file=sys.stderr)
         return 2
 
     # Parse models
@@ -181,36 +215,44 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    # Generate PlantUML
-    output = generate_plantuml(
-        entities=entities,
-        enums=enums,
-        title=title,
-        include_enums=not no_enums,
-        include_relationships=not no_relationships,
-    )
-
-    # Check mode: compare against the existing file, never write.
-    if args.check:
-        assert output_path is not None  # guarded above
-        existing = output_path.read_text() if output_path.exists() else None
-        if existing == output:
-            print(f"ERD is up to date: {output_path}", file=sys.stderr)
-            return 0
-        reason = "differs from" if existing is not None else "is missing at"
-        print(
-            f"Error: generated ERD {reason} {output_path}. Re-run erdify to update it.",
-            file=sys.stderr,
+    # Generate, then write each format to <output>.<ext> (or stdout / --check).
+    stale = False
+    for fmt in formats:
+        generate, ext = FORMATS[fmt]
+        rendered = generate(
+            entities=entities,
+            enums=enums,
+            title=title,
+            include_enums=not no_enums,
+            include_relationships=not no_relationships,
         )
-        return 1
+        target = output_path.with_suffix(ext) if output_path is not None else None
 
-    # Write output
+        if args.check:
+            assert target is not None  # guarded above
+            existing = target.read_text() if target.exists() else None
+            if existing == rendered:
+                print(f"{fmt} ERD is up to date: {target}", file=sys.stderr)
+            else:
+                reason = "differs from" if existing is not None else "is missing at"
+                print(
+                    f"Error: generated {fmt} ERD {reason} {target}. Re-run erdify to update it.",
+                    file=sys.stderr,
+                )
+                stale = True
+            continue
+
+        if target is not None:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(rendered)
+            print(f"Generated {fmt} ERD: {target}", file=sys.stderr)
+        else:
+            print(rendered)
+
+    if args.check:
+        return 1 if stale else 0
+
     if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(output)
-        print(f"Generated ERD diagram: {output_path}", file=sys.stderr)
         print(f"  Found {len(entities)} entities and {len(enums)} enums", file=sys.stderr)
-    else:
-        print(output)
 
     return 0

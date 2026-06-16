@@ -3,7 +3,12 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .config import EntityInfo, EnumInfo, FieldInfo
-from .generator import PlantUMLGenerator, generate_plantuml
+from .generator import (
+    MermaidGenerator,
+    PlantUMLGenerator,
+    generate_mermaid,
+    generate_plantuml,
+)
 from .parser import ASTDatabaseParser, parse_models_directory
 
 try:
@@ -22,6 +27,8 @@ __all__ = [
     # Generator
     "PlantUMLGenerator",
     "generate_plantuml",
+    "MermaidGenerator",
+    "generate_mermaid",
     # Version
     "__version__",
 ]

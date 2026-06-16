@@ -110,6 +110,29 @@ class TestCheckMode:
             assert main() != 0
         assert "--output" in capsys.readouterr().err
 
+    def test_check_all_formats(self, tmp_path: Path):
+        p = _project(tmp_path, "")
+        base = tmp_path / "erd"
+        with patch.object(
+            sys, "argv", ["erdify", str(p), "-o", str(base), "--format", "plantuml", "mermaid"]
+        ):
+            assert main() == 0
+        # both up to date -> 0
+        with patch.object(
+            sys,
+            "argv",
+            ["erdify", str(p), "-o", str(base), "--format", "plantuml", "mermaid", "--check"],
+        ):
+            assert main() == 0
+        # break only the mermaid file -> non-zero
+        (tmp_path / "erd.mmd").write_text("stale")
+        with patch.object(
+            sys,
+            "argv",
+            ["erdify", str(p), "-o", str(base), "--format", "plantuml", "mermaid", "--check"],
+        ):
+            assert main() == 1
+
     def test_module_entrypoint_propagates_exit_code(self, tmp_path: Path):
         """`python -m erdify ... --check` must exit non-zero when stale (CI relies on it)."""
         p = _project(tmp_path, "")

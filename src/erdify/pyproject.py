@@ -10,6 +10,7 @@ CONFIG_KEYS = frozenset(
     {
         "title",
         "output",
+        "format",
         "sources",
         "exclude",
         "exclude_paths",

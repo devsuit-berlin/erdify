@@ -27,7 +27,8 @@
 - 📦 **Inheritance Support** - Resolves fields from base classes and mixins
 - 🏷️ **Enum Support** - Includes enum definitions in the diagram
 - 🔄 **Link Table Detection** - Identifies many-to-many association tables structurally
-- 🎨 **Beautiful Output** - Clean, readable PlantUML with proper styling
+- 🧜 **PlantUML & Mermaid** - `--format` outputs PlantUML and/or Mermaid (renders natively on GitHub)
+- 🎨 **Beautiful Output** - Clean, readable diagrams with proper styling
 
 ## 🚀 Quick Start
 
@@ -41,7 +42,7 @@ uvx erdify ./src/database -o erd.puml
 erdify ./src/models --title "My Database Schema"
 ```
 
-See the [documentation](docs/index.md) for installation options, the full CLI, the Python API and more.
+See the [documentation](https://github.com/devsuit-berlin/erdify/blob/main/docs/index.md) for installation options, the full CLI, the Python API and more.
 
 ## 🧬 One Schema, Five Frameworks
 
@@ -52,7 +53,7 @@ syntax differs. Each one produces the **identical** diagram:
 
 > ℹ️ The SQLModel, SQLAlchemy and Django versions declare keys explicitly (Django
 > via its implicit `id` and `ForeignKey`). Pydantic and dataclasses have no key
-> concept, so they are rendered with [`--infer-keys`](docs/usage/filtering.md#inferring-keys---infer-keys)
+> concept, so they are rendered with [`--infer-keys`](https://github.com/devsuit-berlin/erdify/blob/main/docs/usage/filtering.md#inferring-keys---infer-keys)
 > (`id` → PK, `<x>_id` → FK) to match. The runnable sources live in
 > [`docs/examples/`](https://github.com/devsuit-berlin/erdify/tree/main/docs/examples).
 
@@ -206,17 +207,18 @@ class Order(models.Model):
 > or a Django `class Meta: abstract = True` base) are not drawn as tables, but
 > their columns are inherited into concrete entities.
 
-For a worked example with the generated PlantUML, see the [Frameworks Overview](docs/frameworks/index.md); for Django specifics see [Django ORM](docs/frameworks/django.md).
+For a worked example with the generated PlantUML, see the [Frameworks Overview](https://github.com/devsuit-berlin/erdify/blob/main/docs/frameworks/index.md); for Django specifics see [Django ORM](https://github.com/devsuit-berlin/erdify/blob/main/docs/frameworks/django.md).
 
 ## 📚 Documentation
 
-- [Installation](docs/installation.md) — pip, uv, pipx, or run with uvx
-- [CLI & Python API](docs/usage/cli.md) — all CLI options, running as a module, and the Python API
-- [Filtering & Key Inference](docs/usage/filtering.md) — `--exclude`, `--exclude-paths`, `--sources`, `--infer-keys`
-- [Viewing the Diagram](docs/usage/viewing.md) — render online, locally with PlantUML, or in VS Code
-- [CI/CD & pre-commit](docs/usage/ci.md) — automate ERD generation in CI and on commit
-- [Frameworks Overview](docs/frameworks/index.md) — a worked example with the generated PlantUML output
-- [Django ORM](docs/frameworks/django.md) — Django-specific parsing details
+- [Installation](https://github.com/devsuit-berlin/erdify/blob/main/docs/installation.md) — pip, uv, pipx, or run with uvx
+- [CLI & Python API](https://github.com/devsuit-berlin/erdify/blob/main/docs/usage/cli.md) — all CLI options, running as a module, and the Python API
+- [Output Formats](https://github.com/devsuit-berlin/erdify/blob/main/docs/usage/output-formats.md) — PlantUML & Mermaid, `--format`, output naming
+- [Filtering & Key Inference](https://github.com/devsuit-berlin/erdify/blob/main/docs/usage/filtering.md) — `--exclude`, `--exclude-paths`, `--sources`, `--infer-keys`
+- [Viewing the Diagram](https://github.com/devsuit-berlin/erdify/blob/main/docs/usage/viewing.md) — render online, locally with PlantUML, or in VS Code
+- [CI/CD & pre-commit](https://github.com/devsuit-berlin/erdify/blob/main/docs/usage/ci.md) — automate ERD generation in CI and on commit
+- [Frameworks Overview](https://github.com/devsuit-berlin/erdify/blob/main/docs/frameworks/index.md) — a worked example with the generated PlantUML output
+- [Django ORM](https://github.com/devsuit-berlin/erdify/blob/main/docs/frameworks/django.md) — Django-specific parsing details
 
 ## 📋 Supported Features
 
@@ -254,15 +256,15 @@ Have a feature request? Please open an issue on [GitHub](https://github.com/devs
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please see [CONTRIBUTING.md](https://github.com/devsuit-berlin/erdify/blob/main/CONTRIBUTING.md) for guidelines.
 
 ## 🔒 Security
 
-For security concerns, please see [SECURITY.md](SECURITY.md).
+For security concerns, please see [SECURITY.md](https://github.com/devsuit-berlin/erdify/blob/main/SECURITY.md).
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/devsuit-berlin/erdify/blob/main/LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -293,7 +295,7 @@ erdify stands on the shoulders of great open-source projects:
 
 - [Contributor Covenant](https://www.contributor-covenant.org/) - Our Code of Conduct
 - [Keep a Changelog](https://keepachangelog.com/) - Changelog format
-- And everyone who [contributes](CONTRIBUTING.md) issues, ideas and pull requests 💜
+- And everyone who [contributes](https://github.com/devsuit-berlin/erdify/blob/main/CONTRIBUTING.md) issues, ideas and pull requests 💜
 
 ---
 
