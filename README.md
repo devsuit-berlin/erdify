@@ -280,6 +280,7 @@ erdify stands on the shoulders of great open-source projects:
 
 - [PlantUML](https://plantuml.com/) - For the diagram rendering
 - [Graphviz](https://graphviz.org/) - Layout engine behind PlantUML's ER diagrams
+- [Mermaid](https://mermaid.js.org/) - Renders the `--format mermaid` / `html` output
 
 **Tooling & infrastructure**
 
