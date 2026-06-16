@@ -184,15 +184,16 @@ class ASTDatabaseParser:
                 rel for rel in entity.relationships if rel[0] not in excluded_names
             ]
 
+    #: Enum base class names recognized by erdify (stdlib Enum + Django choices).
+    _ENUM_BASES = frozenset({"Enum", "TextChoices", "IntegerChoices"})
+
     def _is_enum_class(self, class_node: ast.ClassDef) -> bool:
-        """Check if a class is an Enum."""
+        """Check if a class is an Enum or a Django TextChoices/IntegerChoices."""
         for base in class_node.bases:
-            if isinstance(base, ast.Attribute):
-                if base.attr == "Enum":
-                    return True
-            elif isinstance(base, ast.Name):
-                if base.id == "Enum":
-                    return True
+            if isinstance(base, ast.Attribute) and base.attr in self._ENUM_BASES:
+                return True
+            if isinstance(base, ast.Name) and base.id in self._ENUM_BASES:
+                return True
         return False
 
     def _parse_enum_class(self, class_node: ast.ClassDef) -> None:
@@ -713,13 +714,42 @@ class ASTDatabaseParser:
             elif keyword.arg == "default" and isinstance(keyword.value, ast.Constant):
                 default_value = repr(keyword.value.value)
 
+        # A choices= referencing a TextChoices/IntegerChoices class links the
+        # column to that enum; otherwise show the mapped/raw field type.
+        choices_enum = self._django_choices_enum(call)
+        type_str = choices_enum if choices_enum else self._django_display_type(field_type)
+
         return FieldInfo(
             name=name,
-            type_str=self._django_display_type(field_type),
+            type_str=type_str,
             is_primary_key=is_primary_key,
             is_nullable=is_nullable,
             default_value=default_value,
         )
+
+    def _django_choices_enum(self, call: ast.Call) -> str | None:
+        """Return the enum class name a ``choices=`` argument references, if any.
+
+        Handles ``choices=Status.choices`` and ``choices=Status``; the name must
+        resolve to a known TextChoices/IntegerChoices/Enum class. Inline
+        ``choices=[("a", "A"), ...]`` tuples are anonymous and not linked.
+        """
+        for keyword in call.keywords:
+            if keyword.arg != "choices":
+                continue
+            node = keyword.value
+            enum_name = None
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                enum_name = node.value.id  # Status.choices -> Status
+            elif isinstance(node, ast.Name):
+                enum_name = node.id  # choices=Status
+            if (
+                enum_name
+                and enum_name in self.all_classes
+                and self._is_enum_class(self.all_classes[enum_name])
+            ):
+                return enum_name
+        return None
 
     def _django_display_type(self, field_type: str) -> str:
         """Map a Django field type to a readable Python type.

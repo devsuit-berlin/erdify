@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Django `models.TextChoices` / `models.IntegerChoices` classes are now rendered
+  as enums, and a field referencing one via `choices=Status.choices` (or
+  `choices=Status`) is linked to that enum. Inline `choices=[("a", "A"), …]`
+  tuples are anonymous and not rendered.
+
 ## [0.5.0] - 2026-06-16
 
 ### Added

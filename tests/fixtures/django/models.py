@@ -38,12 +38,28 @@ class Tag(models.Model):
     label = models.CharField(max_length=50)
 
 
+class Status(models.TextChoices):
+    """A Django TextChoices enumeration."""
+
+    DRAFT = "draft", "Draft"
+    PUBLISHED = "published", "Published"
+
+
+class Priority(models.IntegerChoices):
+    """A Django IntegerChoices enumeration."""
+
+    LOW = 1, "Low"
+    HIGH = 2, "High"
+
+
 class Post(TimestampedModel):
-    """ForeignKey (N:1), plain ManyToManyField, and a db_table override."""
+    """ForeignKey (N:1), plain ManyToManyField, db_table override, and choices."""
 
     title = models.CharField(max_length=200)
     author = models.ForeignKey(Author, on_delete=models.CASCADE)
     tags = models.ManyToManyField("Tag")
+    status = models.CharField(max_length=10, choices=Status.choices)
+    priority = models.IntegerField(choices=Priority.choices)
 
     class Meta:
         db_table = "blog_post"
