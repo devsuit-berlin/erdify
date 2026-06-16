@@ -5,7 +5,7 @@ import re
 import sys
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, TypeGuard
 
 from .config import EntityInfo, EnumInfo, FieldInfo
 
@@ -61,6 +61,10 @@ class ASTDatabaseParser:
             source = self._classify_source(class_node)
             if source is not None and (self.sources is None or source in self.sources):
                 self._parse_table_class(class_node, source)
+
+        # Synthesize link entities from module-level Core Table(...) association
+        # tables referenced by relationship(secondary=...) (#34).
+        self._parse_core_association_tables()
 
         # Third pass: apply exclude patterns
         self._apply_exclude_patterns()
@@ -269,6 +273,106 @@ class ASTDatabaseParser:
         if len(fields) != 2:
             return False
         return all(f.is_foreign_key and f.is_primary_key for f in fields)
+
+    def _parse_core_association_tables(self) -> None:
+        """Synthesize link entities from module-level Core ``Table(...)`` assignments.
+
+        ``relationship(secondary=Table(...))`` points at a SQLAlchemy Core table
+        rather than a mapped class. Only class definitions become entities in the
+        normal passes, so such association tables - and their M:N - would be lost.
+        Parse module-level ``name = Table("t", metadata, Column(...), ...)``
+        assignments that are structurally association tables (exactly two FK
+        columns, both part of the primary key) and add them as link entities (#34).
+        """
+        if self.sources is not None and "sqlalchemy" not in self.sources:
+            return
+
+        for tree in self.file_trees.values():
+            for node in tree.body:
+                if not isinstance(node, ast.Assign):
+                    continue
+                if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                    continue
+                if not self._is_call_to(node.value, "Table"):
+                    continue
+
+                var_name = node.targets[0].id
+                entity = self._build_core_table_entity(var_name, node.value)
+                if entity is not None and entity.name not in self.entities:
+                    self.entities[entity.name] = entity
+
+    def _build_core_table_entity(self, var_name: str, call: ast.Call) -> EntityInfo | None:
+        """Build a link EntityInfo from a Core ``Table(...)`` call, or None if it
+        is not structurally an association table."""
+        # Table name is the first positional string arg; fall back to variable name.
+        table_name = var_name
+        if (
+            call.args
+            and isinstance(call.args[0], ast.Constant)
+            and isinstance(call.args[0].value, str)
+        ):
+            table_name = call.args[0].value
+
+        fields: List[FieldInfo] = []
+        for arg in call.args:
+            if self._is_call_to(arg, "Column"):
+                field = self._parse_core_column(arg)
+                if field is not None:
+                    fields.append(field)
+
+        if not self._is_structural_link_table(fields):
+            return None
+
+        entity = EntityInfo(
+            name=var_name,
+            table_name=table_name,
+            base_classes=[],
+            source="sqlalchemy",
+        )
+        entity.fields = fields
+        entity.is_link_table = True
+        return entity
+
+    def _parse_core_column(self, call: ast.Call) -> FieldInfo | None:
+        """Parse a Core ``Column("name", <Type>, ForeignKey(...), primary_key=...)``."""
+        if not call.args or not isinstance(call.args[0], ast.Constant):
+            return None
+        col_name = str(call.args[0].value)
+
+        is_primary_key = False
+        for keyword in call.keywords:
+            if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
+                is_primary_key = bool(keyword.value.value)
+
+        fk_target = self._extract_foreign_key_arg(call)
+
+        # An optional positional column type (e.g. Column("id", Integer, ...)).
+        type_str = ""
+        for arg in call.args[1:]:
+            if isinstance(arg, ast.Name):
+                type_str = arg.id
+                break
+            if isinstance(arg, ast.Attribute):
+                type_str = arg.attr
+                break
+
+        return FieldInfo(
+            name=col_name,
+            type_str=type_str,
+            is_primary_key=is_primary_key,
+            is_foreign_key=fk_target is not None,
+            foreign_table=fk_target,
+        )
+
+    @staticmethod
+    def _is_call_to(value: ast.expr, func_name: str) -> TypeGuard[ast.Call]:
+        """Check whether an expression is a call to ``func_name`` (Name or attribute)."""
+        if not isinstance(value, ast.Call):
+            return False
+        func = value.func
+        return (isinstance(func, ast.Name) and func.id == func_name) or (
+            isinstance(func, ast.Attribute) and func.attr == func_name
+        )
 
     def _collect_fields_recursive(
         self, class_node: ast.ClassDef, visited: set[str], model_kind: str

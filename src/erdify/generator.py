@@ -174,6 +174,11 @@ class PlantUMLGenerator:
                 default_val = default_val.split(".")[-1]
             default = f" = {default_val}"
 
+        # Omit the type suffix entirely when the type is unknown (e.g. an
+        # untyped Core Column on a synthesized link table) to avoid a dangling ":".
+        if not type_str:
+            return f"{prefix}({field.name})"
+
         return f"{prefix}({field.name}) : {type_str}{nullable}{default}"
 
     def _build_link_table_map(self) -> Dict[Tuple[str, str], str]:

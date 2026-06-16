@@ -82,3 +82,9 @@ def m2m_secondary_dir() -> Path:
 def link_detection_dir() -> Path:
     """Path to structural link-table detection models (#35)."""
     return FIXTURES_DIR / "link_detection"
+
+
+@pytest.fixture
+def m2m_secondary_table_dir() -> Path:
+    """Path to SQLAlchemy M:N via relationship(secondary=Table(...)) (#34)."""
+    return FIXTURES_DIR / "m2m_secondary_table"
