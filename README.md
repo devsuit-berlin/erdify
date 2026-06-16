@@ -298,4 +298,4 @@ erdify stands on the shoulders of great open-source projects:
 
 ---
 
-Made with ❤️ by [Devsuit GmbH](https://github.com/devsuit-berlin)
+Created &amp; maintained with ❤️ by [devsuit GmbH](https://devsuit.de)
