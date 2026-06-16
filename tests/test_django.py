@@ -135,6 +135,36 @@ class TestDjangoManyToMany:
         assert frozenset(("Group", "Author")) not in _edges(output)
 
 
+class TestDjangoChoices:
+    """TextChoices/IntegerChoices render as enums and link via choices=."""
+
+    def test_text_choices_detected_as_enum(self, django_models_dir: Path):
+        _, enums = parse_models_directory(django_models_dir)
+
+        assert "Status" in enums
+        assert set(enums["Status"].values) == {"DRAFT", "PUBLISHED"}
+
+    def test_integer_choices_detected_as_enum(self, django_models_dir: Path):
+        _, enums = parse_models_directory(django_models_dir)
+
+        assert "Priority" in enums
+        assert set(enums["Priority"].values) == {"LOW", "HIGH"}
+
+    def test_choices_field_linked_to_enum(self, django_models_dir: Path):
+        entities, _ = parse_models_directory(django_models_dir)
+        post_fields = {f.name: f for f in entities["Post"].fields}
+
+        assert post_fields["status"].type_str == "Status"
+        assert post_fields["priority"].type_str == "Priority"
+
+    def test_choices_enum_rendered_and_linked(self, django_models_dir: Path):
+        entities, enums = parse_models_directory(django_models_dir)
+        output = PlantUMLGenerator(entities, enums).generate()
+
+        assert "enum Status" in output
+        assert "column(status) : Status" in output
+
+
 class TestDjangoSourcesFilter:
     def test_django_can_be_selected_via_sources(self, django_models_dir: Path):
         entities, _ = parse_models_directory(django_models_dir, sources=["django"])
