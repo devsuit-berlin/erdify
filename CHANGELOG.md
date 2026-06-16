@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `choices=Status`) is linked to that enum. Inline `choices=[("a", "A"), …]`
   tuples are anonymous and not rendered.
 
+### Changed
+
+- Documentation restructured: the README is slimmed to a quickstart, the
+  framework showcase and feature/roadmap overview, with the detailed reference
+  (CLI, filtering, viewing, CI, framework specifics) moved into a `docs/` tree.
+
 ## [0.5.0] - 2026-06-16
 
 ### Added
