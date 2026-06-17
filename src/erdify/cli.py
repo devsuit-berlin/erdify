@@ -7,6 +7,7 @@ from typing import Any
 
 from . import __version__
 from .generator import generate_html, generate_json, generate_mermaid, generate_plantuml
+from .inject import MarkerError, current_region, inject, render_region
 from .parser import MODEL_SOURCES, parse_models_directory
 from .pyproject import load_config
 
@@ -137,6 +138,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--inject",
+        metavar="FILE",
+        default=None,
+        help=(
+            "Inject the diagram into a markdown file between "
+            "'<!-- erdify:start -->' and '<!-- erdify:end -->' markers (only that "
+            "region is rewritten). Uses a single --format (default mermaid). "
+            "Combine with --check to fail on drift, e.g. --inject README.md"
+        ),
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help=(
@@ -187,8 +199,25 @@ def main() -> int:
     no_relationships = args.no_relationships or bool(config.get("no_relationships", False))
     no_default_excludes = args.no_default_excludes or bool(config.get("no_default_excludes", False))
 
+    # Output: CLI path (relative to cwd) > config path (relative to the project) > stdout.
+    output_path: Path | None = args.output
+    if output_path is None and "output" in config:
+        output_path = Path(config["output"])
+        if not output_path.is_absolute() and base_dir is not None:
+            output_path = base_dir / output_path
+
+    # --inject target: CLI flag > config; a relative config path resolves from
+    # the project root, like output.
+    inject_path: Path | None = Path(args.inject) if args.inject is not None else None
+    if inject_path is None and "inject" in config:
+        inject_path = Path(config["inject"])
+        if not inject_path.is_absolute() and base_dir is not None:
+            inject_path = base_dir / inject_path
+
     # Resolve output format(s); a config value may be a single string or a list.
-    formats = pick(args.format, "format", ["plantuml"])
+    # Default is mermaid when injecting into markdown, plantuml otherwise.
+    _fmt_default = "mermaid" if inject_path is not None else "plantuml"
+    formats = pick(args.format, "format", [_fmt_default])
     if isinstance(formats, str):
         formats = [formats]
     valid_formats = []
@@ -197,18 +226,11 @@ def main() -> int:
             valid_formats.append(fmt)
         else:
             print(f"Warning: unknown format '{fmt}', ignoring", file=sys.stderr)
-    formats = valid_formats or ["plantuml"]
+    formats = valid_formats or [_fmt_default]
 
-    # Output: CLI path (relative to cwd) > config path (relative to the project) > stdout.
-    output_path: Path | None = args.output
-    if output_path is None and "output" in config:
-        output_path = Path(config["output"])
-        if not output_path.is_absolute() and base_dir is not None:
-            output_path = base_dir / output_path
-
-    if args.check and output_path is None:
+    if args.check and output_path is None and inject_path is None:
         print(
-            "Error: --check requires --output (or 'output' in [tool.erdify])",
+            "Error: --check requires --output or --inject (or 'output'/'inject' in [tool.erdify])",
             file=sys.stderr,
         )
         return 2
@@ -216,6 +238,14 @@ def main() -> int:
     if output_path is None and len(formats) > 1:
         print("Error: multiple --format values require --output", file=sys.stderr)
         return 2
+
+    if inject_path is not None:
+        if len(formats) > 1:
+            print("Error: --inject needs a single --format (got multiple)", file=sys.stderr)
+            return 2
+        if formats[0] == "html":
+            print("Error: --inject cannot embed the html format", file=sys.stderr)
+            return 2
 
     # Parse models
     try:
@@ -253,8 +283,7 @@ def main() -> int:
         )
         target = output_path.with_suffix(ext) if output_path is not None else None
 
-        if args.check:
-            assert target is not None  # guarded above
+        if args.check and target is not None:
             existing = target.read_text() if target.exists() else None
             if existing == rendered:
                 print(f"{fmt} ERD is up to date: {target}", file=sys.stderr)
@@ -271,8 +300,45 @@ def main() -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(rendered)
             print(f"Generated {fmt} ERD: {target}", file=sys.stderr)
-        else:
+        elif inject_path is None:
             print(rendered)
+
+    if inject_path is not None:
+        fmt = formats[0]
+        generate, _ = FORMATS[fmt]
+        rendered = generate(
+            entities=entities,
+            enums=enums,
+            title=title,
+            include_enums=not no_enums,
+            include_relationships=not no_relationships,
+        )
+        region = render_region(rendered, fence=fmt)
+        try:
+            with inject_path.open(newline="") as f:
+                existing_text = f.read()
+        except FileNotFoundError:
+            print(f"Error: --inject target not found: {inject_path}", file=sys.stderr)
+            return 1
+        try:
+            if args.check:
+                if current_region(existing_text) == region:
+                    print(f"Injected ERD is up to date: {inject_path}", file=sys.stderr)
+                else:
+                    print(
+                        f"Error: injected ERD in {inject_path} is stale. "
+                        "Re-run erdify to update it.",
+                        file=sys.stderr,
+                    )
+                    stale = True
+            else:
+                new_text = inject(existing_text, region)
+                with inject_path.open("w", newline="") as f:
+                    f.write(new_text)
+                print(f"Injected {fmt} ERD into {inject_path}", file=sys.stderr)
+        except MarkerError as e:
+            print(f"Error: {e} in {inject_path}", file=sys.stderr)
+            return 1
 
     if args.check:
         return 1 if stale else 0

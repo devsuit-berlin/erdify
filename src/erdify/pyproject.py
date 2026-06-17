@@ -10,6 +10,7 @@ CONFIG_KEYS = frozenset(
     {
         "title",
         "output",
+        "inject",
         "format",
         "sources",
         "exclude",

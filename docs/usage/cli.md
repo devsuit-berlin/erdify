@@ -11,7 +11,8 @@ usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
               [--exclude-paths [PATTERN ...]] [--no-default-excludes]
               [--sources [KIND ...]] [--include PATTERN [PATTERN ...]]
               [--infer-keys] [--django-raw-types] [--no-enums]
-              [--no-relationships] [--format FMT [FMT ...]] [--check] [-v]
+              [--no-relationships] [--format FMT [FMT ...]] [--inject FILE]
+              [--check] [-v]
               input
 
 Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and
@@ -62,6 +63,11 @@ options:
                         json (.json), html (.html). Default: plantuml. With -o
                         the extension is set per format; multiple formats
                         require -o, e.g. --format plantuml mermaid
+  --inject FILE         Inject the diagram into a markdown file between '<!--
+                        erdify:start -->' and '<!-- erdify:end -->' markers
+                        (only that region is rewritten). Uses a single
+                        --format (default mermaid). Combine with --check to
+                        fail on drift, e.g. --inject README.md
   --check               Don't write; exit non-zero if the --output file is
                         missing or differs from the freshly generated diagram
                         (for CI / pre-commit drift checks)
@@ -100,11 +106,13 @@ flag enabled in config can be added to on the CLI but not turned off there.)
 ## Keeping the diagram in sync (`--check`)
 
 `--check` regenerates the diagram in memory and compares it to the existing
-`--output` file without writing. It exits `0` when they match and non-zero when
-the file is missing or stale — ideal for CI or a pre-commit hook.
+`--output` file or the injected region in an `--inject` target without writing.
+It exits `0` when the content is up to date and non-zero when the file is missing
+or stale — ideal for CI or a pre-commit hook.
 
 ```bash
 erdify ./src/database -o docs/erd.puml --check
+erdify ./src/database --inject README.md --check
 ```
 
 ## Running as Module

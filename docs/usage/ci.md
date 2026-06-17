@@ -94,3 +94,15 @@ pre-commit run generate-erd --all-files
 - 🚫 Fails if the diagram would change (ensuring docs stay in sync)
 
 **Tip:** Add `docs/erd.puml` to your staged files before committing, or use the `--all-files` flag to regenerate.
+
+## Keeping an embedded README diagram fresh
+
+If you embed the ERD in a markdown file with `--inject`, gate it in CI the same
+way as a file output:
+
+```bash
+erdify ./db --inject README.md --check
+```
+
+This exits non-zero when the diagram between the markers is stale, so a forgotten
+regeneration fails the build instead of silently shipping an outdated diagram.
