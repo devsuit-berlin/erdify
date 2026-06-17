@@ -95,3 +95,43 @@ in a browser to view the ERD (double-click). It loads Mermaid from a **pinned
 CDN** version, so it needs internet access to render. For offline/raster export,
 render the `.mmd` with [`@mermaid-js/mermaid-cli`](https://github.com/mermaid-js/mermaid-cli)
 or the `.puml` with PlantUML.
+
+## Embedding the diagram in Markdown (`--inject`)
+
+`--inject` writes the diagram into an existing markdown file between marker
+comments, so it renders natively on GitHub/GitLab. Add the markers once:
+
+```markdown
+## Database
+
+<!-- erdify:start -->
+<!-- erdify:end -->
+```
+
+Then run:
+
+```bash
+erdify ./db --inject README.md
+```
+
+erdify replaces only the text between the markers — everything else in the file
+is untouched. It uses a single `--format` (default `mermaid`, which renders on
+GitHub); the fenced block's language follows the format. `--format html` and
+multiple `--format` values are rejected with `--inject`.
+
+Settable via config:
+
+```toml
+[tool.erdify]
+inject = "README.md"
+```
+
+In CI or pre-commit, combine with `--check` to fail when the embedded diagram is
+out of date (nothing is written):
+
+```bash
+erdify ./db --inject README.md --check
+```
+
+If the file is missing or has no `<!-- erdify:start -->` / `<!-- erdify:end -->`
+markers, erdify errors and changes nothing.

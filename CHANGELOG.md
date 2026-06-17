@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--inject FILE` — write the diagram into a markdown file between
+  `<!-- erdify:start -->` / `<!-- erdify:end -->` markers, so it renders natively
+  on GitHub/GitLab. Only the marked region is rewritten; the rest of the file is
+  preserved. Uses a single `--format` (default `mermaid`); combine with `--check`
+  to fail on drift in CI. Also settable as `inject` in `[tool.erdify]`.
+
 ## [0.9.0] - 2026-06-17
 
 ### Added
