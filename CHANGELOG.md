@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--include` — scan model files beyond `models.py` via glob patterns (e.g.
+  `--include '**/models/*.py' tables.py`). Patterns with `/` match the path
+  relative to the input (`**` crosses directories); patterns without `/` match a
+  filename at any depth. `--include` replaces the default `models.py`, and is
+  also settable as `include` in `[tool.erdify]`. When run at the default, erdify
+  now hints (once, on stderr) about a `models/` package it skipped.
+
 ## [0.8.0] - 2026-06-17
 
 > **⚠️ Heads-up — your committed ERDs will reorder once after upgrading.**

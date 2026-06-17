@@ -70,6 +70,55 @@ DJANGO_FIELD_TYPE_MAP = {
 }
 
 
+def _translate_glob(pattern: str) -> str:
+    """Compile a gitignore-style path glob to an anchored regex string.
+
+    ``*`` and ``?`` match within a single path segment (never ``/``); ``**``
+    matches across segments (zero or more). Python 3.11 has no
+    ``PurePath.full_match`` and ``fnmatch`` lets ``*`` cross ``/``, so we
+    translate by hand.
+    """
+    i, n = 0, len(pattern)
+    out = ""
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            if i + 1 < n and pattern[i + 1] == "*":
+                j = i + 2
+                if j < n and pattern[j] == "/":
+                    out += "(?:[^/]+/)*"  # **/ -> any number of leading dirs
+                    i = j + 1
+                else:
+                    out += ".*"  # ** -> anything, including /
+                    i = j
+            else:
+                out += "[^/]*"  # * -> within one segment
+                i += 1
+        elif c == "?":
+            out += "[^/]"
+            i += 1
+        else:
+            out += re.escape(c)
+            i += 1
+    return "(?s:" + out + r")\Z"
+
+
+def _match_include(rel_path: str, filename: str, patterns: List[str]) -> bool:
+    """Whether a file matches any include pattern.
+
+    Slash patterns match the path relative to the input (``rel_path``) with
+    ``**`` support; slashless patterns match the ``filename`` basename at any
+    depth (so the default ``models.py`` keeps its recursive behavior).
+    """
+    for pattern in patterns:
+        if "/" in pattern:
+            if re.match(_translate_glob(pattern), rel_path):
+                return True
+        elif fnmatchcase(filename, pattern):
+            return True
+    return False
+
+
 class ASTDatabaseParser:
     """Parses database models using AST to extract schema information."""
 
@@ -82,6 +131,8 @@ class ASTDatabaseParser:
         django_raw_types: bool = False,
         exclude_paths: List[str] | None = None,
         use_default_excludes: bool = True,
+        include_patterns: List[str] | None = None,
+        hint_unmatched_model_packages: bool = False,
     ):
         self.database_path = database_path
         self.exclude_patterns = exclude_patterns or []
@@ -92,6 +143,15 @@ class ASTDatabaseParser:
         self.exclude_paths = exclude_paths or []
         #: Whether to skip DEFAULT_EXCLUDE_DIRS (venv/site-packages/caches) during the scan.
         self.use_default_excludes = use_default_excludes
+        #: Glob patterns selecting which files are scanned; default mirrors the
+        #: historical models.py-only behavior. Slash patterns match the path
+        #: relative to the input (with **); slashless patterns match basenames.
+        self.include_patterns = include_patterns or ["models.py"]
+        #: When True, warn (once, on stderr) about a models/ package that the
+        #: current include patterns skip. The CLI sets this only at the default;
+        #: the library stays silent so programmatic callers get no stderr noise.
+        self.hint_unmatched_model_packages = hint_unmatched_model_packages
+        self._unmatched_model_packages: List[Path] = []
         #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
         self.sources = set(sources) if sources else None
         self.entities: Dict[str, EntityInfo] = {}
@@ -137,27 +197,60 @@ class ASTDatabaseParser:
         return self.entities, self.enums
 
     def _discover_model_files(self) -> List[Path]:
-        """Find ``models.py`` files, pruning excluded directories during the walk.
+        """Find model files, pruning excluded directories during the walk.
 
         Default-excluded dirs (venv/site-packages/caches) are removed from the
         traversal *before* descending, so large trees like ``.venv`` are never
-        scandir'd — that filesystem walk, not AST parsing, dominates runtime on
-        real repos. ``exclude_paths`` globs are still matched per file via
+        scandir'd. A file is selected when it matches ``self.include_patterns``
+        (default ``["models.py"]``); ``exclude_paths`` then filters via
         :meth:`_is_path_excluded`. Results are sorted for deterministic output.
         """
+        base = self.database_path
         found: List[Path] = []
-        for dirpath, dirnames, filenames in os.walk(self.database_path):
+        model_packages: List[Path] = []
+        for dirpath, dirnames, filenames in os.walk(base):
             if self.use_default_excludes:
                 # In-place prune so os.walk does not descend into excluded dirs.
                 dirnames[:] = [d for d in dirnames if d not in DEFAULT_EXCLUDE_DIRS]
-            if "models.py" in filenames:
-                model_file = Path(dirpath) / "models.py"
-                if not self._is_path_excluded(model_file):
-                    found.append(model_file)
+            dpath = Path(dirpath)
+            if (
+                self.hint_unmatched_model_packages
+                and dpath.name == "models"
+                and any(f.endswith(".py") for f in filenames)
+            ):
+                model_packages.append(dpath)
+            for filename in filenames:
+                if not filename.endswith(".py"):
+                    continue
+                candidate = dpath / filename
+                try:
+                    rel = candidate.relative_to(base).as_posix()
+                except ValueError:
+                    rel = candidate.as_posix()
+                if not _match_include(rel, filename, self.include_patterns):
+                    continue
+                if not self._is_path_excluded(candidate):
+                    found.append(candidate)
+        # Only hint about packages whose files the current include patterns did
+        # not already pick up; otherwise the "was not scanned" message is false.
+        selected_dirs = {p.parent for p in found}
+        self._unmatched_model_packages = [p for p in model_packages if p not in selected_dirs]
+        if self._unmatched_model_packages:
+            example = sorted(self._unmatched_model_packages)[0]
+            try:
+                example_str = example.relative_to(self.database_path).as_posix()
+            except ValueError:
+                example_str = example.as_posix()
+            print(
+                f"Hint: found a models/ package ({example_str}) that was not scanned "
+                f"(the default only matches models.py). Use "
+                f"--include '**/models/*.py' to include it.",
+                file=sys.stderr,
+            )
         return sorted(found)
 
     def _is_path_excluded(self, model_file: Path) -> bool:
-        """Decide whether a discovered models.py should be skipped before parsing.
+        """Decide whether a discovered model file should be skipped before parsing.
 
         Skips files under a default non-project directory (venv/site-packages/
         caches, unless disabled) or matching an ``exclude_paths`` glob against the
@@ -167,7 +260,7 @@ class ASTDatabaseParser:
             rel = model_file.relative_to(self.database_path).as_posix()
         except ValueError:
             rel = model_file.as_posix()
-        segments = rel.split("/")[:-1]  # directory segments only (drop "models.py")
+        segments = rel.split("/")[:-1]  # directory segments only (drop the filename)
 
         if self.use_default_excludes and any(seg in DEFAULT_EXCLUDE_DIRS for seg in segments):
             return True
@@ -1021,6 +1114,8 @@ def parse_models_directory(
     django_raw_types: bool = False,
     exclude_paths: List[str] | None = None,
     use_default_excludes: bool = True,
+    include_patterns: List[str] | None = None,
+    hint_unmatched_model_packages: bool = False,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
     Parse SQLModel, SQLAlchemy, Django, Pydantic and dataclass models in a directory.
@@ -1040,6 +1135,10 @@ def parse_models_directory(
             skipped before parsing.
         use_default_excludes: Skip ``models.py`` files under known non-project
             directories (venv/site-packages/caches). Set ``False`` to scan them.
+        include_patterns: Glob patterns selecting which files are scanned.
+            Slash patterns match the path relative to ``path`` (``**`` crosses
+            dirs); slashless patterns match a basename at any depth. Defaults to
+            ``["models.py"]``.
 
     Returns:
         Tuple of (entities dict, enums dict)
@@ -1052,5 +1151,7 @@ def parse_models_directory(
         django_raw_types=django_raw_types,
         exclude_paths=exclude_paths,
         use_default_excludes=use_default_excludes,
+        include_patterns=include_patterns,
+        hint_unmatched_model_packages=hint_unmatched_model_packages,
     )
     return parser.parse_all_models()

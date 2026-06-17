@@ -14,6 +14,7 @@ CONFIG_KEYS = frozenset(
         "sources",
         "exclude",
         "exclude_paths",
+        "include",
         "infer_keys",
         "django_raw_types",
         "no_enums",

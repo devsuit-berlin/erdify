@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "input",
         type=Path,
-        help="Directory containing model files (searches for models.py recursively)",
+        help="Directory containing model files (searches for model files, models.py by default)",
     )
     parser.add_argument(
         "-o",
@@ -83,6 +83,19 @@ def build_parser() -> argparse.ArgumentParser:
             "Restrict which model kinds become entities. Choices: "
             f"{', '.join(MODEL_SOURCES)}. Default: all. "
             "e.g. --sources sqlmodel sqlalchemy for DB tables only"
+        ),
+    )
+    parser.add_argument(
+        "--include",
+        nargs="+",
+        default=None,
+        metavar="PATTERN",
+        help=(
+            "Glob patterns for files to scan (default: models.py). A pattern "
+            "with '/' matches the path relative to input ('**' crosses dirs); a "
+            "pattern without '/' matches a filename at any depth. Replaces the "
+            "default, so list models.py too if you want it, e.g. --include "
+            "models.py '**/models/*.py' tables.py"
         ),
     )
     parser.add_argument(
@@ -164,6 +177,9 @@ def main() -> int:
     sources = pick(args.sources, "sources", None)
     exclude = pick(args.exclude, "exclude", [])
     exclude_paths = pick(args.exclude_paths, "exclude_paths", [])
+    include = pick(args.include, "include", ["models.py"])
+    # Hint only when the user left discovery at the default (neither CLI nor config).
+    include_is_default = args.include is None and "include" not in config
     # Boolean flags merge by OR (a flag enabled in config or on the CLI is enabled).
     infer_keys = args.infer_keys or bool(config.get("infer_keys", False))
     django_raw_types = args.django_raw_types or bool(config.get("django_raw_types", False))
@@ -211,6 +227,8 @@ def main() -> int:
             django_raw_types=django_raw_types,
             exclude_paths=exclude_paths,
             use_default_excludes=not no_default_excludes,
+            include_patterns=include,
+            hint_unmatched_model_packages=include_is_default,
         )
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)

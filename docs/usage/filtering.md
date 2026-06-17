@@ -2,6 +2,47 @@
 
 Control which entities and model kinds appear in the diagram, and derive keys for keyless models.
 
+## Choosing Which Files Are Scanned (`--include`)
+
+By default erdify scans every file named `models.py` (at any depth). To scan
+other files — a `models/` package, or files like `tables.py`/`db.py` — pass
+`--include` with one or more glob patterns:
+
+```bash
+# A models/ package split across files
+erdify ./app --include '**/models/*.py'
+
+# Keep models.py AND add a package and a custom file
+erdify ./app --include models.py '**/models/*.py' tables.py
+```
+
+Pattern rules:
+
+- A pattern **with `/`** (e.g. `**/models/*.py`, `app/db.py`) matches the path
+  relative to the input. `**` crosses directories; `*` and `?` do not cross `/`.
+- A pattern **without `/`** (e.g. `models.py`, `*_models.py`) matches a
+  **filename at any depth**.
+
+`--include` **replaces** the default, so include `models.py` explicitly if you
+still want it. Equivalent `[tool.erdify]` config:
+
+```toml
+[tool.erdify]
+include = ["models.py", "**/models/*.py"]
+```
+
+If erdify sees a `models/` package while running with the default, it prints a
+one-line hint suggesting `--include '**/models/*.py'`.
+
+!!! tip "Prefer targeted patterns over `**/*.py`"
+    Point `--include` at where your models actually live (`**/models/*.py`,
+    `tables.py`, `*_models.py`) rather than scanning every Python file with
+    `**/*.py`. A repo-wide scan also reads unrelated modules — and if a
+    non-model class happens to share a name with one of your models (e.g. a
+    `Paragraph` helper in a test file and a `Paragraph` model), the last file
+    parsed wins, so a model can be shadowed and dropped from the diagram.
+    Narrow patterns keep the scan fast and unambiguous.
+
 ## Excluding Entities
 
 Use `--exclude` to drop tables/entities from the diagram. Each pattern is a

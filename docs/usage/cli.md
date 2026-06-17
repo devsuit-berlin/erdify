@@ -9,17 +9,17 @@ erdify ships a command-line interface, a module entry point, and a Python API fo
 ```text
 usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
               [--exclude-paths [PATTERN ...]] [--no-default-excludes]
-              [--sources [KIND ...]] [--infer-keys] [--django-raw-types]
-              [--no-enums] [--no-relationships] [--format FMT [FMT ...]]
-              [--check] [-v]
+              [--sources [KIND ...]] [--include PATTERN [PATTERN ...]]
+              [--infer-keys] [--django-raw-types] [--no-enums]
+              [--no-relationships] [--format FMT [FMT ...]] [--check] [-v]
               input
 
 Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and
 dataclass models
 
 positional arguments:
-  input                 Directory containing model files (searches for
-                        models.py recursively)
+  input                 Directory containing model files (searches for model
+                        files, models.py by default)
 
 options:
   -h, --help            show this help message and exit
@@ -42,6 +42,13 @@ options:
                         sqlmodel, sqlalchemy, django, dataclass, pydantic.
                         Default: all. e.g. --sources sqlmodel sqlalchemy for
                         DB tables only
+  --include PATTERN [PATTERN ...]
+                        Glob patterns for files to scan (default: models.py).
+                        A pattern with '/' matches the path relative to input
+                        ('**' crosses dirs); a pattern without '/' matches a
+                        filename at any depth. Replaces the default, so list
+                        models.py too if you want it, e.g. --include models.py
+                        '**/models/*.py' tables.py
   --infer-keys          For keyless models (Pydantic/dataclass), infer a
                         primary key from a field named 'id' and a foreign key
                         from '<x>_id' (target table '<x>')
