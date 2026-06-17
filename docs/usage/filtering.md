@@ -34,6 +34,15 @@ include = ["models.py", "**/models/*.py"]
 If erdify sees a `models/` package while running with the default, it prints a
 one-line hint suggesting `--include '**/models/*.py'`.
 
+!!! tip "Prefer targeted patterns over `**/*.py`"
+    Point `--include` at where your models actually live (`**/models/*.py`,
+    `tables.py`, `*_models.py`) rather than scanning every Python file with
+    `**/*.py`. A repo-wide scan also reads unrelated modules — and if a
+    non-model class happens to share a name with one of your models (e.g. a
+    `Paragraph` helper in a test file and a `Paragraph` model), the last file
+    parsed wins, so a model can be shadowed and dropped from the diagram.
+    Narrow patterns keep the scan fast and unambiguous.
+
 ## Excluding Entities
 
 Use `--exclude` to drop tables/entities from the diagram. Each pattern is a
