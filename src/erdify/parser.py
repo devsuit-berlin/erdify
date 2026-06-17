@@ -246,7 +246,7 @@ class ASTDatabaseParser:
         return sorted(found)
 
     def _is_path_excluded(self, model_file: Path) -> bool:
-        """Decide whether a discovered models.py should be skipped before parsing.
+        """Decide whether a discovered model file should be skipped before parsing.
 
         Skips files under a default non-project directory (venv/site-packages/
         caches, unless disabled) or matching an ``exclude_paths`` glob against the
@@ -256,7 +256,7 @@ class ASTDatabaseParser:
             rel = model_file.relative_to(self.database_path).as_posix()
         except ValueError:
             rel = model_file.as_posix()
-        segments = rel.split("/")[:-1]  # directory segments only (drop "models.py")
+        segments = rel.split("/")[:-1]  # directory segments only (drop the filename)
 
         if self.use_default_excludes and any(seg in DEFAULT_EXCLUDE_DIRS for seg in segments):
             return True
