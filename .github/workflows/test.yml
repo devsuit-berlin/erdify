@@ -52,3 +52,17 @@ jobs:
         run: uv sync --frozen
       - name: Run Tests
         run: uv run pytest --cov=erdify tests/ --cov-report=xml --cov-report=term-missing
+
+  # Single aggregate check to require in branch protection / rulesets. It turns
+  # green only when every matrix leg above passes, so new Python versions or OSes
+  # can be added to the matrix without editing the required-checks list. The
+  # 3.15 pre-release leg is continue-on-error, so its failures do not block here.
+  gate:
+    name: Tests passed
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any matrix job failed
+        if: needs.test.result != 'success'
+        run: exit 1
