@@ -131,6 +131,7 @@ class ASTDatabaseParser:
         django_raw_types: bool = False,
         exclude_paths: List[str] | None = None,
         use_default_excludes: bool = True,
+        include_patterns: List[str] | None = None,
     ):
         self.database_path = database_path
         self.exclude_patterns = exclude_patterns or []
@@ -141,6 +142,10 @@ class ASTDatabaseParser:
         self.exclude_paths = exclude_paths or []
         #: Whether to skip DEFAULT_EXCLUDE_DIRS (venv/site-packages/caches) during the scan.
         self.use_default_excludes = use_default_excludes
+        #: Glob patterns selecting which files are scanned; default mirrors the
+        #: historical models.py-only behavior. Slash patterns match the path
+        #: relative to the input (with **); slashless patterns match basenames.
+        self.include_patterns = include_patterns or ["models.py"]
         #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
         self.sources = set(sources) if sources else None
         self.entities: Dict[str, EntityInfo] = {}
@@ -186,23 +191,33 @@ class ASTDatabaseParser:
         return self.entities, self.enums
 
     def _discover_model_files(self) -> List[Path]:
-        """Find ``models.py`` files, pruning excluded directories during the walk.
+        """Find model files, pruning excluded directories during the walk.
 
         Default-excluded dirs (venv/site-packages/caches) are removed from the
         traversal *before* descending, so large trees like ``.venv`` are never
-        scandir'd — that filesystem walk, not AST parsing, dominates runtime on
-        real repos. ``exclude_paths`` globs are still matched per file via
+        scandir'd. A file is selected when it matches ``self.include_patterns``
+        (default ``["models.py"]``); ``exclude_paths`` then filters via
         :meth:`_is_path_excluded`. Results are sorted for deterministic output.
         """
+        base = self.database_path
         found: List[Path] = []
-        for dirpath, dirnames, filenames in os.walk(self.database_path):
+        for dirpath, dirnames, filenames in os.walk(base):
             if self.use_default_excludes:
                 # In-place prune so os.walk does not descend into excluded dirs.
                 dirnames[:] = [d for d in dirnames if d not in DEFAULT_EXCLUDE_DIRS]
-            if "models.py" in filenames:
-                model_file = Path(dirpath) / "models.py"
-                if not self._is_path_excluded(model_file):
-                    found.append(model_file)
+            dpath = Path(dirpath)
+            for filename in filenames:
+                if not filename.endswith(".py"):
+                    continue
+                candidate = dpath / filename
+                try:
+                    rel = candidate.relative_to(base).as_posix()
+                except ValueError:
+                    rel = candidate.as_posix()
+                if not _match_include(rel, filename, self.include_patterns):
+                    continue
+                if not self._is_path_excluded(candidate):
+                    found.append(candidate)
         return sorted(found)
 
     def _is_path_excluded(self, model_file: Path) -> bool:
@@ -1070,6 +1085,7 @@ def parse_models_directory(
     django_raw_types: bool = False,
     exclude_paths: List[str] | None = None,
     use_default_excludes: bool = True,
+    include_patterns: List[str] | None = None,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
     Parse SQLModel, SQLAlchemy, Django, Pydantic and dataclass models in a directory.
@@ -1089,6 +1105,10 @@ def parse_models_directory(
             skipped before parsing.
         use_default_excludes: Skip ``models.py`` files under known non-project
             directories (venv/site-packages/caches). Set ``False`` to scan them.
+        include_patterns: Glob patterns selecting which files are scanned.
+            Slash patterns match the path relative to ``path`` (``**`` crosses
+            dirs); slashless patterns match a basename at any depth. Defaults to
+            ``["models.py"]``.
 
     Returns:
         Tuple of (entities dict, enums dict)
@@ -1101,5 +1121,6 @@ def parse_models_directory(
         django_raw_types=django_raw_types,
         exclude_paths=exclude_paths,
         use_default_excludes=use_default_excludes,
+        include_patterns=include_patterns,
     )
     return parser.parse_all_models()
