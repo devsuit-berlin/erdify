@@ -1,6 +1,7 @@
 """AST-based parser for SQLModel, SQLAlchemy, Django, Pydantic and dataclass models."""
 
 import ast
+import os
 import re
 import sys
 from fnmatch import fnmatchcase
@@ -100,9 +101,7 @@ class ASTDatabaseParser:
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
         """Parse all model files in the database directory."""
-        model_files = [
-            f for f in self.database_path.rglob("models.py") if not self._is_path_excluded(f)
-        ]
+        model_files = self._discover_model_files()
 
         # First pass: parse all files and collect class definitions
         for model_file in model_files:
@@ -136,6 +135,26 @@ class ASTDatabaseParser:
         self._apply_exclude_patterns()
 
         return self.entities, self.enums
+
+    def _discover_model_files(self) -> List[Path]:
+        """Find ``models.py`` files, pruning excluded directories during the walk.
+
+        Default-excluded dirs (venv/site-packages/caches) are removed from the
+        traversal *before* descending, so large trees like ``.venv`` are never
+        scandir'd — that filesystem walk, not AST parsing, dominates runtime on
+        real repos. ``exclude_paths`` globs are still matched per file via
+        :meth:`_is_path_excluded`. Results are sorted for deterministic output.
+        """
+        found: List[Path] = []
+        for dirpath, dirnames, filenames in os.walk(self.database_path):
+            if self.use_default_excludes:
+                # In-place prune so os.walk does not descend into excluded dirs.
+                dirnames[:] = [d for d in dirnames if d not in DEFAULT_EXCLUDE_DIRS]
+            if "models.py" in filenames:
+                model_file = Path(dirpath) / "models.py"
+                if not self._is_path_excluded(model_file):
+                    found.append(model_file)
+        return sorted(found)
 
     def _is_path_excluded(self, model_file: Path) -> bool:
         """Decide whether a discovered models.py should be skipped before parsing.
