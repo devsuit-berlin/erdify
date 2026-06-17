@@ -22,12 +22,14 @@
 - 🔑 **Key Inference** - `--infer-keys` derives PK/FK from field names for keyless models
 - 🚫 **Exclude Patterns** - Filter out entities by class or table name with glob patterns
 - 🎚️ **Source Filtering** - Restrict the diagram to specific model kinds with `--sources`
+- 🧲 **Flexible Discovery** - `--include` globs scan `models/` packages and custom filenames, not just `models.py`
 - ⚙️ **Config File** - Commit options under `[tool.erdify]` in `pyproject.toml`
 - ✅ **Drift Check** - `--check` fails CI/pre-commit when the committed diagram is stale
 - 📦 **Inheritance Support** - Resolves fields from base classes and mixins
 - 🏷️ **Enum Support** - Includes enum definitions in the diagram
 - 🔄 **Link Table Detection** - Identifies many-to-many association tables structurally
 - 🧜 **4 Output Formats** - `--format` emits PlantUML, Mermaid (renders natively on GitHub), JSON, or a self-contained HTML preview
+- 📝 **Markdown Embed** - `--inject` writes the diagram into a Markdown file between markers, so it renders natively on GitHub/GitLab
 - 🎨 **Beautiful Output** - Clean, readable diagrams with proper styling
 
 ## 🚀 Quick Start
@@ -61,8 +63,8 @@ The runnable sources live in [`docs/examples/`](https://github.com/devsuit-berli
 
 - [Installation](https://erdify.devsuit.io/installation/) — pip, uv, pipx, or run with uvx
 - [CLI & Python API](https://erdify.devsuit.io/usage/cli/) — all CLI options, running as a module, and the Python API
-- [Output Formats](https://erdify.devsuit.io/usage/output-formats/) — PlantUML & Mermaid, `--format`, output naming
-- [Filtering & Key Inference](https://erdify.devsuit.io/usage/filtering/) — `--exclude`, `--exclude-paths`, `--sources`, `--infer-keys`
+- [Output Formats](https://erdify.devsuit.io/usage/output-formats/) — PlantUML & Mermaid, `--format`, `--inject` into Markdown, output naming
+- [Filtering & Key Inference](https://erdify.devsuit.io/usage/filtering/) — `--exclude`, `--exclude-paths`, `--include`, `--sources`, `--infer-keys`
 - [Viewing the Diagram](https://erdify.devsuit.io/usage/viewing/) — render online, locally with PlantUML, or in VS Code
 - [CI/CD & pre-commit](https://erdify.devsuit.io/usage/ci/) — automate ERD generation in CI and on commit
 - [Frameworks Overview](https://erdify.devsuit.io/frameworks/) — a worked example with the generated PlantUML output
@@ -84,6 +86,8 @@ The runnable sources live in [`docs/examples/`](https://github.com/devsuit-berli
 | Custom Table Names | ✅ | `__tablename__` attribute |
 | Exclude Patterns | ✅ | `--exclude` glob on class/table name |
 | Key Inference | ✅ | `--infer-keys` for Pydantic/dataclass (`id`, `<x>_id`) |
+| File Discovery | ✅ | `--include` globs (`models/` packages, custom filenames) |
+| Markdown Embed | ✅ | `--inject` into Markdown between `erdify:start`/`erdify:end` markers |
 | SQLModel | ✅ | `Field()` / `Relationship()` |
 | SQLAlchemy 2.0 | ✅ | `Mapped[...]` / `mapped_column()` |
 | Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships |
