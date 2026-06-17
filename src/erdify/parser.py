@@ -207,6 +207,7 @@ class ASTDatabaseParser:
         """
         base = self.database_path
         found: List[Path] = []
+        model_packages: List[Path] = []
         for dirpath, dirnames, filenames in os.walk(base):
             if self.use_default_excludes:
                 # In-place prune so os.walk does not descend into excluded dirs.
@@ -217,7 +218,7 @@ class ASTDatabaseParser:
                 and dpath.name == "models"
                 and any(f.endswith(".py") for f in filenames)
             ):
-                self._unmatched_model_packages.append(dpath)
+                model_packages.append(dpath)
             for filename in filenames:
                 if not filename.endswith(".py"):
                     continue
@@ -230,6 +231,10 @@ class ASTDatabaseParser:
                     continue
                 if not self._is_path_excluded(candidate):
                     found.append(candidate)
+        # Only hint about packages whose files the current include patterns did
+        # not already pick up; otherwise the "was not scanned" message is false.
+        selected_dirs = {p.parent for p in found}
+        self._unmatched_model_packages = [p for p in model_packages if p not in selected_dirs]
         if self._unmatched_model_packages:
             example = sorted(self._unmatched_model_packages)[0]
             print(

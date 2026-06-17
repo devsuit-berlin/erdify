@@ -113,3 +113,15 @@ class TestModelsPackageHint:
         _make(tmp_path, "app/models.py", "Widget")
         parse_models_directory(tmp_path, hint_unmatched_model_packages=True)
         assert capsys.readouterr().err == ""
+
+    def test_no_hint_when_package_already_scanned(self, tmp_path, capsys):
+        # The package is already covered by include_patterns, so a "was not
+        # scanned" hint would be a false positive.
+        _make(tmp_path, "app/models/order.py", "Order")
+        entities, _ = parse_models_directory(
+            tmp_path,
+            include_patterns=["**/models/*.py"],
+            hint_unmatched_model_packages=True,
+        )
+        assert "Order" in entities
+        assert capsys.readouterr().err == ""
