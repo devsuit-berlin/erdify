@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The `models.py` scan now prunes excluded directories (venv/site-packages/
+  caches) **during** the directory walk instead of filtering them out after a
+  full `rglob`. Large non-project trees like `.venv` are no longer traversed,
+  cutting scan time substantially on real repos (e.g. ~6800 → ~120 directories
+  walked, ~3.5× faster end-to-end on a repo with erdify running from its root).
+- Discovered model files are now sorted, so the generated ERD has a
+  deterministic, machine-independent element order. Existing diagrams may show a
+  one-time reordering diff on regeneration; output is stable thereafter.
+
 ## [0.7.2] - 2026-06-16
 
 ### Changed
