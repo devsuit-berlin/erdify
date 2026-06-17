@@ -367,3 +367,105 @@ def test_include_cli_overrides_config(tmp_path, capsys):
     assert rc == 0
     assert "Thing" in out  # CLI pattern wins
     assert "User" not in out  # config pattern not applied
+
+
+_MD = "# Schema\n\n<!-- erdify:start -->\nOLD\n<!-- erdify:end -->\n\nfooter\n"
+
+
+def _models(tmp_path):
+    (tmp_path / "models.py").write_text(
+        "from dataclasses import dataclass\n\n\n@dataclass\nclass Widget:\n    id: int\n"
+    )
+
+
+def test_inject_writes_region_and_preserves_file(tmp_path):
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text(_MD)
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md)]):
+        rc = main()
+    assert rc == 0
+    text = md.read_text()
+    assert text.startswith("# Schema\n\n<!-- erdify:start -->")
+    assert text.endswith("<!-- erdify:end -->\n\nfooter\n")
+    assert "```mermaid" in text and "Widget" in text
+    assert "OLD" not in text
+
+
+def test_inject_is_idempotent(tmp_path):
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text(_MD)
+    argv = ["erdify", str(tmp_path), "--inject", str(md)]
+    with patch.object(sys, "argv", argv):
+        main()
+    first = md.read_text()
+    with patch.object(sys, "argv", argv):
+        main()
+    assert md.read_text() == first
+
+
+def test_inject_check_up_to_date(tmp_path):
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text(_MD)
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md)]):
+        main()
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md), "--check"]):
+        rc = main()
+    assert rc == 0
+
+
+def test_inject_check_stale(tmp_path):
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text(_MD)
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md), "--check"]):
+        rc = main()
+    assert rc == 1
+    assert md.read_text() == _MD  # nothing written
+
+
+def test_inject_missing_markers_errors(tmp_path):
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text("# no markers here\n")
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md)]):
+        rc = main()
+    assert rc == 1
+    assert md.read_text() == "# no markers here\n"  # unchanged
+
+
+def test_inject_multiple_formats_errors(tmp_path):
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text(_MD)
+    with patch.object(
+        sys,
+        "argv",
+        ["erdify", str(tmp_path), "--inject", str(md), "--format", "mermaid", "plantuml"],
+    ):
+        rc = main()
+    assert rc == 2
+
+
+def test_inject_html_errors(tmp_path):
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text(_MD)
+    with patch.object(
+        sys, "argv", ["erdify", str(tmp_path), "--inject", str(md), "--format", "html"]
+    ):
+        rc = main()
+    assert rc == 2
+
+
+def test_inject_config_key(tmp_path):
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text(_MD)
+    (tmp_path / "pyproject.toml").write_text(f'[tool.erdify]\ninject = "{md.name}"\n')
+    with patch.object(sys, "argv", ["erdify", str(tmp_path)]):
+        rc = main()
+    assert rc == 0
+    assert "```mermaid" in md.read_text()
