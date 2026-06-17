@@ -132,6 +132,7 @@ class ASTDatabaseParser:
         exclude_paths: List[str] | None = None,
         use_default_excludes: bool = True,
         include_patterns: List[str] | None = None,
+        hint_unmatched_model_packages: bool = False,
     ):
         self.database_path = database_path
         self.exclude_patterns = exclude_patterns or []
@@ -146,6 +147,11 @@ class ASTDatabaseParser:
         #: historical models.py-only behavior. Slash patterns match the path
         #: relative to the input (with **); slashless patterns match basenames.
         self.include_patterns = include_patterns or ["models.py"]
+        #: When True, warn (once, on stderr) about a models/ package that the
+        #: current include patterns skip. The CLI sets this only at the default;
+        #: the library stays silent so programmatic callers get no stderr noise.
+        self.hint_unmatched_model_packages = hint_unmatched_model_packages
+        self._unmatched_model_packages: List[Path] = []
         #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
         self.sources = set(sources) if sources else None
         self.entities: Dict[str, EntityInfo] = {}
@@ -206,6 +212,12 @@ class ASTDatabaseParser:
                 # In-place prune so os.walk does not descend into excluded dirs.
                 dirnames[:] = [d for d in dirnames if d not in DEFAULT_EXCLUDE_DIRS]
             dpath = Path(dirpath)
+            if (
+                self.hint_unmatched_model_packages
+                and dpath.name == "models"
+                and any(f.endswith(".py") for f in filenames)
+            ):
+                self._unmatched_model_packages.append(dpath)
             for filename in filenames:
                 if not filename.endswith(".py"):
                     continue
@@ -218,6 +230,14 @@ class ASTDatabaseParser:
                     continue
                 if not self._is_path_excluded(candidate):
                     found.append(candidate)
+        if self._unmatched_model_packages:
+            example = sorted(self._unmatched_model_packages)[0]
+            print(
+                f"Hint: found a models/ package ({example}) that was not scanned "
+                f"(the default only matches models.py). Use "
+                f"--include '**/models/*.py' to include it.",
+                file=sys.stderr,
+            )
         return sorted(found)
 
     def _is_path_excluded(self, model_file: Path) -> bool:
@@ -1086,6 +1106,7 @@ def parse_models_directory(
     exclude_paths: List[str] | None = None,
     use_default_excludes: bool = True,
     include_patterns: List[str] | None = None,
+    hint_unmatched_model_packages: bool = False,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
     Parse SQLModel, SQLAlchemy, Django, Pydantic and dataclass models in a directory.
@@ -1122,5 +1143,6 @@ def parse_models_directory(
         exclude_paths=exclude_paths,
         use_default_excludes=use_default_excludes,
         include_patterns=include_patterns,
+        hint_unmatched_model_packages=hint_unmatched_model_packages,
     )
     return parser.parse_all_models()

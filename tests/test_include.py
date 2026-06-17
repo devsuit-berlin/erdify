@@ -94,3 +94,22 @@ class TestIncludeDiscovery:
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/models/*.py"])
         assert "Order" in entities
         assert "Junk" not in entities
+
+
+class TestModelsPackageHint:
+    def test_hint_emitted_when_default_and_package_present(self, tmp_path, capsys):
+        _make(tmp_path, "app/models.py", "Widget")
+        _make(tmp_path, "app/models/order.py", "Order")
+        parse_models_directory(tmp_path, hint_unmatched_model_packages=True)
+        err = capsys.readouterr().err
+        assert "models/" in err and "--include" in err
+
+    def test_no_hint_when_flag_off(self, tmp_path, capsys):
+        _make(tmp_path, "app/models/order.py", "Order")
+        parse_models_directory(tmp_path)  # library default: silent
+        assert capsys.readouterr().err == ""
+
+    def test_no_hint_when_no_package(self, tmp_path, capsys):
+        _make(tmp_path, "app/models.py", "Widget")
+        parse_models_directory(tmp_path, hint_unmatched_model_packages=True)
+        assert capsys.readouterr().err == ""
