@@ -237,8 +237,12 @@ class ASTDatabaseParser:
         self._unmatched_model_packages = [p for p in model_packages if p not in selected_dirs]
         if self._unmatched_model_packages:
             example = sorted(self._unmatched_model_packages)[0]
+            try:
+                example_str = example.relative_to(self.database_path).as_posix()
+            except ValueError:
+                example_str = example.as_posix()
             print(
-                f"Hint: found a models/ package ({example}) that was not scanned "
+                f"Hint: found a models/ package ({example_str}) that was not scanned "
                 f"(the default only matches models.py). Use "
                 f"--include '**/models/*.py' to include it.",
                 file=sys.stderr,

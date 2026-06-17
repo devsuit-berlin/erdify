@@ -345,3 +345,17 @@ def test_include_config_key(tmp_path, capsys):
         rc = main()
     assert rc == 0
     assert "User" in capsys.readouterr().out
+
+
+def test_include_cli_overrides_config(tmp_path, capsys):
+    # Config would scan the package; the explicit CLI flag replaces it with tables.py.
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "user.py").write_text(_DC_CLI.format(name="User"))
+    (tmp_path / "tables.py").write_text(_DC_CLI.format(name="Thing"))
+    (tmp_path / "pyproject.toml").write_text('[tool.erdify]\ninclude = ["**/models/*.py"]\n')
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--include", "tables.py"]):
+        rc = main()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Thing" in out  # CLI pattern wins
+    assert "User" not in out  # config pattern not applied
