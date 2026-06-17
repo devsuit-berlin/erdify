@@ -315,7 +315,8 @@ def main() -> int:
         )
         region = render_region(rendered, fence=fmt)
         try:
-            existing_text = inject_path.read_text()
+            with inject_path.open(newline="") as f:
+                existing_text = f.read()
         except FileNotFoundError:
             print(f"Error: --inject target not found: {inject_path}", file=sys.stderr)
             return 1
@@ -331,7 +332,9 @@ def main() -> int:
                     )
                     stale = True
             else:
-                inject_path.write_text(inject(existing_text, region))
+                new_text = inject(existing_text, region)
+                with inject_path.open("w", newline="") as f:
+                    f.write(new_text)
                 print(f"Injected {fmt} ERD into {inject_path}", file=sys.stderr)
         except MarkerError as e:
             print(f"Error: {e} in {inject_path}", file=sys.stderr)

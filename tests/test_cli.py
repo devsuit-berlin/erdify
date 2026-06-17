@@ -469,3 +469,29 @@ def test_inject_config_key(tmp_path):
         rc = main()
     assert rc == 0
     assert "```mermaid" in md.read_text()
+
+
+def test_inject_crlf_preserves_line_endings(tmp_path):
+    """Injecting into a CRLF file preserves CRLF bytes outside the markers,
+    and --check immediately after exits 0 (write/check consistent)."""
+    from dataclasses import dataclass  # noqa: F401 – only needed for the model
+
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_bytes(
+        "# T\r\n\r\n<!-- erdify:start -->\r\n<!-- erdify:end -->\r\n\r\nfoot\r\n".encode()
+    )
+
+    # Inject
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md)]):
+        rc = main()
+    assert rc == 0
+
+    raw = md.read_bytes()
+    # Bytes outside the markers must still contain CRLF
+    assert b"\r\n" in raw, "CRLF line endings were not preserved after inject"
+
+    # --check must agree with what was just written (exit 0)
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md), "--check"]):
+        rc = main()
+    assert rc == 0, "--check disagreed with the write that just happened"

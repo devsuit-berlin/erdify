@@ -62,3 +62,23 @@ class TestCurrentRegion:
     def test_round_trips_with_render_region(self):
         block = render_region("erDiagram", "mermaid")
         assert current_region(inject(_DOC, block)) == block
+
+
+class TestAttributeMarkers:
+    """Markers carrying attributes (e.g. id=db) must be matched leniently."""
+
+    _DOC_ATTRS = "# Title\n\n<!-- erdify:start id=db -->\nOLD\n<!-- erdify:end id=db -->\n\noutro\n"
+
+    def test_inject_with_attribute_markers(self):
+        block = render_region("erDiagram", "mermaid")
+        out = inject(self._DOC_ATTRS, block)
+        # Markers with attributes are preserved verbatim
+        assert "<!-- erdify:start id=db -->" in out
+        assert "<!-- erdify:end id=db -->" in out
+        assert "OLD" not in out
+        assert "```mermaid\nerDiagram\n```" in out
+
+    def test_current_region_with_attribute_markers(self):
+        block = render_region("erDiagram", "mermaid")
+        injected = inject(self._DOC_ATTRS, block)
+        assert current_region(injected) == block

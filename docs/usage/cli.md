@@ -106,11 +106,13 @@ flag enabled in config can be added to on the CLI but not turned off there.)
 ## Keeping the diagram in sync (`--check`)
 
 `--check` regenerates the diagram in memory and compares it to the existing
-`--output` file without writing. It exits `0` when they match and non-zero when
-the file is missing or stale — ideal for CI or a pre-commit hook.
+`--output` file or the injected region in an `--inject` target without writing.
+It exits `0` when the content is up to date and non-zero when the file is missing
+or stale — ideal for CI or a pre-commit hook.
 
 ```bash
 erdify ./src/database -o docs/erd.puml --check
+erdify ./src/database --inject README.md --check
 ```
 
 ## Running as Module
