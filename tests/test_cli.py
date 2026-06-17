@@ -322,3 +322,26 @@ class TestCLIIntegration:
 
         # Verify relationships section exists
         assert "' Relationships" in content
+
+
+_DC_CLI = "from dataclasses import dataclass\n\n\n@dataclass\nclass {name}:\n    id: int\n"
+
+
+def test_include_flag_finds_models_package(tmp_path, capsys):
+    (tmp_path / "app" / "models").mkdir(parents=True)
+    (tmp_path / "app" / "models" / "order.py").write_text(_DC_CLI.format(name="Order"))
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--include", "**/models/*.py"]):
+        rc = main()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Order" in out
+
+
+def test_include_config_key(tmp_path, capsys):
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "user.py").write_text(_DC_CLI.format(name="User"))
+    (tmp_path / "pyproject.toml").write_text('[tool.erdify]\ninclude = ["**/models/*.py"]\n')
+    with patch.object(sys, "argv", ["erdify", str(tmp_path)]):
+        rc = main()
+    assert rc == 0
+    assert "User" in capsys.readouterr().out
