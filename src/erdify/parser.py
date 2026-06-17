@@ -70,6 +70,55 @@ DJANGO_FIELD_TYPE_MAP = {
 }
 
 
+def _translate_glob(pattern: str) -> str:
+    """Compile a gitignore-style path glob to an anchored regex string.
+
+    ``*`` and ``?`` match within a single path segment (never ``/``); ``**``
+    matches across segments (zero or more). Python 3.11 has no
+    ``PurePath.full_match`` and ``fnmatch`` lets ``*`` cross ``/``, so we
+    translate by hand.
+    """
+    i, n = 0, len(pattern)
+    out = ""
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            if i + 1 < n and pattern[i + 1] == "*":
+                j = i + 2
+                if j < n and pattern[j] == "/":
+                    out += "(?:[^/]+/)*"  # **/ -> any number of leading dirs
+                    i = j + 1
+                else:
+                    out += ".*"  # ** -> anything, including /
+                    i = j
+            else:
+                out += "[^/]*"  # * -> within one segment
+                i += 1
+        elif c == "?":
+            out += "[^/]"
+            i += 1
+        else:
+            out += re.escape(c)
+            i += 1
+    return "(?s:" + out + r")\Z"
+
+
+def _match_include(rel_path: str, filename: str, patterns: List[str]) -> bool:
+    """Whether a file matches any include pattern.
+
+    Slash patterns match the path relative to the input (``rel_path``) with
+    ``**`` support; slashless patterns match the ``filename`` basename at any
+    depth (so the default ``models.py`` keeps its recursive behavior).
+    """
+    for pattern in patterns:
+        if "/" in pattern:
+            if re.match(_translate_glob(pattern), rel_path):
+                return True
+        elif fnmatchcase(filename, pattern):
+            return True
+    return False
+
+
 class ASTDatabaseParser:
     """Parses database models using AST to extract schema information."""
 
