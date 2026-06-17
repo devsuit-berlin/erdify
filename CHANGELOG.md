@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-17
+
+> **⚠️ Heads-up — your committed ERDs will reorder once after upgrading.**
+> Model files are now discovered in **sorted** order, so the elements in the
+> generated `.puml` / `.mmd` output appear in a new, deterministic order. The
+> **diagram content is unchanged** — identical entities, columns and
+> relationships — only their ordering differs. Expect a **one-time diff** the
+> next time erdify regenerates (e.g. in a pre-commit hook or CI `--check`);
+> commit it once and output is stable across machines thereafter.
+
 ### Changed
 
 - The `models.py` scan now prunes excluded directories (venv/site-packages/
