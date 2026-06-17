@@ -347,6 +347,14 @@ def test_include_config_key(tmp_path, capsys):
     assert "User" in capsys.readouterr().out
 
 
+def test_include_requires_a_pattern(tmp_path):
+    # --include with no pattern is a usage error (nargs="+"), not a silent no-op.
+    with patch.object(sys, "argv", ["erdify", str(tmp_path), "--include"]):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+
+
 def test_include_cli_overrides_config(tmp_path, capsys):
     # Config would scan the package; the explicit CLI flag replaces it with tables.py.
     (tmp_path / "models").mkdir()

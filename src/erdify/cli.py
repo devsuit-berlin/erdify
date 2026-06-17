@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "input",
         type=Path,
-        help="Directory containing model files (searches for models.py recursively)",
+        help="Directory containing model files (searches for model files, models.py by default)",
     )
     parser.add_argument(
         "-o",
@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--include",
-        nargs="*",
+        nargs="+",
         default=None,
         metavar="PATTERN",
         help=(
