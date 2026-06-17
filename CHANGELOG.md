@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-17
+
 ### Added
 
 - `--include` — scan model files beyond `models.py` via glob patterns (e.g.
