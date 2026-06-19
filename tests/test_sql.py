@@ -205,3 +205,49 @@ def test_import_erdify_does_not_import_sqlglot():
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ---------------------------------------------------------------------------
+# Task 10: golden integration fixture + Python↔SQL parity test
+# ---------------------------------------------------------------------------
+from erdify.generator import generate_plantuml  # noqa: E402
+
+FIX = Path(__file__).parent / "fixtures" / "sql"
+
+
+def test_sql_golden_matches() -> None:
+    entities, enums = parse_models_directory(FIX / "ecommerce.sql", sql_dialect="postgres")
+    rendered = generate_plantuml(entities=entities, enums=enums, title="E-Commerce ERD")
+    expected = (FIX / "expected.puml").read_text().rstrip("\n")
+    assert rendered == expected
+
+
+def test_sql_and_python_render_equivalent_structure(tmp_path: Path) -> None:
+    # Minimal user/order schema in SQL...
+    (tmp_path / "schema.sql").write_text(
+        'CREATE TABLE "user" (id INTEGER PRIMARY KEY, email VARCHAR NOT NULL);'
+        'CREATE TABLE "order" (id INTEGER PRIMARY KEY, '
+        'user_id INTEGER NOT NULL REFERENCES "user"(id));'
+    )
+    sql_entities, _ = parse_models_directory(tmp_path / "schema.sql")
+    # ...and the same in SQLModel.
+    (tmp_path / "models.py").write_text(
+        "from sqlmodel import SQLModel, Field\n"
+        "class User(SQLModel, table=True):\n"
+        "    id: int = Field(primary_key=True)\n"
+        "    email: str\n"
+        "class Order(SQLModel, table=True):\n"
+        "    id: int = Field(primary_key=True)\n"
+        '    user_id: int = Field(foreign_key="user.id")\n'
+    )
+    py_entities, _ = parse_models_directory(tmp_path, include_patterns=["models.py"])
+
+    def fk_pairs(entities):  # type: ignore[no-untyped-def]
+        return {
+            (e.table_name, f.foreign_table.split(".")[0])
+            for e in entities.values()
+            for f in e.fields
+            if f.is_foreign_key and f.foreign_table
+        }
+
+    assert fk_pairs(sql_entities) == fk_pairs(py_entities) == {("order", "user")}

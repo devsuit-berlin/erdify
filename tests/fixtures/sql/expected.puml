@@ -1,0 +1,54 @@
+@startuml E-Commerce ERD
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define primary_key(x) <b><color:#b8861b><&key></color> x</b>
+!define foreign_key(x) <color:#aaaaaa><&key></color> x
+!define column(x) <color:#efefef><&media-record></color> x
+
+skinparam linetype ortho
+skinparam roundcorner 5
+skinparam class {
+    BackgroundColor White
+    ArrowColor Gray
+    BorderColor Gray
+}
+
+' Enums
+
+enum order_status << (E,#FFCC00) >> {
+  pending
+  paid
+  shipped
+}
+
+' Entities
+
+entity "customer" as customer {
+  primary_key(id) : int?
+  column(email) : varchar(255)
+  column(name) : varchar(120)?
+}
+
+entity "order" as order {
+  primary_key(id) : int?
+  foreign_key(customer_id) : int
+  column(status) : order_status? = 'pending'
+  column(total) : decimal?
+}
+
+entity "product" as product {
+  primary_key(id) : int?
+  column(sku) : varchar(64)
+}
+
+entity "order_item" as order_item << (L, #AAFFAA) link >> {
+  primary_key(order_id) : int?
+  primary_key(product_id) : int?
+}
+
+' Relationships
+
+order }o--|| customer : "customer_id"
+order ||--o{ order_item : "order_id"
+order_item }o--|| product : "product_id"
+
+@enduml
