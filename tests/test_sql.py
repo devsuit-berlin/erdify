@@ -189,3 +189,19 @@ def test_public_export() -> None:
     import erdify
 
     assert hasattr(erdify, "SqlSchemaParser")
+
+
+def test_import_erdify_does_not_import_sqlglot():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import erdify, sys; assert 'sqlglot' not in sys.modules, 'sqlglot imported eagerly'",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
