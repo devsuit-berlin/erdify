@@ -20,7 +20,7 @@
 - 🔗 **Relationship Detection** - Foreign keys, relationships and many-to-many link tables
 - 🧜 **4 Output Formats** - `--format` emits PlantUML, Mermaid (renders natively on GitHub), JSON, or a self-contained HTML preview
 - 📝 **Markdown Embed** - `--inject` writes the diagram into a Markdown file between markers
-- ⚙️ **Config File** - Commit options under `[tool.erdify]` in `pyproject.toml`
+- ⚙️ **Config File** - Store options under `[tool.erdify]` in `pyproject.toml`
 - ✅ **Drift Check** - `--check` fails CI/pre-commit when the committed diagram is stale
 
 See the [full feature matrix](https://erdify.devsuit.io/features/) for everything erdify recognizes.
