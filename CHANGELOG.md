@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-19
+
 ### Added
 
 - SQL DDL frontend via the optional `erdify[sql]` extra (sqlglot): generate an
@@ -251,7 +253,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/devsuit-berlin/erdify/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/devsuit-berlin/erdify/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/devsuit-berlin/erdify/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/devsuit-berlin/erdify/compare/v0.7.2...v0.8.0
