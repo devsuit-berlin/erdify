@@ -21,6 +21,8 @@ keywords = [
     "diagram",
     "database",
     "erdify",
+    "sql",
+    "ddl",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -35,8 +37,11 @@ classifiers = [
 ]
 dependencies = []  # No runtime dependencies - uses stdlib ast module
 
+[project.optional-dependencies]
+sql = ["sqlglot>=25"]
+
 [dependency-groups]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel", "sqlalchemy", "pydantic", "django"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel", "sqlalchemy", "pydantic", "django", "sqlglot"]
 docs = ["mkdocs-material"]
 
 [project.scripts]

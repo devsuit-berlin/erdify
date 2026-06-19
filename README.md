@@ -10,17 +10,17 @@
 
 > 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel, SQLAlchemy, Django, Pydantic and dataclass models automatically!
 
-**erdify** parses your model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. It supports SQLModel, SQLAlchemy 2.0, Django ORM, Pydantic and standard-library dataclasses. No database connection required!
+**erdify** parses your model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. It supports SQLModel, SQLAlchemy 2.0, Django ORM, Pydantic and standard-library dataclasses — and raw SQL DDL files (`.sql`) via the optional `erdify[sql]` extra. No database connection required!
 
 ## ✨ Features
 
-- 🧬 **5 Frameworks** - SQLModel, SQLAlchemy 2.0, Django ORM, Pydantic and dataclasses
+- 🧬 **5 Python Frameworks + SQL DDL** - SQLModel, SQLAlchemy 2.0, Django ORM, Pydantic, dataclasses, and raw `.sql` files (via [`erdify[sql]`](https://erdify.devsuit.io/frameworks/sql/))
 - 🔍 **AST-Based Parsing** - No imports needed, works with any valid Python code
-- 🎯 **Zero Runtime Dependencies** - Uses only Python standard library
+- 🎯 **Zero dependencies by default** — core uses only the stdlib; SQL support is an opt-in extra (`erdify[sql]`)
 - 🔗 **Relationship Detection** - Foreign keys, relationships and many-to-many link tables
 - 🧜 **4 Output Formats** - `--format` emits PlantUML, Mermaid (renders natively on GitHub), JSON, or a self-contained HTML preview
 - 📝 **Markdown Embed** - `--inject` writes the diagram into a Markdown file between markers
-- ⚙️ **Config File** - Commit options under `[tool.erdify]` in `pyproject.toml`
+- ⚙️ **Config File** - Store options under `[tool.erdify]` in `pyproject.toml`
 - ✅ **Drift Check** - `--check` fails CI/pre-commit when the committed diagram is stale
 
 See the [full feature matrix](https://erdify.devsuit.io/features/) for everything erdify recognizes.
@@ -62,6 +62,7 @@ The runnable sources live in [`docs/examples/`](https://github.com/devsuit-berli
 - [CI/CD & pre-commit](https://erdify.devsuit.io/usage/ci/) — automate ERD generation in CI and on commit
 - [Frameworks Overview](https://erdify.devsuit.io/frameworks/) — a worked example with the generated PlantUML output
 - [Django ORM](https://erdify.devsuit.io/frameworks/django/) — Django-specific parsing details
+- [SQL DDL](https://erdify.devsuit.io/frameworks/sql/) — generate ERDs from `.sql` files with `erdify[sql]`
 
 ## 📋 Supported Features
 

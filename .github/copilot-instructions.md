@@ -12,7 +12,7 @@ of the language a request is written in.
 
 ## Commands
 
-This project uses [uv](https://docs.astral.sh/uv/). All commands run through `uv run`.
+This project uses [uv](https://docs.astral.sh/uv/). Apart from `uv sync`, the commands below run through `uv run`.
 
 ```bash
 uv sync                                  # Install deps into .venv (use --frozen in CI)

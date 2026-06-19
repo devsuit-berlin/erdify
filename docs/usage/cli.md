@@ -10,17 +10,16 @@ erdify ships a command-line interface, a module entry point, and a Python API fo
 usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
               [--exclude-paths [PATTERN ...]] [--no-default-excludes]
               [--sources [KIND ...]] [--include PATTERN [PATTERN ...]]
-              [--infer-keys] [--django-raw-types] [--no-enums]
-              [--no-relationships] [--format FMT [FMT ...]] [--inject FILE]
-              [--check] [-v]
+              [--sql-dialect NAME] [--infer-keys] [--django-raw-types]
+              [--no-enums] [--no-relationships] [--format FMT [FMT ...]]
+              [--inject FILE] [--check] [-v]
               input
 
 Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and
 dataclass models
 
 positional arguments:
-  input                 Directory containing model files (searches for model
-                        files, models.py by default)
+  input                 Directory or file with models (.py) or SQL DDL (.sql)
 
 options:
   -h, --help            show this help message and exit
@@ -50,6 +49,9 @@ options:
                         filename at any depth. Replaces the default, so list
                         models.py too if you want it, e.g. --include models.py
                         '**/models/*.py' tables.py
+  --sql-dialect NAME    SQL dialect hint for parsing .sql DDL with the [sql]
+                        extra (e.g. postgres, mysql, sqlite). Default: a
+                        permissive generic read
   --infer-keys          For keyless models (Pydantic/dataclass), infer a
                         primary key from a field named 'id' and a foreign key
                         from '<x>_id' (target table '<x>')

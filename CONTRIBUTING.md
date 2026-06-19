@@ -51,6 +51,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create virtual environment and install dependencies
 uv sync
+
+# To work on the SQL DDL frontend, include the optional sql extra:
+uv sync --extra sql
 ```
 
 Using pip:
@@ -156,6 +159,10 @@ erdify tests/fixtures/ecommerce --title 'E-Commerce ERD' -o tests/fixtures/ecomm
    ```
 
 4. Add the fixture to `test_integration.py`
+
+SQL DDL test fixtures live in `tests/fixtures/sql/` — each subdirectory contains
+one or more `.sql` files and the corresponding expected output. Make sure you have
+the `[sql]` extra installed (`uv sync --extra sql`) before running the SQL tests.
 
 ## 📤 Submitting Changes
 

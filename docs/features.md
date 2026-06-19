@@ -25,3 +25,4 @@ framework is detected and a worked example, see the
 | Django ORM | ✅ | `models.Model`, `ForeignKey` / `OneToOneField` / `ManyToManyField` |
 | Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships |
 | Dataclass | ✅ | `@dataclass`, nested refs as relationships |
+| SQL DDL | ✅ | via `erdify[sql]` (sqlglot); `CREATE TABLE` + FK/PK + enums; `CREATE INDEX` is JSON-only (see Indexes note above) |

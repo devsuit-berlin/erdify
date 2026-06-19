@@ -1,5 +1,6 @@
 """Tests for CLI module."""
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 import sys
@@ -56,15 +57,13 @@ class TestCLI:
         assert "does not exist" in captured.err
 
     def test_cli_file_instead_of_dir(self, sample_models_dir: Path, capsys):
-        """Test CLI with file instead of directory."""
+        """Passing a single .py file is accepted; the CLI passes it to parse_models_directory."""
         file_path = sample_models_dir / "models.py"
 
         with patch.object(sys, "argv", ["erdify", str(file_path)]):
             result = main()
 
-        assert result == 1
-        captured = capsys.readouterr()
-        assert "not a directory" in captured.err
+        assert result == 0
 
     def test_cli_creates_output_dir(self, sample_models_dir: Path, temp_dir: Path):
         """Test that CLI creates output directory if needed."""
@@ -495,3 +494,15 @@ def test_inject_crlf_preserves_line_endings(tmp_path):
     with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md), "--check"]):
         rc = main()
     assert rc == 0, "--check disagreed with the write that just happened"
+
+
+def test_cli_generates_erd_from_sql_file(tmp_path):
+    sql = tmp_path / "schema.sql"
+    sql.write_text('CREATE TABLE "user" (id INTEGER PRIMARY KEY);')
+    out = subprocess.run(
+        [sys.executable, "-m", "erdify", str(sql), "--format", "mermaid"],
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 0
+    assert "user" in out.stdout
