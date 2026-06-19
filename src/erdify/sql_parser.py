@@ -189,9 +189,10 @@ class SqlSchemaParser:
             for c in coldef.constraints:
                 ref = c.kind if hasattr(c, "kind") else None
                 if isinstance(ref, exp.Reference):  # type: ignore[attr-defined]
-                    rt, rc = self._reference_target(ref, exp)
-                    self._set_fk(table, coldef.name, rt, rc)
-        # Table-level FOREIGN KEY (...) REFERENCES t(c).
+                    rt, rcs = self._reference_target_multi(ref, exp)
+                    # Inline REFERENCES always has exactly one local column.
+                    self._set_fk(table, coldef.name, rt, rcs[0] if rcs else "id")
+        # Table-level FOREIGN KEY (...) REFERENCES t(c1, c2, ...).
         for fk in schema.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
             cols = [
                 e.name
@@ -199,8 +200,12 @@ class SqlSchemaParser:
                 if isinstance(e, exp.Identifier)  # type: ignore[attr-defined]
             ]
             ref = fk.args.get("reference")
-            rt, rc = self._reference_target(ref, exp) if ref is not None else ("", "")
-            for col in cols:
+            if ref is not None:
+                rt, rcs = self._reference_target_multi(ref, exp)
+            else:
+                rt, rcs = "", []
+            for i, col in enumerate(cols):
+                rc = rcs[i] if i < len(rcs) else (rcs[0] if rcs else "id")
                 self._set_fk(table, col, rt, rc)
 
     def _alter_foreign_keys(self, alter: "object", exp: "object") -> None:
@@ -212,27 +217,35 @@ class SqlSchemaParser:
                 if isinstance(e, exp.Identifier)  # type: ignore[attr-defined]
             ]
             ref = fk.args.get("reference")
-            rt, rc = self._reference_target(ref, exp) if ref is not None else ("", "")
-            for col in cols:
+            if ref is not None:
+                rt, rcs = self._reference_target_multi(ref, exp)
+            else:
+                rt, rcs = "", []
+            for i, col in enumerate(cols):
+                rc = rcs[i] if i < len(rcs) else (rcs[0] if rcs else "id")
                 self._set_fk(table, col, rt, rc)
 
     @staticmethod
-    def _reference_target(ref: "object", exp: "object") -> tuple[str, str]:
-        """Extract (ref_table_name, ref_col_name) from an exp.Reference node.
+    def _reference_target_multi(ref: "object", exp: "object") -> tuple[str, list[str]]:
+        """Extract (ref_table_name, [ref_col_names]) from an exp.Reference node.
 
         The Reference wraps a Schema whose .this is the target Table and whose
         .expressions are the referenced column Identifiers.  Using
         schema.expressions avoids the ambiguity of find_all(Identifier) which
         also returns the table-name identifier.
+
+        Returns all referenced columns so callers can pair them positionally with
+        local FK columns (composite FK support). Falls back to ["id"] when no
+        explicit columns are listed (bare REFERENCES t with no column list).
         """
         table_node = ref.find(exp.Table)  # type: ignore[attr-defined]
         ref_table = table_node.name if table_node is not None else ""
         schema_node = ref.this  # type: ignore[attr-defined]
         if hasattr(schema_node, "expressions") and schema_node.expressions:
-            ref_col = schema_node.expressions[0].name
+            ref_cols = [e.name for e in schema_node.expressions]
         else:
-            ref_col = "id"
-        return ref_table, ref_col
+            ref_cols = ["id"]
+        return ref_table, ref_cols
 
     def _mark_index(self, create: "object", exp: "object") -> None:
         """Set FieldInfo.index=True for columns covered by a CREATE INDEX statement."""

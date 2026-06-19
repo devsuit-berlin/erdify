@@ -138,6 +138,43 @@ def test_create_index_sets_index_flag(tmp_path: Path) -> None:
     assert cols["id"].index is False
 
 
+def test_composite_foreign_key_pairs_columns_positionally(tmp_path: Path) -> None:
+    """Table-level FOREIGN KEY (a, b) REFERENCES parent(a, b) must pair columns positionally."""
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE parent (a INTEGER, b INTEGER, PRIMARY KEY (a, b));
+        CREATE TABLE child (
+            a INTEGER,
+            b INTEGER,
+            FOREIGN KEY (a, b) REFERENCES parent(a, b)
+        );
+        """,
+    )
+    child_cols = {f.name: f for f in entities["child"].fields}
+    assert child_cols["a"].is_foreign_key is True
+    assert child_cols["a"].foreign_table == "parent.a"
+    assert child_cols["b"].is_foreign_key is True
+    assert child_cols["b"].foreign_table == "parent.b"
+
+
+def test_composite_foreign_key_alter_table_pairs_columns_positionally(tmp_path: Path) -> None:
+    """ALTER TABLE ... ADD FOREIGN KEY (a, b) REFERENCES parent(a, b) must pair positionally."""
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE parent (a INTEGER, b INTEGER, PRIMARY KEY (a, b));
+        CREATE TABLE child (a INTEGER, b INTEGER);
+        ALTER TABLE child ADD CONSTRAINT fk FOREIGN KEY (a, b) REFERENCES parent(a, b);
+        """,
+    )
+    child_cols = {f.name: f for f in entities["child"].fields}
+    assert child_cols["a"].is_foreign_key is True
+    assert child_cols["a"].foreign_table == "parent.a"
+    assert child_cols["b"].is_foreign_key is True
+    assert child_cols["b"].foreign_table == "parent.b"
+
+
 def test_unresolvable_fk_reference_leaves_plain_column(tmp_path: Path) -> None:
     """_set_fk with an empty ref_table must not flag the column as a foreign key.
 

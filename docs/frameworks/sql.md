@@ -17,16 +17,19 @@ you request the `[sql]` extra.
 
 ## Usage
 
-Point erdify at a single `.sql` file or a directory that contains `.sql` files:
+Point erdify at a single `.sql` file, or at a directory together with
+`--include '*.sql'` to discover `.sql` files recursively. Passing a directory
+**without** `--include` uses the default `models.py` pattern and will not pick
+up any `.sql` files.
 
 ```bash
-# Single file
+# Single file — no --include needed
 erdify schema.sql
 
-# Directory — discovers all .sql files recursively
-erdify ./db/migrations
+# Directory — must add --include to discover .sql files
+erdify ./db/migrations --include '*.sql'
 
-# Restrict discovery with --include
+# Deeper trees use the same pattern
 erdify ./db --include '*.sql'
 
 # Specify the SQL dialect explicitly

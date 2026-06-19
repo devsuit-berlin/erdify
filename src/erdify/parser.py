@@ -1119,7 +1119,11 @@ def parse_models_directory(
     sql_dialect: str | None = None,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
-    Parse SQLModel, SQLAlchemy, Django, Pydantic and dataclass models in a directory.
+    Parse Python model frameworks (SQLModel, SQLAlchemy, Django, Pydantic, dataclass)
+    and SQL DDL (`.sql` files via the SQL frontend) from ``path``.
+
+    ``path`` may be a single file or a directory; ``sql_dialect`` selects the SQL
+    dialect passed to sqlglot (e.g. ``"postgres"``), or ``None`` for generic mode.
 
     Args:
         path: Path to directory containing model files, or a single file. When
