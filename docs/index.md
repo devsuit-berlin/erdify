@@ -1,6 +1,6 @@
 # erdify Documentation
 
-**erdify** parses your model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. It supports SQLModel, SQLAlchemy 2.0, Django ORM, Pydantic and standard-library dataclasses — no database connection required. This documentation covers installation, usage, framework support and viewing the generated diagrams.
+**erdify** parses your model files using AST (Abstract Syntax Tree) and generates comprehensive ERD diagrams in PlantUML format. It supports SQLModel, SQLAlchemy 2.0, Django ORM, Pydantic and standard-library dataclasses, plus SQL DDL files via the optional `erdify[sql]` extra — no database connection required. This documentation covers installation, usage, framework support and viewing the generated diagrams.
 
 ## Contents
 
@@ -14,3 +14,4 @@
 - [CI/CD & pre-commit](usage/ci.md) — keep ERDs up to date in CI and via pre-commit hooks
 - [Frameworks Overview](frameworks/index.md) — the five frameworks side by side, how each is detected, and a worked example with the generated PlantUML
 - [Django ORM](frameworks/django.md) — Django-specific parsing details (FK mapping, type mapping, enums, abstract bases, `db_table`)
+- [SQL DDL](frameworks/sql.md) — generate ERDs from `.sql` files via the optional `erdify[sql]` extra (`CREATE TABLE`, foreign keys, enums)
