@@ -1,6 +1,9 @@
+import builtins
 from pathlib import Path
 
-from erdify.sql_parser import SqlSchemaParser, discover_sql_files
+import pytest
+
+from erdify.sql_parser import SqlDependencyError, SqlSchemaParser, discover_sql_files
 
 
 def test_discover_sql_files_matches_include_and_skips_py(tmp_path: Path):
@@ -146,3 +149,18 @@ def test_schema_qualified_name_and_lenient_skipping(tmp_path: Path) -> None:
         """,
     )
     assert "app_user" in entities  # schema prefix stripped, noise ignored
+
+
+def test_missing_sqlglot_raises_helpful_error(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    f = tmp_path / "schema.sql"
+    f.write_text("CREATE TABLE a (id INT);")
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if name == "sqlglot":
+            raise ImportError("no sqlglot")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(SqlDependencyError, match=r"pip install erdify\[sql\]"):
+        SqlSchemaParser([f]).parse()

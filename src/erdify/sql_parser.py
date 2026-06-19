@@ -70,7 +70,7 @@ class SqlSchemaParser:
         try:
             import sqlglot
             from sqlglot import exp
-        except ImportError as e:  # pragma: no cover - exercised via monkeypatch in tests
+        except ImportError as e:
             raise SqlDependencyError(
                 "SQL support requires sqlglot. Install it with: pip install erdify[sql]"
             ) from e
