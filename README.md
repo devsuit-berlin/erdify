@@ -14,23 +14,16 @@
 
 ## ✨ Features
 
-- 📊 **Automatic ERD Generation** - Parse your models and generate PlantUML diagrams
 - 🧬 **5 Frameworks** - SQLModel, SQLAlchemy 2.0, Django ORM, Pydantic and dataclasses
 - 🔍 **AST-Based Parsing** - No imports needed, works with any valid Python code
 - 🎯 **Zero Runtime Dependencies** - Uses only Python standard library
-- 🔗 **Relationship Detection** - Automatically detects foreign keys and relationships
-- 🔑 **Key Inference** - `--infer-keys` derives PK/FK from field names for keyless models
-- 🚫 **Exclude Patterns** - Filter out entities by class or table name with glob patterns
-- 🎚️ **Source Filtering** - Restrict the diagram to specific model kinds with `--sources`
-- 🧲 **Flexible Discovery** - `--include` globs scan `models/` packages and custom filenames, not just `models.py`
+- 🔗 **Relationship Detection** - Foreign keys, relationships and many-to-many link tables
+- 🧜 **4 Output Formats** - `--format` emits PlantUML, Mermaid (renders natively on GitHub), JSON, or a self-contained HTML preview
+- 📝 **Markdown Embed** - `--inject` writes the diagram into a Markdown file between markers
 - ⚙️ **Config File** - Commit options under `[tool.erdify]` in `pyproject.toml`
 - ✅ **Drift Check** - `--check` fails CI/pre-commit when the committed diagram is stale
-- 📦 **Inheritance Support** - Resolves fields from base classes and mixins
-- 🏷️ **Enum Support** - Includes enum definitions in the diagram
-- 🔄 **Link Table Detection** - Identifies many-to-many association tables structurally
-- 🧜 **4 Output Formats** - `--format` emits PlantUML, Mermaid (renders natively on GitHub), JSON, or a self-contained HTML preview
-- 📝 **Markdown Embed** - `--inject` writes the diagram into a Markdown file between markers, so it renders natively on GitHub/GitLab
-- 🎨 **Beautiful Output** - Clean, readable diagrams with proper styling
+
+See the [full feature matrix](https://erdify.devsuit.io/features/) for everything erdify recognizes.
 
 ## 🚀 Quick Start
 
@@ -72,26 +65,9 @@ The runnable sources live in [`docs/examples/`](https://github.com/devsuit-berli
 
 ## 📋 Supported Features
 
-| Feature | Status | Notes |
-| -------- | -------- | ------- |
-| Primary Keys | ✅ | `Field(primary_key=True)` |
-| Foreign Keys | ✅ | `Field(foreign_key="table.column")` |
-| Nullable Fields | ✅ | `str \| None` or `Optional[str]` |
-| Default Values | ✅ | `Field(default=value)` |
-| Indexes | ✅ | `Field(index=True)` |
-| Enums | ✅ | Python `Enum` classes |
-| Relationships | ✅ | `Relationship()` |
-| Inheritance | ✅ | Mixin classes supported |
-| Link Tables | ✅ | Many-to-many detection |
-| Custom Table Names | ✅ | `__tablename__` attribute |
-| Exclude Patterns | ✅ | `--exclude` glob on class/table name |
-| Key Inference | ✅ | `--infer-keys` for Pydantic/dataclass (`id`, `<x>_id`) |
-| File Discovery | ✅ | `--include` globs (`models/` packages, custom filenames) |
-| Markdown Embed | ✅ | `--inject` into Markdown between `erdify:start`/`erdify:end` markers |
-| SQLModel | ✅ | `Field()` / `Relationship()` |
-| SQLAlchemy 2.0 | ✅ | `Mapped[...]` / `mapped_column()` |
-| Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships |
-| Dataclass | ✅ | `@dataclass`, nested refs as relationships |
+Primary/foreign keys, nullable fields, defaults, indexes, enums, relationships,
+inheritance, link tables, custom table names and per-framework specifics — see
+the **[full feature matrix](https://erdify.devsuit.io/features/)** in the docs.
 
 ## 💬 Community
 

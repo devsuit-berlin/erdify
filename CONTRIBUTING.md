@@ -20,7 +20,7 @@ This project and everyone participating in it is governed by our commitment to p
 
 ### Prerequisites
 
-- Python 3.10 or higher
+- Python 3.11 or higher
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - Git
 
@@ -91,24 +91,16 @@ erdify/
 ├── src/erdify/
 │   ├── __init__.py      # Public API exports
 │   ├── __main__.py      # python -m entry point
-│   ├── cli.py           # Command-line interface
-│   ├── config.py        # Data classes (FieldInfo, EntityInfo, etc.)
-│   ├── generator.py     # PlantUML generation
-│   └── parser.py        # AST parsing logic
+│   ├── cli.py           # Command-line interface (argparse + main)
+│   ├── config.py        # Data classes / IR (FieldInfo, EnumInfo, EntityInfo)
+│   ├── generator.py     # PlantUML / Mermaid / JSON / HTML generation
+│   ├── inject.py        # Markdown embedding (--inject)
+│   ├── pyproject.py     # [tool.erdify] config loading
+│   └── parser.py        # AST parsing logic (all frameworks)
 ├── tests/
-│   ├── fixtures/        # Test model files
-│   │   ├── ecommerce/   # E-commerce example models
-│   │   ├── edge_cases/  # Edge case models
-│   │   ├── empty/       # Empty models (no tables)
-│   │   ├── inheritance/ # Inheritance example models
-│   │   └── malformed/   # Malformed Python (error handling tests)
+│   ├── fixtures/        # Test model files (one dir per scenario/framework)
 │   ├── conftest.py      # Pytest fixtures
-│   ├── test_cli.py
-│   ├── test_config.py
-│   ├── test_edge_cases.py
-│   ├── test_generator.py
-│   ├── test_integration.py
-│   └── test_parser.py
+│   └── test_*.py        # Unit + integration tests
 └── pyproject.toml
 ```
 
@@ -155,7 +147,8 @@ erdify tests/fixtures/ecommerce --title 'E-Commerce ERD' -o tests/fixtures/ecomm
 ### Adding New Test Fixtures
 
 1. Create a new directory under `tests/fixtures/`
-2. Add a `models.py` with your SQLModel definitions
+2. Add a `models.py` with definitions in any supported framework (SQLModel,
+   SQLAlchemy, Django, Pydantic, or dataclasses)
 3. Generate the expected output:
 
    ```bash
@@ -197,8 +190,8 @@ git commit -m "docs: improve CLI usage examples"
 
 **Commit Types:**
 
-- `feature`: New feature
-- `bugfix`: Bug fix
+- `feat`: New feature
+- `fix`: Bug fix
 - `docs`: Documentation changes
 - `test`: Adding/updating tests
 - `refactor`: Code refactoring

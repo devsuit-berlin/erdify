@@ -6,6 +6,7 @@
 
 - [Installation](installation.md) — install via pip, uv, pipx or run with uvx
 - [Quickstart](quickstart.md) — the handful of commands you'll use most, with links to the details
+- [Features](features.md) — the full matrix of what erdify recognizes when parsing your models
 - [CLI & Python API](usage/cli.md) — command-line options, running as a module, and the Python API (incl. programmatic access)
 - [Output Formats](usage/output-formats.md) — PlantUML and Mermaid, `--format`, output naming
 - [Filtering & Key Inference](usage/filtering.md) — `--exclude`, `--exclude-paths`, `--sources`, and `--infer-keys`
