@@ -41,7 +41,7 @@ dependencies = []  # No runtime dependencies - uses stdlib ast module
 sql = ["sqlglot>=25"]
 
 [dependency-groups]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel", "sqlalchemy", "pydantic", "django"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "sqlmodel", "sqlalchemy", "pydantic", "django", "sqlglot"]
 docs = ["mkdocs-material"]
 
 [project.scripts]

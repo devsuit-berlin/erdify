@@ -365,6 +365,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "sqlalchemy" },
+    { name = "sqlglot" },
     { name = "sqlmodel" },
 ]
 docs = [
@@ -384,6 +385,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "sqlalchemy" },
+    { name = "sqlglot" },
     { name = "sqlmodel" },
 ]
 docs = [{ name = "mkdocs-material" }]
