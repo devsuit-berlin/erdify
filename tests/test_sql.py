@@ -57,3 +57,53 @@ def test_table_level_and_composite_primary_key(tmp_path: Path) -> None:
     cols = {f.name: f for f in entities["membership"].fields}
     assert cols["user_id"].is_primary_key is True
     assert cols["group_id"].is_primary_key is True
+
+
+def test_inline_and_alter_foreign_keys(tmp_path: Path) -> None:
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE "user" (id INTEGER PRIMARY KEY);
+        CREATE TABLE "order" (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES "user"(id)
+        );
+        CREATE TABLE invoice (id INTEGER PRIMARY KEY, order_id INTEGER);
+        ALTER TABLE invoice ADD CONSTRAINT fk_o FOREIGN KEY (order_id) REFERENCES "order"(id);
+        """,
+    )
+    order_cols = {f.name: f for f in entities["order"].fields}
+    assert order_cols["user_id"].is_foreign_key is True
+    assert order_cols["user_id"].foreign_table == "user.id"
+    inv_cols = {f.name: f for f in entities["invoice"].fields}
+    assert inv_cols["order_id"].is_foreign_key is True
+    assert inv_cols["order_id"].foreign_table == "order.id"
+
+
+def test_link_table_detected_structurally(tmp_path: Path) -> None:
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE post (id INTEGER PRIMARY KEY);
+        CREATE TABLE tag (id INTEGER PRIMARY KEY);
+        CREATE TABLE post_tag (
+            post_id INTEGER REFERENCES post(id),
+            tag_id INTEGER REFERENCES tag(id),
+            PRIMARY KEY (post_id, tag_id)
+        );
+        """,
+    )
+    assert entities["post_tag"].is_link_table is True
+
+
+def test_exclude_pattern_drops_entity_and_relationship(tmp_path: Path) -> None:
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE "user" (id INTEGER PRIMARY KEY);
+        CREATE TABLE audit_log (id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES "user"(id));
+        """,
+        exclude_patterns=["audit_log"],
+    )
+    assert "audit_log" not in entities
+    assert "user" in entities

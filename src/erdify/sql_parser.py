@@ -86,7 +86,14 @@ class SqlSchemaParser:
         for stmt in statements:
             if isinstance(stmt, exp.Create) and (stmt.args.get("kind") or "").upper() == "TABLE":
                 self._add_table(stmt, exp)
-        # Foreign keys + enums + indexes are resolved in later tasks (Task 4/5/6).
+
+        # Second pass: resolve foreign keys (handles forward references + ALTER TABLE).
+        for stmt in statements:
+            if isinstance(stmt, exp.Create) and (stmt.args.get("kind") or "").upper() == "TABLE":
+                self._table_foreign_keys(stmt, exp)
+            elif isinstance(stmt, exp.Alter):
+                self._alter_foreign_keys(stmt, exp)
+
         self._finalize()
         return self.entities, self.enums
 
@@ -144,6 +151,91 @@ class SqlSchemaParser:
                     cols.add(ident.name)
         return cols
 
+    def _set_fk(self, table: str, column: str, ref_table: str, ref_col: str) -> None:
+        entity = self.entities.get(table)
+        if entity is None:
+            return
+        for f in entity.fields:
+            if f.name == column:
+                f.is_foreign_key = True
+                f.foreign_table = f"{ref_table}.{ref_col or 'id'}"
+                return
+
+    def _table_foreign_keys(self, create: "object", exp: "object") -> None:
+        schema = create.this  # type: ignore[attr-defined]
+        table = schema.this.name
+        # Inline REFERENCES on a column definition.
+        for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]
+            for c in coldef.constraints:
+                ref = c.kind if hasattr(c, "kind") else None
+                if isinstance(ref, exp.Reference):  # type: ignore[attr-defined]
+                    rt, rc = self._reference_target(ref, exp)
+                    self._set_fk(table, coldef.name, rt, rc)
+        # Table-level FOREIGN KEY (...) REFERENCES t(c).
+        for fk in schema.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
+            cols = [
+                e.name
+                for e in fk.expressions
+                if isinstance(e, exp.Identifier)  # type: ignore[attr-defined]
+            ]
+            ref = fk.args.get("reference")
+            rt, rc = self._reference_target(ref, exp) if ref is not None else ("", "")
+            for col in cols:
+                self._set_fk(table, col, rt, rc)
+
+    def _alter_foreign_keys(self, alter: "object", exp: "object") -> None:
+        table = alter.this.name if alter.this is not None else ""  # type: ignore[attr-defined]
+        for fk in alter.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
+            cols = [
+                e.name
+                for e in fk.expressions
+                if isinstance(e, exp.Identifier)  # type: ignore[attr-defined]
+            ]
+            ref = fk.args.get("reference")
+            rt, rc = self._reference_target(ref, exp) if ref is not None else ("", "")
+            for col in cols:
+                self._set_fk(table, col, rt, rc)
+
+    @staticmethod
+    def _reference_target(ref: "object", exp: "object") -> tuple[str, str]:
+        """Extract (ref_table_name, ref_col_name) from an exp.Reference node.
+
+        The Reference wraps a Schema whose .this is the target Table and whose
+        .expressions are the referenced column Identifiers.  Using
+        schema.expressions avoids the ambiguity of find_all(Identifier) which
+        also returns the table-name identifier.
+        """
+        table_node = ref.find(exp.Table)  # type: ignore[attr-defined]
+        ref_table = table_node.name if table_node is not None else ""
+        schema_node = ref.this  # type: ignore[attr-defined]
+        if hasattr(schema_node, "expressions") and schema_node.expressions:
+            ref_col = schema_node.expressions[0].name
+        else:
+            ref_col = "id"
+        return ref_table, ref_col
+
+    @staticmethod
+    def _is_structural_link_table(fields: list[FieldInfo]) -> bool:
+        if len(fields) != 2:
+            return False
+        return all(f.is_foreign_key and f.is_primary_key for f in fields)
+
     def _finalize(self) -> None:
-        # Link-table flag + exclude patterns are applied here; filled in Task 4.
-        pass
+        for entity in self.entities.values():
+            entity.is_link_table = self._is_structural_link_table(entity.fields)
+        self._apply_excludes()
+
+    def _apply_excludes(self) -> None:
+        if not self.exclude_patterns:
+            return
+
+        def excluded(e: EntityInfo) -> bool:
+            return any(
+                fnmatchcase(e.name, p) or fnmatchcase(e.table_name, p)
+                for p in self.exclude_patterns
+            )
+
+        names = {n for n, e in self.entities.items() if excluded(e)}
+        self.entities = {n: e for n, e in self.entities.items() if n not in names}
+        for e in self.entities.values():
+            e.relationships = [r for r in e.relationships if r[0] not in names]
