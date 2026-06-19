@@ -32,6 +32,7 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Quickstart: quickstart.md
+  - Features: features.md
   - Usage:
       - CLI & Python API: usage/cli.md
       - Output Formats: usage/output-formats.md

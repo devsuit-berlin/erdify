@@ -89,9 +89,9 @@ pre-commit run generate-erd --all-files
 
 **How it works:**
 - 🔍 Only triggers when files in `src/database/` change
-- 📝 Automatically regenerates `docs/erd.puml`
-- ✅ Stages the updated diagram with your commit
-- 🚫 Fails if the diagram would change (ensuring docs stay in sync)
+- 📝 Regenerates `docs/erd.puml` on commit
+- 🚫 If the diagram changed, pre-commit reports the modified file and fails the
+  commit — stage the regenerated diagram and commit again to keep docs in sync
 
 **Tip:** Add `docs/erd.puml` to your staged files before committing, or use the `--all-files` flag to regenerate.
 

@@ -66,7 +66,8 @@ erdify ./src/database --exclude audit_log 'tmp_*' Session
 `--exclude` filters by name **after** parsing. To skip whole folders **before**
 the scan — e.g. so erdify never reads a virtualenv's third-party `models.py` —
 use `--exclude-paths`. Patterns are case-sensitive globs matched against each
-`models.py` path relative to the input **or** any single path segment.
+scanned file's path relative to the input **or** any single path segment (it
+applies to every discovered file, including extra ones added via `--include`).
 
 ```bash
 # Skip migrations and a legacy app, anywhere in the tree
