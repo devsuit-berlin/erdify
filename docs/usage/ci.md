@@ -25,7 +25,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install erdify
-        run: pip install erdify
+        run: pip install erdify        # use 'erdify[sql]' for SQL DDL projects
 
       - name: Generate ERD
         run: erdify ./src/database --title "Database Schema" -o docs/erd.puml
@@ -71,6 +71,36 @@ repos:
         entry: uvx erdify ./src/database --title "Database Schema" -o docs/erd.puml
         language: system
         files: ^src/database/.*\.py$
+        pass_filenames: false
+```
+
+### SQL DDL projects
+
+For projects that generate the ERD from `.sql` files, install `erdify[sql]` and
+trigger on `*.sql` paths:
+
+```yaml
+      - name: Install erdify (SQL)
+        run: pip install 'erdify[sql]'
+
+      - name: Generate ERD from SQL
+        run: erdify ./schema --include '*.sql' --sql-dialect postgres -o docs/erd.puml
+```
+
+Or with uvx:
+
+```bash
+uvx --from 'erdify[sql]' erdify ./schema --include '*.sql' --sql-dialect postgres -o docs/erd.puml
+```
+
+In a pre-commit hook, match `.sql` files:
+
+```yaml
+      - id: generate-erd-sql
+        name: 🗃️ Generate ERD from SQL DDL
+        entry: erdify ./schema --include '*.sql' --sql-dialect postgres -o docs/erd.puml
+        language: system
+        files: ^schema/.*\.sql$
         pass_filenames: false
 ```
 

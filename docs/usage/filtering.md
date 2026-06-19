@@ -43,6 +43,17 @@ one-line hint suggesting `--include '**/models/*.py'`.
     parsed wins, so a model can be shadowed and dropped from the diagram.
     Narrow patterns keep the scan fast and unambiguous.
 
+!!! tip "Discovering SQL DDL files"
+    The default `models.py` pattern won't match `.sql` files. To scan a directory
+    for SQL DDL, pass `--include '*.sql'` (requires `erdify[sql]`):
+
+    ```bash
+    erdify ./schema --include '*.sql' --sql-dialect postgres
+    ```
+
+    You can also pass a single `.sql` file directly as the `input` argument
+    without `--include`. See [SQL DDL](../frameworks/sql.md) for full details.
+
 ## Excluding Entities
 
 Use `--exclude` to drop tables/entities from the diagram. Each pattern is a

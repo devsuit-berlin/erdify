@@ -38,6 +38,12 @@ erdify ./src --exclude '*Link' audit_log --exclude-paths migrations
 
 # Fail CI if the committed diagram is out of date
 erdify ./src -o docs/erd.puml --check
+
+# Generate ERD from a PostgreSQL DDL file (requires: pip install 'erdify[sql]')
+erdify schema.sql --sql-dialect postgres -o erd.puml
+
+# Scan a directory of .sql files
+erdify ./schema --include '*.sql' --sql-dialect postgres -o erd.puml
 ```
 
 | Want to… | See |
@@ -48,6 +54,7 @@ erdify ./src -o docs/erd.puml --check
 | Render the diagram to an image | [Viewing the Diagram](usage/viewing.md) |
 | Keep the ERD fresh in CI / pre-commit | [CI/CD & pre-commit](usage/ci.md) |
 | Generate diagrams from Python | [Python API](usage/cli.md#python-api) |
+| Generate from SQL DDL files | [SQL DDL](frameworks/sql.md) |
 
 ## Next steps
 

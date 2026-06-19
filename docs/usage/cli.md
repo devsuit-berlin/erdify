@@ -99,6 +99,7 @@ exclude = ["audit_log", "*Link"]
 exclude_paths = ["migrations", "legacy"]
 infer_keys = true
 django_raw_types = false
+sql_dialect = "postgres"            # required for CREATE TYPE … AS ENUM support
 ```
 
 With that in place, `erdify .` uses these settings. Precedence is **explicit CLI
@@ -129,8 +130,11 @@ python -m erdify ./src/database -o erd.puml
 from pathlib import Path
 from erdify import parse_models_directory, generate_plantuml
 
-# Parse your models
+# Parse Python models
 entities, enums = parse_models_directory(Path("./src/database"))
+
+# Parse SQL DDL (requires erdify[sql])
+entities, enums = parse_models_directory(Path("schema.sql"), sql_dialect="postgres")
 
 # Generate PlantUML
 diagram = generate_plantuml(
@@ -142,6 +146,11 @@ diagram = generate_plantuml(
 # Save or use the diagram
 Path("erd.puml").write_text(diagram)
 ```
+
+`parse_models_directory` accepts both a Python models directory and a `.sql` file
+(or a directory scanned with `--include '*.sql'`). For Python models only, the
+lower-level `ASTDatabaseParser` class is also available — it does not handle `.sql`
+input, so use `parse_models_directory` when working with SQL DDL.
 
 ## Programmatic Access
 
@@ -156,7 +165,7 @@ from erdify import (
     EnumInfo,
 )
 
-# Low-level parser access
+# Low-level parser access (Python models only — use parse_models_directory for .sql)
 parser = ASTDatabaseParser(Path("./models"))
 entities, enums = parser.parse_all_models()
 

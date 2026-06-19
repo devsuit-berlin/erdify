@@ -1,9 +1,12 @@
 # Frameworks Overview
 
-erdify recognizes five model frameworks from source and renders them into the
-same ERD format. This page shows the five frameworks side by side, how each is
-detected, and a worked example with the generated PlantUML. For Django-specific
+erdify recognizes five Python model frameworks from source and renders them into
+the same ERD format. This page shows the five frameworks side by side, how each
+is detected, and a worked example with the generated PlantUML. For Django-specific
 parsing details see [Django ORM](django.md).
+
+erdify also supports SQL DDL files (`.sql`) via the optional `erdify[sql]` extra —
+see [SQL DDL](sql.md) for details.
 
 ## One Schema, Five Frameworks
 
@@ -171,6 +174,9 @@ class Order(models.Model):
     Mixins / abstract bases (e.g. a SQLAlchemy mixin without `__tablename__`, or a
     Django `class Meta: abstract = True` base) are not drawn as tables, but their
     columns are inherited into concrete entities.
+
+SQL DDL (`.sql` files parsed via sqlglot) uses a separate file-based detection
+mechanism and is not listed in the AST-detection table above. See [SQL DDL](sql.md).
 
 ## Worked example
 
