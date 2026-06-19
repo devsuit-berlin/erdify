@@ -120,3 +120,29 @@ def test_exclude_pattern_drops_entity_and_relationship(tmp_path: Path) -> None:
     )
     assert "audit_log" not in entities
     assert "user" in entities
+
+
+def test_create_index_sets_index_flag(tmp_path: Path) -> None:
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE app_user (id INTEGER PRIMARY KEY, email VARCHAR(255));
+        CREATE INDEX ix_email ON app_user (email);
+        """,
+    )
+    cols = {f.name: f for f in entities["app_user"].fields}
+    assert cols["email"].index is True
+    assert cols["id"].index is False
+
+
+def test_schema_qualified_name_and_lenient_skipping(tmp_path: Path) -> None:
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE SEQUENCE app_user_id_seq;
+        CREATE TABLE public.app_user (id INTEGER PRIMARY KEY);
+        INSERT INTO public.app_user (id) VALUES (1);
+        GRANT SELECT ON public.app_user TO readonly;
+        """,
+    )
+    assert "app_user" in entities  # schema prefix stripped, noise ignored

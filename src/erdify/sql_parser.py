@@ -89,12 +89,15 @@ class SqlSchemaParser:
             elif isinstance(stmt, exp.Create) and (stmt.args.get("kind") or "").upper() == "TYPE":
                 self._add_enum(stmt, exp)
 
-        # Second pass: resolve foreign keys (handles forward references + ALTER TABLE).
+        # Second pass: resolve foreign keys (handles forward references + ALTER TABLE)
+        # and mark indexed columns.
         for stmt in statements:
             if isinstance(stmt, exp.Create) and (stmt.args.get("kind") or "").upper() == "TABLE":
                 self._table_foreign_keys(stmt, exp)
             elif isinstance(stmt, exp.Alter):
                 self._alter_foreign_keys(stmt, exp)
+            elif isinstance(stmt, exp.Create) and (stmt.args.get("kind") or "").upper() == "INDEX":
+                self._mark_index(stmt, exp)
 
         self._finalize()
         return self.entities, self.enums
@@ -228,6 +231,20 @@ class SqlSchemaParser:
         else:
             ref_col = "id"
         return ref_table, ref_col
+
+    def _mark_index(self, create: "object", exp: "object") -> None:
+        """Set FieldInfo.index=True for columns covered by a CREATE INDEX statement."""
+        index = create.this  # type: ignore[attr-defined]  # exp.Index
+        table_node = index.find(exp.Table)  # type: ignore[attr-defined]
+        if table_node is None:
+            return
+        entity = self.entities.get(table_node.name)
+        if entity is None:
+            return
+        indexed = {c.name for c in index.find_all(exp.Column)}  # type: ignore[attr-defined]
+        for f in entity.fields:
+            if f.name in indexed:
+                f.index = True
 
     @staticmethod
     def _is_structural_link_table(fields: list[FieldInfo]) -> bool:
