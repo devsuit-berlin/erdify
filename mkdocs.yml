@@ -42,6 +42,7 @@ nav:
   - Frameworks:
       - Overview: frameworks/index.md
       - Django ORM: frameworks/django.md
+      - SQL DDL: frameworks/sql.md
 
 markdown_extensions:
   - admonition

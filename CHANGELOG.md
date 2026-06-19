@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- SQL DDL frontend via the optional `erdify[sql]` extra (sqlglot): generate an
+  ERD from `.sql` files (`CREATE TABLE`, inline/table/`ALTER TABLE` foreign
+  keys, `NOT NULL`/`DEFAULT`, `CREATE TYPE ... AS ENUM`, `CREATE INDEX`) with
+  no database connection. New `--sql-dialect` flag / `sql_dialect` config key;
+  `input` now accepts a file as well as a directory. Core install stays
+  dependency-free.
+
 ## [0.10.0] - 2026-06-17
 
 ### Added
