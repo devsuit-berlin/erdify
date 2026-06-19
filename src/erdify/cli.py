@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "input",
         type=Path,
-        help="Directory containing model files (searches for model files, models.py by default)",
+        help="Directory or file with models (.py) or SQL DDL (.sql)",
     )
     parser.add_argument(
         "-o",
@@ -97,6 +97,15 @@ def build_parser() -> argparse.ArgumentParser:
             "pattern without '/' matches a filename at any depth. Replaces the "
             "default, so list models.py too if you want it, e.g. --include "
             "models.py '**/models/*.py' tables.py"
+        ),
+    )
+    parser.add_argument(
+        "--sql-dialect",
+        default=None,
+        metavar="NAME",
+        help=(
+            "SQL dialect hint for parsing .sql DDL with the [sql] extra "
+            "(e.g. postgres, mysql, sqlite). Default: a permissive generic read"
         ),
     )
     parser.add_argument(
@@ -175,10 +184,6 @@ def main() -> int:
         print(f"Error: Input path does not exist: {args.input}", file=sys.stderr)
         return 1
 
-    if not args.input.is_dir():
-        print(f"Error: Input path is not a directory: {args.input}", file=sys.stderr)
-        return 1
-
     # Resolve settings: explicit CLI flag > [tool.erdify] in pyproject.toml > default.
     config, base_dir = load_config(args.input)
 
@@ -187,6 +192,7 @@ def main() -> int:
 
     title = pick(args.title, "title", "Database ERD")
     sources = pick(args.sources, "sources", None)
+    sql_dialect = pick(args.sql_dialect, "sql_dialect", None)
     exclude = pick(args.exclude, "exclude", [])
     exclude_paths = pick(args.exclude_paths, "exclude_paths", [])
     include = pick(args.include, "include", ["models.py"])
@@ -259,6 +265,7 @@ def main() -> int:
             use_default_excludes=not no_default_excludes,
             include_patterns=include,
             hint_unmatched_model_packages=include_is_default,
+            sql_dialect=sql_dialect,
         )
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)

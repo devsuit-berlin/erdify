@@ -143,3 +143,11 @@ class TestCheckMode:
             capture_output=True,
         )
         assert result.returncode == 1
+
+
+def test_sql_dialect_config_key_recognized(tmp_path):
+    from erdify.pyproject import load_config
+
+    (tmp_path / "pyproject.toml").write_text('[tool.erdify]\nsql_dialect = "postgres"\n')
+    config, _ = load_config(tmp_path)
+    assert config.get("sql_dialect") == "postgres"
