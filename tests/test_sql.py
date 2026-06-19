@@ -164,3 +164,28 @@ def test_missing_sqlglot_raises_helpful_error(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(SqlDependencyError, match=r"pip install erdify\[sql\]"):
         SqlSchemaParser([f]).parse()
+
+
+# ---------------------------------------------------------------------------
+# Task 8: orchestration tests
+# ---------------------------------------------------------------------------
+from erdify.parser import parse_models_directory  # noqa: E402
+
+
+def test_parse_models_directory_picks_up_sql(tmp_path: Path) -> None:
+    (tmp_path / "schema.sql").write_text('CREATE TABLE "user" (id INTEGER PRIMARY KEY);')
+    entities, _ = parse_models_directory(tmp_path, include_patterns=["*.sql"])
+    assert "user" in entities
+
+
+def test_parse_models_directory_accepts_a_file(tmp_path: Path) -> None:
+    f = tmp_path / "schema.sql"
+    f.write_text("CREATE TABLE thing (id INTEGER PRIMARY KEY);")
+    entities, _ = parse_models_directory(f)
+    assert "thing" in entities
+
+
+def test_public_export() -> None:
+    import erdify
+
+    assert hasattr(erdify, "SqlSchemaParser")

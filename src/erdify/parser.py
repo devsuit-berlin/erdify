@@ -1116,12 +1116,15 @@ def parse_models_directory(
     use_default_excludes: bool = True,
     include_patterns: List[str] | None = None,
     hint_unmatched_model_packages: bool = False,
+    sql_dialect: str | None = None,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
     Parse SQLModel, SQLAlchemy, Django, Pydantic and dataclass models in a directory.
 
     Args:
-        path: Path to directory containing model files
+        path: Path to directory containing model files, or a single file. When
+            a file is given it is treated as the sole include target (base is the
+            parent directory).
         exclude_patterns: List of case-sensitive glob patterns. An entity is
             excluded if a pattern matches its class name or its table name.
         infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
@@ -1139,19 +1142,45 @@ def parse_models_directory(
             Slash patterns match the path relative to ``path`` (``**`` crosses
             dirs); slashless patterns match a basename at any depth. Defaults to
             ``["models.py"]``.
+        sql_dialect: Optional SQL dialect hint passed to ``SqlSchemaParser``
+            (e.g. ``"postgres"``). ``None`` uses sqlglot's dialect-agnostic mode.
 
     Returns:
         Tuple of (entities dict, enums dict)
     """
+    # Normalize a file input: treat it as base=parent with that file as the sole include.
+    if path.is_file():
+        base = path.parent
+        include = [path.name]
+        hint = False
+    else:
+        base = path
+        include = include_patterns if include_patterns is not None else ["models.py"]
+        hint = hint_unmatched_model_packages
+
     parser = ASTDatabaseParser(
-        path,
+        base,
         exclude_patterns=exclude_patterns,
         infer_keys=infer_keys,
         sources=sources,
         django_raw_types=django_raw_types,
         exclude_paths=exclude_paths,
         use_default_excludes=use_default_excludes,
-        include_patterns=include_patterns,
-        hint_unmatched_model_packages=hint_unmatched_model_packages,
+        include_patterns=include,
+        hint_unmatched_model_packages=hint,
     )
-    return parser.parse_all_models()
+    entities, enums = parser.parse_all_models()
+
+    from .sql_parser import SqlSchemaParser, discover_sql_files
+
+    sql_files = discover_sql_files(base, include, exclude_paths or [], use_default_excludes)
+    if sql_files:
+        sql_entities, sql_enums = SqlSchemaParser(
+            sql_files, dialect=sql_dialect, exclude_patterns=exclude_patterns
+        ).parse()
+        for name, entity in sql_entities.items():
+            entities.setdefault(name, entity)
+        for name, enum in sql_enums.items():
+            enums.setdefault(name, enum)
+
+    return entities, enums
