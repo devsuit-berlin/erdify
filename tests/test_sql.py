@@ -138,6 +138,26 @@ def test_create_index_sets_index_flag(tmp_path: Path) -> None:
     assert cols["id"].index is False
 
 
+def test_unresolvable_fk_reference_leaves_plain_column(tmp_path: Path) -> None:
+    """_set_fk with an empty ref_table must not flag the column as a foreign key.
+
+    This guards the case where _reference_target cannot resolve an exp.Table node
+    from the REFERENCES clause (table_node is None → ref_table = ""), which would
+    otherwise produce a bogus foreign_table like ".id" in --format json output.
+    """
+    f = tmp_path / "schema.sql"
+    f.write_text("CREATE TABLE order_item (id INTEGER PRIMARY KEY, ghost_id INTEGER);")
+    parser = SqlSchemaParser([f])
+    parser.parse()  # populates parser.entities
+
+    # Simulate the code path where ref_table comes back empty (unresolvable node).
+    parser._set_fk("order_item", "ghost_id", "", "id")
+
+    cols = {field.name: field for field in parser.entities["order_item"].fields}
+    assert cols["ghost_id"].is_foreign_key is False
+    assert cols["ghost_id"].foreign_table is None
+
+
 def test_schema_qualified_name_and_lenient_skipping(tmp_path: Path) -> None:
     entities, _ = _parse_sql(
         tmp_path,

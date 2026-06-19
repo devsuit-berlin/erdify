@@ -79,7 +79,7 @@ class SqlSchemaParser:
         for f in self.files:
             text = f.read_text()
             try:
-                statements.extend(sqlglot.parse(text, dialect=self.dialect or None))
+                statements.extend(sqlglot.parse(text, dialect=self.dialect))
             except Exception as err:
                 print(f"Error parsing {f}: {err}", file=sys.stderr)
 
@@ -170,6 +170,8 @@ class SqlSchemaParser:
         return cols
 
     def _set_fk(self, table: str, column: str, ref_table: str, ref_col: str) -> None:
+        if not ref_table:
+            return
         entity = self.entities.get(table)
         if entity is None:
             return

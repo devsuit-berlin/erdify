@@ -65,6 +65,10 @@ sql_dialect = "postgres"
 | `CREATE TYPE … AS ENUM` | ✅ | Requires `--sql-dialect postgres`; silently skipped under the generic dialect |
 | `CREATE INDEX` | ✅ (JSON only) | Detected and emitted in `--format json`; not drawn in PlantUML or Mermaid diagrams (consistent with the Indexes note in the [feature matrix](../features.md)) |
 
+> **NOTE:** Functional/expression indexes (e.g. `CREATE INDEX ... ON t(lower(col))`) are not mapped
+> to a column — only plain-column indexes set the JSON `index` flag. Expression indexes are silently
+> ignored.
+
 ## Relationship Cardinality
 
 All foreign keys are rendered as **N:1** in v1. UNIQUE constraint → 1:1 inference
