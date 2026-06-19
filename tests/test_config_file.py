@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from erdify.cli import main
 from erdify.pyproject import load_config
 
@@ -151,3 +153,12 @@ def test_sql_dialect_config_key_recognized(tmp_path):
     (tmp_path / "pyproject.toml").write_text('[tool.erdify]\nsql_dialect = "postgres"\n')
     config, _ = load_config(tmp_path)
     assert config.get("sql_dialect") == "postgres"
+
+
+def test_sql_dialect_non_string_rejected(tmp_path):
+    """sql_dialect = 42 must be rejected with a non-zero exit."""
+    from erdify.pyproject import load_config
+
+    (tmp_path / "pyproject.toml").write_text("[tool.erdify]\nsql_dialect = 42\n")
+    with pytest.raises(SystemExit):
+        load_config(tmp_path)

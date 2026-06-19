@@ -1,5 +1,6 @@
 """Tests for CLI module."""
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 import sys
@@ -493,9 +494,6 @@ def test_inject_crlf_preserves_line_endings(tmp_path):
     with patch.object(sys, "argv", ["erdify", str(tmp_path), "--inject", str(md), "--check"]):
         rc = main()
     assert rc == 0, "--check disagreed with the write that just happened"
-
-
-import subprocess  # noqa: E402
 
 
 def test_cli_generates_erd_from_sql_file(tmp_path):

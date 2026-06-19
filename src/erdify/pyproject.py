@@ -63,4 +63,13 @@ def _validate(table: Dict[str, Any], source: Path) -> Dict[str, Any]:
             clean[key] = value
         else:
             print(f"Warning: unknown [tool.erdify] key '{key}' in {source}", file=sys.stderr)
+
+    for str_key in ("title", "output", "sql_dialect"):
+        if str_key in clean and not isinstance(clean[str_key], str):
+            print(
+                f"Error: [tool.erdify] '{str_key}' must be a string in {source}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     return clean
