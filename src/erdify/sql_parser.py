@@ -86,6 +86,8 @@ class SqlSchemaParser:
         for stmt in statements:
             if isinstance(stmt, exp.Create) and (stmt.args.get("kind") or "").upper() == "TABLE":
                 self._add_table(stmt, exp)
+            elif isinstance(stmt, exp.Create) and (stmt.args.get("kind") or "").upper() == "TYPE":
+                self._add_enum(stmt, exp)
 
         # Second pass: resolve foreign keys (handles forward references + ALTER TABLE).
         for stmt in statements:
@@ -106,6 +108,19 @@ class SqlSchemaParser:
         for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]
             entity.fields.append(self._column(coldef, exp, pk_cols))
         self.entities[table_name] = entity
+
+    def _add_enum(self, create: "object", exp: "object") -> None:
+        # stmt.this is an exp.Table node whose .name is the type name
+        name_node = create.this  # type: ignore[attr-defined]
+        name = name_node.name if name_node is not None else None
+        values: list[str] = []
+        expr = create.args.get("expression")  # type: ignore[attr-defined]
+        if expr is not None:
+            for lit in expr.expressions:
+                if isinstance(lit, exp.Literal) and lit.is_string:  # type: ignore[attr-defined]
+                    values.append(lit.this)
+        if name and values:
+            self.enums[name] = EnumInfo(name=name, values=values)
 
     def _column(self, coldef: "object", exp: "object", pk_cols: set[str]) -> FieldInfo:
         name = coldef.name  # type: ignore[attr-defined]

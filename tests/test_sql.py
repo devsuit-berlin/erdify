@@ -96,6 +96,19 @@ def test_link_table_detected_structurally(tmp_path: Path) -> None:
     assert entities["post_tag"].is_link_table is True
 
 
+def test_create_type_enum(tmp_path: Path) -> None:
+    entities, enums = _parse_sql(
+        tmp_path,
+        """
+        CREATE TYPE user_status AS ENUM ('active', 'banned');
+        CREATE TABLE app_user (id INTEGER PRIMARY KEY, status user_status);
+        """,
+        dialect="postgres",
+    )
+    assert "user_status" in enums
+    assert enums["user_status"].values == ["active", "banned"]
+
+
 def test_exclude_pattern_drops_entity_and_relationship(tmp_path: Path) -> None:
     entities, _ = _parse_sql(
         tmp_path,
