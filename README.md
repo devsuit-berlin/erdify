@@ -7,6 +7,7 @@
 [![Linting](https://github.com/devsuit-berlin/erdify/actions/workflows/lint.yml/badge.svg)](https://github.com/devsuit-berlin/erdify/actions/workflows/lint.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://img.shields.io/badge/mypy-checked-blue)](https://mypy-lang.org/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/erdify?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/erdify)
 
 > 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel, SQLAlchemy, Django, Pydantic and dataclass models automatically!
 
