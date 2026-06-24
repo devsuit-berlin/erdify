@@ -2,12 +2,13 @@
 
 ## Supported Versions
 
-We release patches for security vulnerabilities in the following versions:
+We release security fixes for the latest published version only. Always run the
+most recent release.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.4.x   | ✅ Yes             |
-| < 0.4   | ❌ No              |
+| Version        | Supported |
+| -------------- | --------- |
+| Latest release | ✅ Yes    |
+| Older          | ❌ No     |
 
 ## 🛡️ Security Model
 
