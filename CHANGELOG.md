@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-24
+
+### Changed
+
+- Documentation: expanded SQL DDL frontend coverage across quickstart, CLI, CI,
+  filtering and frameworks pages; added a pepy.tech download badge to the README.
+- Bumped development dependencies (`version-updates` group).
+
 ## [0.11.0] - 2026-06-19
 
 ### Added

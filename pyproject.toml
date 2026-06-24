@@ -1,6 +1,6 @@
 [project]
 name = "erdify"
-version = "0.11.0"
+version = "0.11.1"
 description = "A zero-dependency ERD generator for your Python models — pure AST, no database required."
 readme = "README.md"
 license = "MIT"
