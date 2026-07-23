@@ -8,7 +8,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Dict, List, Tuple, TypeGuard
 
-from .config import EntityInfo, EnumInfo, FieldInfo
+from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 
 
 #: Model frameworks erdify can recognize, in classification order.
@@ -538,19 +538,7 @@ class ASTDatabaseParser:
 
         self.entities[class_node.name] = entity
 
-    @staticmethod
-    def _is_structural_link_table(fields: List[FieldInfo]) -> bool:
-        """Return True if fields describe a join table: a composite primary key
-        made up entirely of foreign keys, with no payload columns.
-
-        This covers binary association tables (two FKs) as well as ternary and
-        higher-order ones (three or more FKs), regardless of the class name
-        (#35, #118). A single-column PK/FK is an extension table, not a join
-        table, so at least two columns are required.
-        """
-        if len(fields) < 2:
-            return False
-        return all(f.is_foreign_key and f.is_primary_key for f in fields)
+    _is_structural_link_table = staticmethod(is_structural_link_table)
 
     def _parse_core_association_tables(self) -> None:
         """Synthesize link entities from module-level Core ``Table(...)`` assignments.

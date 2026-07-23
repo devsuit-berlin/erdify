@@ -122,12 +122,16 @@ class _ERGenerator:
                         entities_to_link.append((e, fk_field.name))
                         break
 
-        if len(entities_to_link) == 2:
-            entity1, fk1_name = entities_to_link[0]
-            entity2, fk2_name = entities_to_link[1]
-            lines.append(f'{entity1.name} ||--o{{ {link_entity.name} : "{fk1_name}"')
-            lines.append(f'{link_entity.name} }}o--|| {entity2.name} : "{fk2_name}"')
-        elif len(entities_to_link) >= 3:
+        # Arity is decided by the number of FK columns, not by how many targets
+        # resolved: a ternary table with one unresolved FK must still be drawn
+        # as a (partial) star, never mistaken for a binary M:N (#118).
+        if len(fk_fields) == 2:
+            if len(entities_to_link) == 2:
+                entity1, fk1_name = entities_to_link[0]
+                entity2, fk2_name = entities_to_link[1]
+                lines.append(f'{entity1.name} ||--o{{ {link_entity.name} : "{fk1_name}"')
+                lines.append(f'{link_entity.name} }}o--|| {entity2.name} : "{fk2_name}"')
+        else:  # three or more FK columns -> star of edges from each parent
             for parent, fk_name in entities_to_link:
                 lines.append(f'{parent.name} ||--o{{ {link_entity.name} : "{fk_name}"')
 

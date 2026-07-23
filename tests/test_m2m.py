@@ -110,6 +110,25 @@ class TestSQLAlchemySecondaryCoreTable:
         assert "primary_key(post_id)" in output
         assert "primary_key(post_id) :" not in output
 
+    def test_ternary_core_table_synthesized_as_link_entity(self, tmp_path: Path):
+        """A Core Table(...) with a three-FK composite PK is a link table (#118)."""
+        (tmp_path / "models.py").write_text(
+            "from sqlalchemy import Column, ForeignKey, Table\n"
+            "from sqlalchemy.orm import DeclarativeBase\n\n"
+            "class Base(DeclarativeBase):\n    pass\n\n"
+            "project_member = Table(\n"
+            '    "project_member",\n'
+            "    Base.metadata,\n"
+            '    Column("project_id", ForeignKey("project.id"), primary_key=True),\n'
+            '    Column("account_id", ForeignKey("account.id"), primary_key=True),\n'
+            '    Column("role_id", ForeignKey("role.id"), primary_key=True),\n'
+            ")\n"
+        )
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert "project_member" in entities
+        assert entities["project_member"].is_link_table is True
+
 
 class TestRegularRelationshipsStillDrawn:
     """The fix must not suppress ordinary (non-link-table) relationships."""

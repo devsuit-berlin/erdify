@@ -99,6 +99,43 @@ def test_link_table_detected_structurally(tmp_path: Path) -> None:
     assert entities["post_tag"].is_link_table is True
 
 
+def test_ternary_link_table_detected_structurally(tmp_path: Path) -> None:
+    """A composite PK of three FKs (no payload) is a link table too (#118)."""
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE project (id INTEGER PRIMARY KEY);
+        CREATE TABLE account (id INTEGER PRIMARY KEY);
+        CREATE TABLE role (id INTEGER PRIMARY KEY);
+        CREATE TABLE project_membership (
+            project_id INTEGER REFERENCES project(id),
+            account_id INTEGER REFERENCES account(id),
+            role_id INTEGER REFERENCES role(id),
+            PRIMARY KEY (project_id, account_id, role_id)
+        );
+        """,
+    )
+    assert entities["project_membership"].is_link_table is True
+
+
+def test_composite_pk_with_payload_column_not_link_table(tmp_path: Path) -> None:
+    """A composite PK of FKs plus a payload column is NOT a link table (#118)."""
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE account (id INTEGER PRIMARY KEY);
+        CREATE TABLE course (id INTEGER PRIMARY KEY);
+        CREATE TABLE enrollment (
+            account_id INTEGER REFERENCES account(id),
+            course_id INTEGER REFERENCES course(id),
+            grade VARCHAR(2),
+            PRIMARY KEY (account_id, course_id)
+        );
+        """,
+    )
+    assert entities["enrollment"].is_link_table is False
+
+
 def test_create_type_enum(tmp_path: Path) -> None:
     entities, enums = _parse_sql(
         tmp_path,
