@@ -101,10 +101,16 @@ class _ERGenerator:
         return lines
 
     def _generate_link_table_relationships(self, link_entity: EntityInfo) -> List[str]:
-        """Generate relationships through a link table (many-to-many)."""
+        """Generate relationships through a link table.
+
+        A binary association table (two FKs) is drawn as the classic M:N
+        pass-through path. A ternary or higher-order one (three or more FKs)
+        has no single binary cardinality, so it is drawn as a star: one edge
+        from each parent to the link entity (#118).
+        """
         lines: List[str] = []
         fk_fields = [f for f in link_entity.fields if f.is_foreign_key]
-        if len(fk_fields) != 2:
+        if len(fk_fields) < 2:
             return lines
 
         entities_to_link: List[Tuple[EntityInfo, str]] = []
@@ -116,11 +122,18 @@ class _ERGenerator:
                         entities_to_link.append((e, fk_field.name))
                         break
 
-        if len(entities_to_link) == 2:
-            entity1, fk1_name = entities_to_link[0]
-            entity2, fk2_name = entities_to_link[1]
-            lines.append(f'{entity1.name} ||--o{{ {link_entity.name} : "{fk1_name}"')
-            lines.append(f'{link_entity.name} }}o--|| {entity2.name} : "{fk2_name}"')
+        # Arity is decided by the number of FK columns, not by how many targets
+        # resolved: a ternary table with one unresolved FK must still be drawn
+        # as a (partial) star, never mistaken for a binary M:N (#118).
+        if len(fk_fields) == 2:
+            if len(entities_to_link) == 2:
+                entity1, fk1_name = entities_to_link[0]
+                entity2, fk2_name = entities_to_link[1]
+                lines.append(f'{entity1.name} ||--o{{ {link_entity.name} : "{fk1_name}"')
+                lines.append(f'{link_entity.name} }}o--|| {entity2.name} : "{fk2_name}"')
+        else:  # three or more FK columns -> star of edges from each parent
+            for parent, fk_name in entities_to_link:
+                lines.append(f'{parent.name} ||--o{{ {link_entity.name} : "{fk_name}"')
 
         return lines
 

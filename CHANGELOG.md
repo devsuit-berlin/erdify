@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Structural link-table detection now recognizes composite-PK association
+  tables with more than two foreign keys (ternary and higher-order joins), not
+  just two-FK tables. A table whose primary key is made up entirely of foreign
+  keys — with no payload columns — is flagged as a link table regardless of its
+  name or arity, and higher-order ones are drawn as a star of edges from each
+  parent to the link entity. The rule is shared by every parser backend (Python
+  AST, Core `Table(...)` synthesis, and the SQL DDL frontend), so it can no
+  longer drift between them (#118).
+
 ## [0.11.3] - 2026-07-21
 
 ### Changed

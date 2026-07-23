@@ -8,7 +8,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Dict, List, Tuple, TypeGuard
 
-from .config import EntityInfo, EnumInfo, FieldInfo
+from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 
 
 #: Model frameworks erdify can recognize, in classification order.
@@ -531,20 +531,14 @@ class ASTDatabaseParser:
                 ),
             )
 
-        # Detect join tables structurally: an entity whose columns are exactly
-        # two foreign keys, both part of the primary key, is an association
-        # table regardless of its class name (#35).
+        # Detect join tables structurally: an entity whose composite primary
+        # key is made up entirely of foreign keys (with no payload columns) is
+        # an association table regardless of its class name (#35, #118).
         entity.is_link_table = self._is_structural_link_table(entity.fields)
 
         self.entities[class_node.name] = entity
 
-    @staticmethod
-    def _is_structural_link_table(fields: List[FieldInfo]) -> bool:
-        """Return True if fields describe a join table: exactly two columns,
-        both foreign keys and both part of the primary key."""
-        if len(fields) != 2:
-            return False
-        return all(f.is_foreign_key and f.is_primary_key for f in fields)
+    _is_structural_link_table = staticmethod(is_structural_link_table)
 
     def _parse_core_association_tables(self) -> None:
         """Synthesize link entities from module-level Core ``Table(...)`` assignments.
@@ -553,8 +547,8 @@ class ASTDatabaseParser:
         rather than a mapped class. Only class definitions become entities in the
         normal passes, so such association tables - and their M:N - would be lost.
         Parse module-level ``name = Table("t", metadata, Column(...), ...)``
-        assignments that are structurally association tables (exactly two FK
-        columns, both part of the primary key) and add them as link entities (#34).
+        assignments that are structurally association tables (a composite PK
+        made up entirely of FK columns) and add them as link entities (#34).
         """
         if self.sources is not None and "sqlalchemy" not in self.sources:
             return

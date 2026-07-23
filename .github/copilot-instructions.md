@@ -65,8 +65,8 @@ parser.py  ──►  config.py (IR)  ──►  generator.py
   (`sqlmodel`, `sqlalchemy`, `django`, `dataclass`, `pydantic`) **in that order**,
   then its fields/relationships/enums are extracted. This is the largest and most
   intricate module — framework-specific parsing logic lives here. Link tables are
-  detected **structurally** (an entity whose columns are exactly two FKs that are
-  both part of the PK), not by name.
+  detected **structurally** (a composite PK made up entirely of FKs, with no
+  payload columns — two FKs or more), not by name.
 
 - **`config.py`** — `FieldInfo`, `EnumInfo`, `EntityInfo` dataclasses. This is the
   framework-agnostic intermediate representation that decouples parsing from

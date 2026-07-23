@@ -5,7 +5,7 @@ import sys
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-from .config import EntityInfo, EnumInfo, FieldInfo
+from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 from .parser import DEFAULT_EXCLUDE_DIRS, _match_include
 
 
@@ -261,15 +261,9 @@ class SqlSchemaParser:
             if f.name in indexed:
                 f.index = True
 
-    @staticmethod
-    def _is_structural_link_table(fields: list[FieldInfo]) -> bool:
-        if len(fields) != 2:
-            return False
-        return all(f.is_foreign_key and f.is_primary_key for f in fields)
-
     def _finalize(self) -> None:
         for entity in self.entities.values():
-            entity.is_link_table = self._is_structural_link_table(entity.fields)
+            entity.is_link_table = is_structural_link_table(entity.fields)
         self._apply_excludes()
 
     def _apply_excludes(self) -> None:
