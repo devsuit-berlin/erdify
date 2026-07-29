@@ -61,6 +61,12 @@ line-length = 100
 target-version = "py310"
 exclude = ["tests/fixtures/malformed/"]
 
+[tool.ruff.lint]
+# Pin the rule set: ruff 0.16.0 expanded the defaults from 59 to 413 rules.
+# Keep the pre-0.16 selection here so this dependency bump stays behavior-neutral;
+# adopting the new rules is tracked as a separate, dedicated change.
+select = ["E", "F"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
