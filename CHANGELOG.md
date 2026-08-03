@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- SQL frontend: a single-column `UNIQUE` foreign key is now rendered as a **1:1**
+  relationship instead of N:1 — `||--||` when the column is `NOT NULL`, `|o--||`
+  when it is nullable. Both column-level `UNIQUE` and single-column table-level
+  `UNIQUE (col)` (anonymous or named `CONSTRAINT ... UNIQUE (col)`) are
+  recognized; composite `UNIQUE (a, b)` is out of scope. A unique non-primary-key
+  column is also marked `UK` in the entity block, and the `--format json` output
+  gains a `unique` boolean per field. Other frontends are unaffected (#97).
+
 ## [0.11.5] - 2026-07-29
 
 ### Changed
