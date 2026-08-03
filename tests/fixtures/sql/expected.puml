@@ -40,6 +40,12 @@ entity "product" as product {
   column(sku) : varchar(64)
 }
 
+entity "customer_profile" as customer_profile {
+  primary_key(id) : int?
+  foreign_key(customer_id) : int UK
+  column(bio) : text?
+}
+
 entity "order_item" as order_item << (L, #AAFFAA) link >> {
   primary_key(order_id) : int?
   primary_key(product_id) : int?
@@ -48,6 +54,7 @@ entity "order_item" as order_item << (L, #AAFFAA) link >> {
 ' Relationships
 
 order }o--|| customer : "customer_id"
+customer_profile ||--|| customer : "customer_id"
 order ||--o{ order_item : "order_id"
 order_item }o--|| product : "product_id"
 

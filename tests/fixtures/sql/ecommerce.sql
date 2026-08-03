@@ -15,6 +15,12 @@ CREATE TABLE "order" (
 
 CREATE TABLE product (id INTEGER PRIMARY KEY, sku VARCHAR(64) NOT NULL);
 
+CREATE TABLE customer_profile (
+    id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL UNIQUE REFERENCES customer(id),
+    bio TEXT
+);
+
 CREATE TABLE order_item (
     order_id INTEGER REFERENCES "order"(id),
     product_id INTEGER REFERENCES product(id),
