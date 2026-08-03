@@ -142,9 +142,16 @@ class SqlSchemaParser:
             exp.NotNullColumnConstraint,  # type: ignore[attr-defined]
         )
         default = self._default_value(constraints, exp)
-        is_unique = name in unique_cols or self._has_constraint(
-            constraints,
-            exp.UniqueColumnConstraint,  # type: ignore[attr-defined]
+        # A primary key is inherently unique, but is_unique is reserved for a
+        # *non-PK* uniqueness that implies a 1:1 relationship (a PK is tracked
+        # by is_primary_key). Never mark a PK column unique, even when it also
+        # carries an explicit UNIQUE constraint.
+        is_unique = not is_pk and (
+            name in unique_cols
+            or self._has_constraint(
+                constraints,
+                exp.UniqueColumnConstraint,  # type: ignore[attr-defined]
+            )
         )
         return FieldInfo(
             name=name,

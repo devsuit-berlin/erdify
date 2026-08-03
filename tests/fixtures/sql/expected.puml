@@ -54,7 +54,7 @@ entity "order_item" as order_item << (L, #AAFFAA) link >> {
 ' Relationships
 
 order }o--|| customer : "customer_id"
-customer_profile ||--|| customer : "customer_id"
+customer_profile |o--|| customer : "customer_id"
 order ||--o{ order_item : "order_id"
 order_item }o--|| product : "product_id"
 

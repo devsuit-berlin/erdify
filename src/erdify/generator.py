@@ -66,15 +66,20 @@ class _ERGenerator:
 
     @staticmethod
     def _fk_glyph(field: FieldInfo) -> str:
-        """Crow's-foot glyph for a direct FK edge (child on the left).
+        """Crow's-foot glyph for a direct FK edge, written ``child ... parent``.
 
-        A unique single-column FK is a 1:1 relationship. When the column is
-        NOT NULL the child side is exactly one (``||``); when nullable it is
-        zero-or-one (``|o``). A non-unique FK stays zero-or-more (``}o``).
+        Each end counts that entity per one instance of the other. The child
+        end (left) is how many children a parent has: a non-unique FK allows
+        zero-or-more (``}o``), while a unique single-column FK caps it at
+        zero-or-one (``|o``) — uniqueness limits it to at most one, but never
+        forces a parent to have a child, so it is never a mandatory ``||``.
+        The parent end (right) is how many parents a child has, governed by FK
+        nullability: exactly one (``||``) when NOT NULL, zero-or-one (``o|``)
+        when nullable. A unique FK is thus rendered 1:1 (``|o--||`` / ``|o--o|``).
         """
         if not field.is_unique:
             return "}o--||"
-        return "|o--||" if field.is_nullable else "||--||"
+        return "|o--o|" if field.is_nullable else "|o--||"
 
     def _entity_by_table(self, table_name: str) -> EntityInfo | None:
         """Find an entity by its table name."""

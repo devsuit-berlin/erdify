@@ -258,7 +258,8 @@ def test_unique_notnull_fk_renders_one_to_one():
         is_unique=True,
         is_nullable=False,
     )
-    assert "child ||--|| parent" in _direct_rel_lines(fk)
+    # child end |o (a parent has zero-or-one child), parent end || (NOT NULL FK).
+    assert "child |o--|| parent" in _direct_rel_lines(fk)
 
 
 def test_unique_nullable_fk_renders_zero_or_one_to_one():
@@ -270,7 +271,8 @@ def test_unique_nullable_fk_renders_zero_or_one_to_one():
         is_unique=True,
         is_nullable=True,
     )
-    assert "child |o--|| parent" in _direct_rel_lines(fk)
+    # child end |o (zero-or-one child), parent end o| (nullable FK).
+    assert "child |o--o| parent" in _direct_rel_lines(fk)
 
 
 def test_non_unique_fk_still_renders_many_to_one():

@@ -278,6 +278,26 @@ def test_unique_single_column_fk_marked(tmp_path: Path) -> None:
     assert cols["d"].is_unique is False
 
 
+def test_primary_key_with_explicit_unique_not_marked_unique(tmp_path: Path) -> None:
+    # A PK is inherently unique, but is_unique is reserved for a non-PK
+    # uniqueness that implies 1:1. An explicit UNIQUE on a PK column (inline or
+    # table-level) must not leak is_unique=True into the IR/JSON.
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE inline_pk (id INTEGER PRIMARY KEY UNIQUE);
+        CREATE TABLE table_pk (
+            id INTEGER PRIMARY KEY,
+            UNIQUE (id)
+        );
+        """,
+    )
+    assert entities["inline_pk"].fields[0].is_primary_key is True
+    assert entities["inline_pk"].fields[0].is_unique is False
+    assert entities["table_pk"].fields[0].is_primary_key is True
+    assert entities["table_pk"].fields[0].is_unique is False
+
+
 def test_missing_sqlglot_raises_helpful_error(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     f = tmp_path / "schema.sql"
     f.write_text("CREATE TABLE a (id INT);")

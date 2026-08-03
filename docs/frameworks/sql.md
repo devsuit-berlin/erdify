@@ -75,8 +75,10 @@ sql_dialect = "postgres"
 ## Relationship Cardinality
 
 A foreign key is rendered as **N:1** (`}o--||`) by default. A single-column
-`UNIQUE` foreign key is a **1:1** relationship: it renders as `||--||` when the
-column is `NOT NULL`, and `|o--||` (zero-or-one) when it is nullable. Both
+`UNIQUE` foreign key is a **1:1** relationship, drawn `child ... parent`: the
+child end is `|o` (uniqueness caps a parent at zero-or-one child), and the
+parent end follows FK nullability — so it renders `|o--||` when the column is
+`NOT NULL`, and `|o--o|` when it is nullable. Both
 column-level `col ... UNIQUE` and single-column table-level `UNIQUE (col)`
 (anonymous or named `CONSTRAINT ... UNIQUE (col)`) are recognized; composite
 `UNIQUE (a, b)` is not. A unique non-primary-key column is also flagged with a
