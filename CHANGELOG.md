@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-03
+
 ### Added
 
 - SQL frontend: a single-column `UNIQUE` foreign key is now rendered as a **1:1**
@@ -315,7 +317,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.11.5...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/devsuit-berlin/erdify/compare/v0.11.5...v0.12.0
 [0.11.5]: https://github.com/devsuit-berlin/erdify/compare/v0.11.4...v0.11.5
 [0.11.4]: https://github.com/devsuit-berlin/erdify/compare/v0.11.3...v0.11.4
 [0.11.3]: https://github.com/devsuit-berlin/erdify/compare/v0.11.2...v0.11.3
