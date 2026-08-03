@@ -308,12 +308,14 @@ class PlantUMLGenerator(_ERGenerator):
                 default_val = default_val.split(".")[-1]
             default = f" = {default_val}"
 
+        unique = " UK" if field.is_unique and not field.is_primary_key else ""
+
         # Omit the type suffix entirely when the type is unknown (e.g. an
         # untyped Core Column on a synthesized link table) to avoid a dangling ":".
         if not type_str:
-            return f"{prefix}({field.name})"
+            return f"{prefix}({field.name}){unique}"
 
-        return f"{prefix}({field.name}) : {type_str}{nullable}{default}"
+        return f"{prefix}({field.name}) : {type_str}{nullable}{default}{unique}"
 
 
 class MermaidGenerator(_ERGenerator):
@@ -362,7 +364,9 @@ class MermaidGenerator(_ERGenerator):
             keys.append("PK")
         if field.is_foreign_key:
             keys.append("FK")
-        key_str = ", ".join(keys)
+        if field.is_unique and not field.is_primary_key:
+            keys.append("UK")
+        key_str = ",".join(keys)
 
         comment_parts = []
         if field.is_nullable:

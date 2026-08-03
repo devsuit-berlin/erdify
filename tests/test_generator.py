@@ -282,3 +282,44 @@ def test_non_unique_fk_still_renders_many_to_one():
         is_unique=False,
     )
     assert "child }o--|| parent" in _direct_rel_lines(fk)
+
+
+def test_mermaid_unique_column_shows_uk():
+    entities = {
+        "profile": EntityInfo(
+            name="profile",
+            table_name="profile",
+            fields=[
+                FieldInfo(name="id", type_str="int", is_primary_key=True),
+                FieldInfo(
+                    name="customer_id",
+                    type_str="int",
+                    is_foreign_key=True,
+                    foreign_table="customer.id",
+                    is_unique=True,
+                ),
+                FieldInfo(name="email", type_str="str", is_unique=True),
+            ],
+        ),
+        "customer": EntityInfo(
+            name="customer",
+            table_name="customer",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        ),
+    }
+    out = generate_mermaid(entities)
+    assert "int customer_id FK,UK" in out
+    assert "str email UK" in out
+    assert "int id PK\n" in out or "int id PK " in out  # PK not tagged UK
+
+
+def test_plantuml_unique_column_shows_uk():
+    entities = {
+        "profile": EntityInfo(
+            name="profile",
+            table_name="profile",
+            fields=[FieldInfo(name="email", type_str="varchar", is_unique=True)],
+        ),
+    }
+    out = generate_plantuml(entities)
+    assert "column(email) : varchar UK" in out
