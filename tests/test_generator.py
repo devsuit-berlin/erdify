@@ -1,8 +1,9 @@
 """Tests for generator module."""
 
+import json
 from pathlib import Path
 
-from erdify.generator import PlantUMLGenerator, generate_plantuml
+from erdify.generator import PlantUMLGenerator, generate_plantuml, generate_json
 from erdify.parser import parse_models_directory
 from erdify.config import EntityInfo, FieldInfo
 
@@ -217,3 +218,16 @@ class TestGeneratePlantuml:
         assert "@startuml" in output
         assert "@enduml" in output
         assert "' Entities" in output
+
+
+def test_json_includes_unique_flag():
+    entities = {
+        "profile": EntityInfo(
+            name="profile",
+            table_name="profile",
+            fields=[FieldInfo(name="email", type_str="str", is_unique=True)],
+        )
+    }
+    model = json.loads(generate_json(entities))
+    field = model["entities"][0]["fields"][0]
+    assert field["unique"] is True

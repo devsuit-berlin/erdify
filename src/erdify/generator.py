@@ -449,7 +449,7 @@ def generate_json(
 
     Shape: ``{title, entities: [{name, table_name, source, is_link_table,
     fields: [{name, type, primary_key, foreign_key, nullable, foreign_table,
-    index, default}], relationships: [{target, type, attribute}]}], enums:
+    index, unique, default}], relationships: [{target, type, attribute}]}], enums:
     [{name, values}]}``. Downstream tools can consume this without re-parsing.
     """
     model = {
@@ -469,6 +469,7 @@ def generate_json(
                         "nullable": f.is_nullable,
                         "foreign_table": f.foreign_table,
                         "index": f.index,
+                        "unique": f.is_unique,
                         "default": f.default_value,
                     }
                     for f in entity.fields
