@@ -74,8 +74,15 @@ sql_dialect = "postgres"
 
 ## Relationship Cardinality
 
-All foreign keys are rendered as **N:1** in v1. UNIQUE constraint → 1:1 inference
-is deferred to [issue #97](https://github.com/devsuit-berlin/erdify/issues/97).
+A foreign key is rendered as **N:1** (`}o--||`) by default. A single-column
+`UNIQUE` foreign key is a **1:1** relationship, drawn `child ... parent`: the
+child end is `|o` (uniqueness caps a parent at zero-or-one child), and the
+parent end follows FK nullability — so it renders `|o--||` when the column is
+`NOT NULL`, and `|o--o|` when it is nullable. Both
+column-level `col ... UNIQUE` and single-column table-level `UNIQUE (col)`
+(anonymous or named `CONSTRAINT ... UNIQUE (col)`) are recognized; composite
+`UNIQUE (a, b)` is not. A unique non-primary-key column is also flagged with a
+`UK` marker in the entity block ([#97](https://github.com/devsuit-berlin/erdify/issues/97)).
 
 ## Deferred / Not Supported
 
@@ -83,7 +90,7 @@ The following constructs are intentionally out of scope for v1:
 
 | Item | Status |
 |------|--------|
-| `UNIQUE` → 1:1 relationship | Deferred — [#97](https://github.com/devsuit-berlin/erdify/issues/97) |
+| Composite `UNIQUE (a, b)` → relationship | Not supported (single-column only) |
 | `CREATE VIEW` | Not supported |
 | `CHECK` constraints | Not supported |
 | Triggers / stored procedures | Not supported |

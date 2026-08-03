@@ -57,7 +57,11 @@ erDiagram
 Notes:
 
 - Relationships use crow's-foot cardinalities identical to PlantUML
-  (`}o--||` N:1, `||--o{` 1:N, `||--||` 1:1, `}o--o{` M:N).
+  (`}o--||` N:1, `||--o{` 1:N, `||--||` 1:1, `}o--o{` M:N). A unique
+  single-column foreign key is a 1:1 rendered `|o--||` (NOT NULL FK) or
+  `|o--o|` (nullable FK).
+- A unique non-primary-key column is marked `UK` in the entity block,
+  alongside `PK`/`FK`.
 - Mermaid has no enum construct, so each used enum is rendered as an entity block
   listing its values; the referencing column keeps the enum name as its type.
 - Attribute types are reduced to a single Mermaid-safe token (e.g. `list[str]`
@@ -79,7 +83,8 @@ point for downstream tools that want erdify's model without re-parsing source.
       "is_link_table": false,
       "fields": [
         {"name": "id", "type": "int", "primary_key": true, "foreign_key": false,
-         "nullable": false, "foreign_table": null, "index": false, "default": null}
+         "nullable": false, "foreign_table": null, "index": false, "unique": false,
+         "default": null}
       ],
       "relationships": [{"target": "User", "type": "one", "attribute": "user"}]
     }

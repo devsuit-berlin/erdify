@@ -1,8 +1,9 @@
 """Tests for generator module."""
 
+import json
 from pathlib import Path
 
-from erdify.generator import PlantUMLGenerator, generate_plantuml
+from erdify.generator import PlantUMLGenerator, generate_plantuml, generate_json, generate_mermaid
 from erdify.parser import parse_models_directory
 from erdify.config import EntityInfo, FieldInfo
 
@@ -217,3 +218,152 @@ class TestGeneratePlantuml:
         assert "@startuml" in output
         assert "@enduml" in output
         assert "' Entities" in output
+
+
+def test_json_includes_unique_flag():
+    entities = {
+        "profile": EntityInfo(
+            name="profile",
+            table_name="profile",
+            fields=[FieldInfo(name="email", type_str="str", is_unique=True)],
+        )
+    }
+    model = json.loads(generate_json(entities))
+    field = model["entities"][0]["fields"][0]
+    assert field["unique"] is True
+
+
+def _direct_rel_lines(child_field):
+    entities = {
+        "child": EntityInfo(
+            name="child",
+            table_name="child",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True), child_field],
+        ),
+        "parent": EntityInfo(
+            name="parent",
+            table_name="parent",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        ),
+    }
+    return generate_mermaid(entities)
+
+
+def test_unique_notnull_fk_renders_one_to_one():
+    fk = FieldInfo(
+        name="parent_id",
+        type_str="int",
+        is_foreign_key=True,
+        foreign_table="parent.id",
+        is_unique=True,
+        is_nullable=False,
+    )
+    # child end |o (a parent has zero-or-one child), parent end || (NOT NULL FK).
+    assert "child |o--|| parent" in _direct_rel_lines(fk)
+
+
+def test_unique_nullable_fk_renders_zero_or_one_to_one():
+    fk = FieldInfo(
+        name="parent_id",
+        type_str="int",
+        is_foreign_key=True,
+        foreign_table="parent.id",
+        is_unique=True,
+        is_nullable=True,
+    )
+    # child end |o (zero-or-one child), parent end o| (nullable FK).
+    assert "child |o--o| parent" in _direct_rel_lines(fk)
+
+
+def test_non_unique_fk_still_renders_many_to_one():
+    fk = FieldInfo(
+        name="parent_id",
+        type_str="int",
+        is_foreign_key=True,
+        foreign_table="parent.id",
+        is_unique=False,
+    )
+    assert "child }o--|| parent" in _direct_rel_lines(fk)
+
+
+def test_mermaid_unique_column_shows_uk():
+    entities = {
+        "profile": EntityInfo(
+            name="profile",
+            table_name="profile",
+            fields=[
+                FieldInfo(name="id", type_str="int", is_primary_key=True),
+                FieldInfo(
+                    name="customer_id",
+                    type_str="int",
+                    is_foreign_key=True,
+                    foreign_table="customer.id",
+                    is_unique=True,
+                ),
+                FieldInfo(name="email", type_str="str", is_unique=True),
+            ],
+        ),
+        "customer": EntityInfo(
+            name="customer",
+            table_name="customer",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        ),
+    }
+    out = generate_mermaid(entities)
+    assert "int customer_id FK,UK" in out
+    assert "str email UK" in out
+    assert "int id PK\n" in out or "int id PK " in out  # PK not tagged UK
+
+
+def test_plantuml_unique_column_shows_uk():
+    entities = {
+        "profile": EntityInfo(
+            name="profile",
+            table_name="profile",
+            fields=[FieldInfo(name="email", type_str="varchar", is_unique=True)],
+        ),
+    }
+    out = generate_plantuml(entities)
+    assert "column(email) : varchar UK" in out
+
+
+def test_mermaid_composite_pk_fk_column_uses_comma_no_space():
+    """Lock the Mermaid multi-key separator: ``PK,FK`` with no space."""
+    entities = {
+        "order_item": EntityInfo(
+            name="order_item",
+            table_name="order_item",
+            fields=[
+                FieldInfo(
+                    name="order_id",
+                    type_str="int",
+                    is_primary_key=True,
+                    is_foreign_key=True,
+                    foreign_table="order.id",
+                ),
+                FieldInfo(name="line_no", type_str="int", is_primary_key=True),
+            ],
+        ),
+        "order": EntityInfo(
+            name="order",
+            table_name="order",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        ),
+    }
+    out = generate_mermaid(entities)
+    assert "int order_id PK,FK" in out
+    assert "PK, FK" not in out
+
+
+def test_plantuml_pk_and_unique_omits_uk():
+    """A column that is both primary key AND unique must not get a ` UK` suffix."""
+    entities = {
+        "profile": EntityInfo(
+            name="profile",
+            table_name="profile",
+            fields=[FieldInfo(name="id", type_str="varchar", is_primary_key=True, is_unique=True)],
+        ),
+    }
+    out = generate_plantuml(entities)
+    assert "primary_key(id) : varchar" in out
+    assert "UK" not in out

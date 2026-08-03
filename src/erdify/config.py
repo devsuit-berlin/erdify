@@ -16,6 +16,7 @@ class FieldInfo:
     foreign_table: str | None = None
     index: bool = False
     default_value: str | None = None
+    is_unique: bool = False
 
 
 @dataclass

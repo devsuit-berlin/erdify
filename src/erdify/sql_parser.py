@@ -108,8 +108,9 @@ class SqlSchemaParser:
         entity = EntityInfo(name=table_name, table_name=table_name, source="sql")
 
         pk_cols = self._table_level_pk_columns(schema, exp)
+        unique_cols = self._table_level_unique_columns(schema, exp)
         for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]
-            entity.fields.append(self._column(coldef, exp, pk_cols))
+            entity.fields.append(self._column(coldef, exp, pk_cols, unique_cols))
         self.entities[table_name] = entity
 
     def _add_enum(self, create: "object", exp: "object") -> None:
@@ -125,7 +126,9 @@ class SqlSchemaParser:
         if name and values:
             self.enums[name] = EnumInfo(name=name, values=values)
 
-    def _column(self, coldef: "object", exp: "object", pk_cols: set[str]) -> FieldInfo:
+    def _column(
+        self, coldef: "object", exp: "object", pk_cols: set[str], unique_cols: set[str]
+    ) -> FieldInfo:
         name = coldef.name  # type: ignore[attr-defined]
         kind = coldef.args.get("kind")  # type: ignore[attr-defined]
         type_str = kind.sql().lower() if kind is not None else ""
@@ -139,12 +142,24 @@ class SqlSchemaParser:
             exp.NotNullColumnConstraint,  # type: ignore[attr-defined]
         )
         default = self._default_value(constraints, exp)
+        # A primary key is inherently unique, but is_unique is reserved for a
+        # *non-PK* uniqueness that implies a 1:1 relationship (a PK is tracked
+        # by is_primary_key). Never mark a PK column unique, even when it also
+        # carries an explicit UNIQUE constraint.
+        is_unique = not is_pk and (
+            name in unique_cols
+            or self._has_constraint(
+                constraints,
+                exp.UniqueColumnConstraint,  # type: ignore[attr-defined]
+            )
+        )
         return FieldInfo(
             name=name,
             type_str=type_str,
             is_primary_key=is_pk,
             is_nullable=not not_null,
             default_value=default,
+            is_unique=is_unique,
         )
 
     @staticmethod
@@ -167,6 +182,32 @@ class SqlSchemaParser:
             for ident in pk.expressions:
                 if isinstance(ident, exp.Identifier):  # type: ignore[attr-defined]
                     cols.add(ident.name)
+        return cols
+
+    @staticmethod
+    def _table_level_unique_columns(schema: "object", exp: "object") -> set[str]:
+        """Return names of columns covered by a single-column table-level UNIQUE.
+
+        sqlglot represents a table-level ``UNIQUE(col)`` as an
+        ``exp.UniqueColumnConstraint`` wrapping a nested ``exp.Schema`` whose
+        ``.expressions`` are the column Identifiers. This covers both the
+        anonymous form (``UNIQUE (col)``, parent is the table's Schema) and the
+        named form (``CONSTRAINT name UNIQUE (col)``, parent is exp.Constraint):
+        the constraint's own NAME identifier lives on the parent Constraint
+        node, not inside the nested Schema, so it is never mistaken for a
+        column. Only single-column constraints are returned — composite
+        ``UNIQUE(a, b)`` (anonymous or named) is ignored.
+        """
+        cols: set[str] = set()
+        for uc in schema.find_all(exp.UniqueColumnConstraint):  # type: ignore[attr-defined]
+            inner = uc.this
+            names = [
+                i.name
+                for i in getattr(inner, "expressions", [])
+                if isinstance(i, exp.Identifier)  # type: ignore[attr-defined]
+            ]
+            if len(names) == 1:
+                cols.add(names[0])
         return cols
 
     def _set_fk(self, table: str, column: str, ref_table: str, ref_col: str) -> None:

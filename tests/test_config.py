@@ -44,6 +44,16 @@ class TestFieldInfo:
         field = FieldInfo(name="is_active", type_str="bool", default_value="True")
         assert field.default_value == "True"
 
+    def test_unique_defaults_false(self):
+        """is_unique defaults to False."""
+        field = FieldInfo(name="id", type_str="int")
+        assert field.is_unique is False
+
+    def test_unique_field(self):
+        """is_unique can be set."""
+        field = FieldInfo(name="email", type_str="str", is_unique=True)
+        assert field.is_unique is True
+
 
 class TestEnumInfo:
     """Tests for EnumInfo dataclass."""

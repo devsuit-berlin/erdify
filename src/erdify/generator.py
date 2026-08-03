@@ -64,6 +64,23 @@ class _ERGenerator:
 
         return link_map
 
+    @staticmethod
+    def _fk_glyph(field: FieldInfo) -> str:
+        """Crow's-foot glyph for a direct FK edge, written ``child ... parent``.
+
+        Each end counts that entity per one instance of the other. The child
+        end (left) is how many children a parent has: a non-unique FK allows
+        zero-or-more (``}o``), while a unique single-column FK caps it at
+        zero-or-one (``|o``) — uniqueness limits it to at most one, but never
+        forces a parent to have a child, so it is never a mandatory ``||``.
+        The parent end (right) is how many parents a child has, governed by FK
+        nullability: exactly one (``||``) when NOT NULL, zero-or-one (``o|``)
+        when nullable. A unique FK is thus rendered 1:1 (``|o--||`` / ``|o--o|``).
+        """
+        if not field.is_unique:
+            return "}o--||"
+        return "|o--o|" if field.is_nullable else "|o--||"
+
     def _entity_by_table(self, table_name: str) -> EntityInfo | None:
         """Find an entity by its table name."""
         for entity in self.entities.values():
@@ -96,8 +113,8 @@ class _ERGenerator:
                         target_entity = e
                         break
                 if target_entity:
-                    # }o--|| means "zero or more to exactly one".
-                    lines.append(f'{entity.name} }}o--|| {target_entity.name} : "{field.name}"')
+                    glyph = self._fk_glyph(field)
+                    lines.append(f'{entity.name} {glyph} {target_entity.name} : "{field.name}"')
         return lines
 
     def _generate_link_table_relationships(self, link_entity: EntityInfo) -> List[str]:
@@ -296,12 +313,14 @@ class PlantUMLGenerator(_ERGenerator):
                 default_val = default_val.split(".")[-1]
             default = f" = {default_val}"
 
+        unique = " UK" if field.is_unique and not field.is_primary_key else ""
+
         # Omit the type suffix entirely when the type is unknown (e.g. an
         # untyped Core Column on a synthesized link table) to avoid a dangling ":".
         if not type_str:
-            return f"{prefix}({field.name})"
+            return f"{prefix}({field.name}){unique}"
 
-        return f"{prefix}({field.name}) : {type_str}{nullable}{default}"
+        return f"{prefix}({field.name}) : {type_str}{nullable}{default}{unique}"
 
 
 class MermaidGenerator(_ERGenerator):
@@ -350,7 +369,9 @@ class MermaidGenerator(_ERGenerator):
             keys.append("PK")
         if field.is_foreign_key:
             keys.append("FK")
-        key_str = ", ".join(keys)
+        if field.is_unique and not field.is_primary_key:
+            keys.append("UK")
+        key_str = ",".join(keys)
 
         comment_parts = []
         if field.is_nullable:
@@ -449,7 +470,7 @@ def generate_json(
 
     Shape: ``{title, entities: [{name, table_name, source, is_link_table,
     fields: [{name, type, primary_key, foreign_key, nullable, foreign_table,
-    index, default}], relationships: [{target, type, attribute}]}], enums:
+    index, unique, default}], relationships: [{target, type, attribute}]}], enums:
     [{name, values}]}``. Downstream tools can consume this without re-parsing.
     """
     model = {
@@ -469,6 +490,7 @@ def generate_json(
                         "nullable": f.is_nullable,
                         "foreign_table": f.foreign_table,
                         "index": f.index,
+                        "unique": f.is_unique,
                         "default": f.default_value,
                     }
                     for f in entity.fields
