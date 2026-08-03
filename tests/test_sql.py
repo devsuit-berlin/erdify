@@ -256,8 +256,13 @@ def test_unique_single_column_fk_marked(tmp_path: Path) -> None:
             handle VARCHAR(50),
             a INTEGER,
             b INTEGER,
+            email VARCHAR(100),
+            c INTEGER,
+            d INTEGER,
             UNIQUE (handle),
-            UNIQUE (a, b)
+            UNIQUE (a, b),
+            CONSTRAINT uq_email UNIQUE (email),
+            CONSTRAINT uq_cd UNIQUE (c, d)
         );
         """,
     )
@@ -268,6 +273,9 @@ def test_unique_single_column_fk_marked(tmp_path: Path) -> None:
     assert cols["a"].is_unique is False  # composite UNIQUE ignored
     assert cols["b"].is_unique is False
     assert cols["id"].is_unique is False  # PK not marked unique
+    assert cols["email"].is_unique is True  # named single-col table-level UNIQUE
+    assert cols["c"].is_unique is False  # named composite UNIQUE ignored
+    assert cols["d"].is_unique is False
 
 
 def test_missing_sqlglot_raises_helpful_error(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

@@ -182,15 +182,23 @@ class SqlSchemaParser:
         """Return names of columns covered by a single-column table-level UNIQUE.
 
         sqlglot represents a table-level ``UNIQUE(col)`` as an
-        ``exp.UniqueColumnConstraint`` whose parent is the Schema (inline column
-        UNIQUE has a ColumnConstraint parent instead). Only single-column
-        constraints are returned — composite ``UNIQUE(a, b)`` is ignored.
+        ``exp.UniqueColumnConstraint`` wrapping a nested ``exp.Schema`` whose
+        ``.expressions`` are the column Identifiers. This covers both the
+        anonymous form (``UNIQUE (col)``, parent is the table's Schema) and the
+        named form (``CONSTRAINT name UNIQUE (col)``, parent is exp.Constraint):
+        the constraint's own NAME identifier lives on the parent Constraint
+        node, not inside the nested Schema, so it is never mistaken for a
+        column. Only single-column constraints are returned — composite
+        ``UNIQUE(a, b)`` (anonymous or named) is ignored.
         """
         cols: set[str] = set()
         for uc in schema.find_all(exp.UniqueColumnConstraint):  # type: ignore[attr-defined]
-            if not isinstance(uc.parent, exp.Schema):  # type: ignore[attr-defined]
-                continue
-            names = [i.name for i in uc.find_all(exp.Identifier)]  # type: ignore[attr-defined]
+            inner = uc.this
+            names = [
+                i.name
+                for i in getattr(inner, "expressions", [])
+                if isinstance(i, exp.Identifier)  # type: ignore[attr-defined]
+            ]
             if len(names) == 1:
                 cols.add(names[0])
         return cols

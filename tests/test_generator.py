@@ -323,3 +323,45 @@ def test_plantuml_unique_column_shows_uk():
     }
     out = generate_plantuml(entities)
     assert "column(email) : varchar UK" in out
+
+
+def test_mermaid_composite_pk_fk_column_uses_comma_no_space():
+    """Lock the Mermaid multi-key separator: ``PK,FK`` with no space."""
+    entities = {
+        "order_item": EntityInfo(
+            name="order_item",
+            table_name="order_item",
+            fields=[
+                FieldInfo(
+                    name="order_id",
+                    type_str="int",
+                    is_primary_key=True,
+                    is_foreign_key=True,
+                    foreign_table="order.id",
+                ),
+                FieldInfo(name="line_no", type_str="int", is_primary_key=True),
+            ],
+        ),
+        "order": EntityInfo(
+            name="order",
+            table_name="order",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        ),
+    }
+    out = generate_mermaid(entities)
+    assert "int order_id PK,FK" in out
+    assert "PK, FK" not in out
+
+
+def test_plantuml_pk_and_unique_omits_uk():
+    """A column that is both primary key AND unique must not get a ` UK` suffix."""
+    entities = {
+        "profile": EntityInfo(
+            name="profile",
+            table_name="profile",
+            fields=[FieldInfo(name="id", type_str="varchar", is_primary_key=True, is_unique=True)],
+        ),
+    }
+    out = generate_plantuml(entities)
+    assert "primary_key(id) : varchar" in out
+    assert "UK" not in out
