@@ -245,6 +245,31 @@ def test_schema_qualified_name_and_lenient_skipping(tmp_path: Path) -> None:
     assert "app_user" in entities  # schema prefix stripped, noise ignored
 
 
+def test_unique_single_column_fk_marked(tmp_path: Path) -> None:
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE customer (id INTEGER PRIMARY KEY);
+        CREATE TABLE profile (
+            id INTEGER PRIMARY KEY,
+            customer_id INTEGER NOT NULL UNIQUE REFERENCES customer(id),
+            handle VARCHAR(50),
+            a INTEGER,
+            b INTEGER,
+            UNIQUE (handle),
+            UNIQUE (a, b)
+        );
+        """,
+    )
+    cols = {f.name: f for f in entities["profile"].fields}
+    assert cols["customer_id"].is_unique is True  # inline UNIQUE
+    assert cols["customer_id"].is_foreign_key is True
+    assert cols["handle"].is_unique is True  # single-col table-level UNIQUE
+    assert cols["a"].is_unique is False  # composite UNIQUE ignored
+    assert cols["b"].is_unique is False
+    assert cols["id"].is_unique is False  # PK not marked unique
+
+
 def test_missing_sqlglot_raises_helpful_error(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     f = tmp_path / "schema.sql"
     f.write_text("CREATE TABLE a (id INT);")
