@@ -64,6 +64,18 @@ class _ERGenerator:
 
         return link_map
 
+    @staticmethod
+    def _fk_glyph(field: FieldInfo) -> str:
+        """Crow's-foot glyph for a direct FK edge (child on the left).
+
+        A unique single-column FK is a 1:1 relationship. When the column is
+        NOT NULL the child side is exactly one (``||``); when nullable it is
+        zero-or-one (``|o``). A non-unique FK stays zero-or-more (``}o``).
+        """
+        if not field.is_unique:
+            return "}o--||"
+        return "|o--||" if field.is_nullable else "||--||"
+
     def _entity_by_table(self, table_name: str) -> EntityInfo | None:
         """Find an entity by its table name."""
         for entity in self.entities.values():
@@ -96,8 +108,8 @@ class _ERGenerator:
                         target_entity = e
                         break
                 if target_entity:
-                    # }o--|| means "zero or more to exactly one".
-                    lines.append(f'{entity.name} }}o--|| {target_entity.name} : "{field.name}"')
+                    glyph = self._fk_glyph(field)
+                    lines.append(f'{entity.name} {glyph} {target_entity.name} : "{field.name}"')
         return lines
 
     def _generate_link_table_relationships(self, link_entity: EntityInfo) -> List[str]:

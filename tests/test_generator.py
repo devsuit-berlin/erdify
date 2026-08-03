@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from erdify.generator import PlantUMLGenerator, generate_plantuml, generate_json
+from erdify.generator import PlantUMLGenerator, generate_plantuml, generate_json, generate_mermaid
 from erdify.parser import parse_models_directory
 from erdify.config import EntityInfo, FieldInfo
 
@@ -231,3 +231,54 @@ def test_json_includes_unique_flag():
     model = json.loads(generate_json(entities))
     field = model["entities"][0]["fields"][0]
     assert field["unique"] is True
+
+
+def _direct_rel_lines(child_field):
+    entities = {
+        "child": EntityInfo(
+            name="child",
+            table_name="child",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True), child_field],
+        ),
+        "parent": EntityInfo(
+            name="parent",
+            table_name="parent",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        ),
+    }
+    return generate_mermaid(entities)
+
+
+def test_unique_notnull_fk_renders_one_to_one():
+    fk = FieldInfo(
+        name="parent_id",
+        type_str="int",
+        is_foreign_key=True,
+        foreign_table="parent.id",
+        is_unique=True,
+        is_nullable=False,
+    )
+    assert "child ||--|| parent" in _direct_rel_lines(fk)
+
+
+def test_unique_nullable_fk_renders_zero_or_one_to_one():
+    fk = FieldInfo(
+        name="parent_id",
+        type_str="int",
+        is_foreign_key=True,
+        foreign_table="parent.id",
+        is_unique=True,
+        is_nullable=True,
+    )
+    assert "child |o--|| parent" in _direct_rel_lines(fk)
+
+
+def test_non_unique_fk_still_renders_many_to_one():
+    fk = FieldInfo(
+        name="parent_id",
+        type_str="int",
+        is_foreign_key=True,
+        foreign_table="parent.id",
+        is_unique=False,
+    )
+    assert "child }o--|| parent" in _direct_rel_lines(fk)
