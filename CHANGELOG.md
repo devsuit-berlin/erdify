@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-08-12
+
+### Changed
+
+- Bumped development dependencies: `ruff` (0.16.0 → 0.16.2), `sqlglot`
+  (30.14.0 → 30.15.0), and `django` (5.2.16 → 5.2.17). No runtime or
+  user-facing change; the core install stays dependency-free.
+
 ## [0.12.0] - 2026-08-03
 
 ### Added
@@ -317,7 +325,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/devsuit-berlin/erdify/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/devsuit-berlin/erdify/compare/v0.11.5...v0.12.0
 [0.11.5]: https://github.com/devsuit-berlin/erdify/compare/v0.11.4...v0.11.5
 [0.11.4]: https://github.com/devsuit-berlin/erdify/compare/v0.11.3...v0.11.4
