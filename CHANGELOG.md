@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-08-19
+
+### Changed
+
+- Bumped development dependencies (`version-updates` group): `sqlglot`
+  (30.15.0 → 30.17.0), `ruff` (0.16.2 → 0.16.3), `mypy` (2.3.0 → 2.3.1), and
+  `sqlalchemy` (2.0.51 → 2.0.52). No runtime or user-facing change; the core
+  install stays dependency-free.
+- The documentation site is now deployed through the GitHub Pages Actions
+  workflow (upload-pages-artifact/deploy-pages) instead of pushing to the
+  `gh-pages` branch, which the "Protect GH Pages" ruleset blocks. Repository
+  infrastructure only — the published site is unchanged.
+
 ## [0.12.1] - 2026-08-12
 
 ### Changed
@@ -325,7 +338,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.12.2...HEAD
+[0.12.2]: https://github.com/devsuit-berlin/erdify/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/devsuit-berlin/erdify/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/devsuit-berlin/erdify/compare/v0.11.5...v0.12.0
 [0.11.5]: https://github.com/devsuit-berlin/erdify/compare/v0.11.4...v0.11.5
