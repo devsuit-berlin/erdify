@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bumped CI actions to their latest majors (combines Dependabot #142-#145 into
+  one change): `astral-sh/setup-uv` 9.0.0 → 10.0.1, `actions/configure-pages`
+  5.0.0 → 6.0.0, `actions/upload-pages-artifact` 4.0.0 → 5.0.0, and
+  `actions/deploy-pages` 4.0.5 → 5.0.0. The Pages actions move to Node 24;
+  `setup-uv` v10 disables its cache by default on `release`/`workflow_run`/
+  `pull_request_target` events, which only affects the publish workflow's cache
+  hit rate, not its behavior. CI only; no runtime or user-facing change.
 - Dependabot now holds freshly published versions back for 7 days
   (`cooldown.default-days: 7` on every `updates` entry) before proposing a
   version update, giving the ecosystem and security researchers time to catch a
