@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CI now resolves `uv` to `latest-known` instead of `latest`, so the version
+  installed in every workflow (including the PyPI publish job) is one whose
+  checksum ships with the pinned `setup-uv` release. New `uv` versions reach CI
+  only through a `setup-uv` bump, which arrives as a reviewed, cooldown-gated
+  Dependabot PR.
+- Dependabot's `github-actions` version-update group now includes `major`, so
+  major action bumps arrive as a single grouped PR instead of one PR each. The
+  `uv` entry deliberately keeps majors separate, and security updates are
+  unaffected in both.
+
 ## [0.12.3] - 2026-08-24
 
 ### Security
