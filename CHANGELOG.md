@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dependabot now holds freshly published versions back for 7 days
+  (`cooldown.default-days: 7` on every `updates` entry) before proposing a
+  version update, giving the ecosystem and security researchers time to catch a
+  compromised or broken release. Security updates are unaffected — `cooldown`
+  applies to version updates only. Repository infrastructure only; no runtime
+  or user-facing change.
+
 ## [0.12.2] - 2026-08-19
 
 ### Changed
