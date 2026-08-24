@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-08-24
+
+### Security
+
+- Updated two transitive development dependencies carrying open advisories,
+  resolving all six Dependabot alerts (4 high, 2 moderate):
+  - `sqlparse` 0.5.5 → 0.6.0 — GHSA-prg7-hcfm-mfcr (ReDoS via dollar-quoted SQL
+    literals), GHSA-pwgv-4x5q-6m9f, GHSA-f2ff-p2ww-7p4p, GHSA-3496-9g83-7v6x.
+  - `pymdown-extensions` 10.21.3 → 11.0.1 — GHSA-gm37-52c6-37mw,
+    GHSA-9xwg-3r6f-jcx2.
+
+  Neither package is a dependency of the published distribution: `erdify`
+  declares no runtime dependencies, and both are reached only through the
+  development and documentation groups (`sqlparse` via `django`,
+  `pymdown-extensions` via `mkdocs-material`). Installations of any previous
+  release were therefore never affected; this hardens the development and CI
+  toolchain only.
+
 ### Changed
 
 - Bumped CI actions to their latest majors (combines Dependabot #142-#145 into
@@ -354,7 +372,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.12.2...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.12.3...HEAD
+[0.12.3]: https://github.com/devsuit-berlin/erdify/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/devsuit-berlin/erdify/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/devsuit-berlin/erdify/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/devsuit-berlin/erdify/compare/v0.11.5...v0.12.0
