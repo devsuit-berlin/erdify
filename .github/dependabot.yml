@@ -11,6 +11,17 @@ updates:
     schedule:
       interval: "cron"
       cronjob: "0 2 * * 3"
+    # Hold freshly published versions back for 7 days before proposing them, so
+    # the ecosystem and security researchers get time to catch a compromised or
+    # broken release. Without this config Dependabot applies an implicit 3-day
+    # cooldown; 7 days widens that and makes the intent explicit.
+    # Security updates are NOT affected: `cooldown` is a version-updates-only
+    # option, so Dependabot security PRs are still opened immediately.
+    # No `semver-*-days` here: those sub-keys are only supported for the SemVer
+    # ecosystems (npm, Cargo, Maven, NuGet, ...) and not for uv/pip, so this
+    # entry gets `default-days` only.
+    cooldown:
+      default-days: 7
     groups:
       version-updates:  # creates a grouped pr for minor and patch updates
         applies-to: version-updates
@@ -32,6 +43,15 @@ updates:
     schedule:
       interval: "cron"
       cronjob: "0 2 1 * *"
+    # Same 7-day hold-back rationale as the uv entry above; security updates
+    # bypass `cooldown` and are unaffected. `semver-*-days` is not supported for
+    # github-actions, so `default-days` is the only knob here.
+    # Caveat: cooldown is currently reported as NOT honoured for the
+    # github-actions ecosystem (dependabot/dependabot-core#14645). It is set
+    # anyway so the intent is recorded and it takes effect once fixed, but it
+    # cannot be relied on for Actions updates today.
+    cooldown:
+      default-days: 7
     groups:
       version-updates:
         applies-to: version-updates
