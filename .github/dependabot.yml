@@ -57,6 +57,13 @@ updates:
         applies-to: version-updates
         patterns:
           - "*"
+        # `major` is included here on purpose, unlike the uv entry above: without
+        # it every major action bump arrives as its own PR (four at once, most
+        # recently #142-#145), which is noise rather than useful review
+        # granularity for pinned action SHAs. Grouping them means one PR to
+        # review - read the whole group before merging, since a single breaking
+        # action can now hide among several routine bumps.
         update-types:
+          - "major"
           - "minor"
           - "patch"
