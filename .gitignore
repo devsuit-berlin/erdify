@@ -1,6 +1,7 @@
 .venv
 .pytest_cache
 .coverage
+coverage.xml
 .ruff_cache
 .vscode
 dist/

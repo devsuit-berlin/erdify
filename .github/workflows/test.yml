@@ -58,6 +58,28 @@ jobs:
         run: uv sync --frozen
       - name: Run Tests
         run: uv run pytest --cov=erdify tests/ --cov-report=xml --cov-report=term-missing
+      # Coverage is uploaded from a single matrix leg. Every leg produces the
+      # same line coverage, so nine uploads per commit would only fragment the
+      # report in Datadog without adding signal.
+      #
+      # The workflow runs on `pull_request` (never `pull_request_target`), so a
+      # PR from a fork has no access to repository secrets. The condition skips
+      # the step there rather than letting it fail on an empty API key — and
+      # switching this trigger to `pull_request_target` would expose the key to
+      # untrusted code, so don't.
+      - name: Upload coverage to Datadog
+        if: >-
+          !cancelled()
+          && matrix.os == 'ubuntu-latest'
+          && matrix.python-version == '3.13'
+          && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77 # v1.0.5
+        with:
+          api_key: ${{ secrets.DATADOG_CODE_COVERAGE_KEY }}
+          site: datadoghq.eu
+          flags: "type:unit-tests,language:python"
+          files: coverage.xml
 
   # Single aggregate check to require in branch protection / rulesets. It turns
   # green only when every matrix leg above passes, so new Python versions or OSes
