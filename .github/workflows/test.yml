@@ -82,48 +82,54 @@ jobs:
           files: coverage.xml
 
       # README coverage badge. Datadog exposes no public badge endpoint, so the
-      # percentage is published as a shields.io endpoint payload in a Gist.
+      # percentage is published as a shields.io endpoint payload in a Gist:
+      # https://gist.github.com/FabianClemenz/927c3cce6a279569d07035f212836059
       #
-      # Only pushes to `main` update it: a PR run must not move the badge on the
-      # default branch, and fork PRs have no secrets anyway. Same single leg as
-      # the Datadog upload above.
-      - name: Read coverage percentage
-        id: coverage
+      # The Gist is patched with plain curl rather than a badge action on
+      # purpose: this repository allows only GitHub-owned, Marketplace-verified
+      # and explicitly listed actions, and a README badge does not justify
+      # widening that allowlist for another third-party dependency.
+      #
+      # Only pushes to `main` update the badge — a PR run must not move what the
+      # default branch advertises, and fork PRs hold no secrets anyway. Same
+      # single matrix leg as the Datadog upload above.
+      - name: Update coverage badge
         if: >-
           github.event_name == 'push'
           && matrix.os == 'ubuntu-latest'
           && matrix.python-version == '3.13'
         env:
-          # The `secrets` context is not available in a step-level `if`, so the
-          # token's presence is checked here instead. Without it the output stays
-          # empty, which skips the badge update rather than failing the job.
-          HAS_GIST_TOKEN: ${{ secrets.GIST_SECRET != '' }}
+          GIST_TOKEN: ${{ secrets.GIST_SECRET }}
         run: |
-          if [[ "$HAS_GIST_TOKEN" != "true" ]]; then
+          if [[ -z "$GIST_TOKEN" ]]; then
             echo "::warning::GIST_SECRET is not set; skipping the coverage badge update."
             exit 0
           fi
-          python - <<'PY' >> "$GITHUB_OUTPUT"
+          python - <<'PY' > "$RUNNER_TEMP/badge.json"
+          import json
           import xml.etree.ElementTree as ET
 
-          line_rate = float(ET.parse("coverage.xml").getroot().get("line-rate"))
-          print(f"percentage={line_rate * 100:.2f}")
+          percentage = float(ET.parse("coverage.xml").getroot().get("line-rate")) * 100
+          # Below fail_under (90) the test run fails anyway, so the scale is
+          # centred on the range that still carries information.
+          thresholds = ((95, "brightgreen"), (90, "green"), (85, "yellowgreen"), (70, "yellow"))
+          color = next((c for t, c in thresholds if percentage >= t), "red")
+          badge = {
+              "schemaVersion": 1,
+              "label": "coverage",
+              "message": f"{percentage:.2f}%",
+              "color": color,
+          }
+          payload = {"files": {"erdify-coverage.json": {"content": json.dumps(badge, indent=2) + "\n"}}}
+          print(json.dumps(payload))
           PY
-      - name: Update coverage badge
-        # Empty when the step above was skipped, which skips this one too.
-        if: steps.coverage.outputs.percentage != ''
-        uses: Schneegans/dynamic-badges-action@28b0fa8bdeb46170ac397105ece0c1fe58f68910 # v1.9.0
-        with:
-          auth: ${{ secrets.GIST_SECRET }}
-          gistID: 927c3cce6a279569d07035f212836059
-          filename: erdify-coverage.json
-          label: coverage
-          message: ${{ steps.coverage.outputs.percentage }}%
-          # Below fail_under (90) the badge should already look wrong, so the
-          # gradient is centred on the range that matters rather than on 0-100.
-          valColorRange: ${{ steps.coverage.outputs.percentage }}
-          minColorRange: 85
-          maxColorRange: 95
+          curl --fail-with-body -sS -X PATCH \
+            -H "Authorization: Bearer $GIST_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/gists/927c3cce6a279569d07035f212836059 \
+            -d @"$RUNNER_TEMP/badge.json" > /dev/null
+          echo "Coverage badge updated: $(python -c "import json;print(json.load(open('$RUNNER_TEMP/badge.json'))['files']['erdify-coverage.json']['content'])" | tr -d '\n')"
 
   # Single aggregate check to require in branch protection / rulesets. It turns
   # green only when every matrix leg above passes, so new Python versions or OSes
