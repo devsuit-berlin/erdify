@@ -18,7 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pull_request` trigger.
 - The README now carries a coverage badge. Datadog exposes no public badge
   endpoint, so pushes to `main` publish the percentage as a shields.io endpoint
-  payload in a Gist; pull requests never update it.
+  payload on the orphan `badges` branch of this repository, committed by
+  `github-actions[bot]` with the workflow's built-in `GITHUB_TOKEN`. Pull
+  requests never update it. Keeping the payload in the repository rather than in
+  a Gist or a third-party badge service means no personal credential is involved
+  and the badge survives any contributor leaving.
 - CI now resolves `uv` to `latest-known` instead of `latest`, so the version
   installed in every workflow (including the PyPI publish job) is one whose
   checksum ships with the pinned `setup-uv` release. New `uv` versions reach CI
