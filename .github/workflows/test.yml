@@ -81,6 +81,41 @@ jobs:
           flags: "type:unit-tests,language:python"
           files: coverage.xml
 
+      # README coverage badge. Datadog exposes no public badge endpoint, so the
+      # percentage is published as a shields.io endpoint payload in a Gist.
+      #
+      # Only pushes to `main` update it: a PR run must not move the badge on the
+      # default branch, and fork PRs have no secrets anyway. Same single leg as
+      # the Datadog upload above.
+      - name: Read coverage percentage
+        id: coverage
+        if: >-
+          github.event_name == 'push'
+          && matrix.os == 'ubuntu-latest'
+          && matrix.python-version == '3.13'
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import xml.etree.ElementTree as ET
+
+          line_rate = float(ET.parse("coverage.xml").getroot().get("line-rate"))
+          print(f"percentage={line_rate * 100:.2f}")
+          PY
+      - name: Update coverage badge
+        # Empty when the step above was skipped, which skips this one too.
+        if: steps.coverage.outputs.percentage != ''
+        uses: Schneegans/dynamic-badges-action@28b0fa8bdeb46170ac397105ece0c1fe58f68910 # v1.9.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: 927c3cce6a279569d07035f212836059
+          filename: erdify-coverage.json
+          label: coverage
+          message: ${{ steps.coverage.outputs.percentage }}%
+          # Below fail_under (90) the badge should already look wrong, so the
+          # gradient is centred on the range that matters rather than on 0-100.
+          valColorRange: ${{ steps.coverage.outputs.percentage }}
+          minColorRange: 85
+          maxColorRange: 95
+
   # Single aggregate check to require in branch protection / rulesets. It turns
   # green only when every matrix leg above passes, so new Python versions or OSes
   # can be added to the matrix without editing the required-checks list. The
