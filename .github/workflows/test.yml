@@ -93,7 +93,16 @@ jobs:
           github.event_name == 'push'
           && matrix.os == 'ubuntu-latest'
           && matrix.python-version == '3.13'
+        env:
+          # The `secrets` context is not available in a step-level `if`, so the
+          # token's presence is checked here instead. Without it the output stays
+          # empty, which skips the badge update rather than failing the job.
+          HAS_GIST_TOKEN: ${{ secrets.GIST_SECRET != '' }}
         run: |
+          if [[ "$HAS_GIST_TOKEN" != "true" ]]; then
+            echo "::warning::GIST_SECRET is not set; skipping the coverage badge update."
+            exit 0
+          fi
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import xml.etree.ElementTree as ET
 
