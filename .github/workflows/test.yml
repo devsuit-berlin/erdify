@@ -78,6 +78,12 @@ jobs:
         with:
           api_key: ${{ secrets.DATADOG_CODE_COVERAGE_KEY }}
           site: datadoghq.eu
+          # The action itself is SHA-pinned, but its `version` input defaults to
+          # the floating "v5", which would install whichever datadog-ci release
+          # is newest at job start — a mutable binary that runs with the API key.
+          # Pin it too. Bumping is manual: Dependabot does not track action
+          # inputs, only the `uses` reference above.
+          version: "v5.23.0"
           flags: "type:unit-tests,language:python"
           files: coverage.xml
 
