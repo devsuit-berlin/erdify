@@ -172,6 +172,22 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     steps:
+      # `badges` holds only bot-written badge payloads. A pull request from it
+      # would look perfectly mergeable — the tests pass, since the branch adds
+      # no code — while replacing `main`'s README with the branch's own. GitHub
+      # offers no setting to bar a branch from being a pull-request *source*
+      # (branch protection and rulesets only guard a branch as a merge target),
+      # so failing the required check is the way to make such a pull request
+      # unmergeable. This runs unconditionally and passes for every other head
+      # branch, which keeps it safe to require in the ruleset.
+      - name: Refuse pull requests from machine-written branches
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$HEAD_REF" == "badges" ]]; then
+            echo "::error::The badges branch is machine-written and must never be merged into main. Close this pull request."
+            exit 1
+          fi
       - name: Fail if any matrix job failed
         if: needs.test.result != 'success'
         run: exit 1

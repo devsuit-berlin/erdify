@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The required `Tests passed` check now fails for any pull request opened from
+  the machine-written `badges` branch. GitHub cannot bar a branch from being a
+  pull-request source, and such a pull request would otherwise look mergeable
+  while replacing the README on `main` with the branch's own.
 - Test coverage is now uploaded to Datadog Code Coverage from the Linux /
   Python 3.13 matrix leg, with `code-coverage.datadog.yaml` defining the
   service mapping and 90% total/patch PR gates (matching the existing
