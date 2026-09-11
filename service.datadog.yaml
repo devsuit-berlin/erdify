@@ -1,0 +1,34 @@
+# Datadog Software Catalog entry — synced automatically by the Datadog GitHub
+# integration on push to `main`; there is no sync step in CI.
+#
+# `metadata.name` is the org-global service name and is referenced by
+# code-coverage.datadog.yaml, so renaming it orphans this service's coverage
+# history and gates. Treat it as stable.
+apiVersion: v3
+kind: service
+metadata:
+  name: erdify
+  description: Python CLI and library that turns model files into ERD diagrams by parsing source with `ast`, without importing code or touching a database.
+  owner: erdify
+  links:
+    - name: Repository
+      type: repo
+      provider: GitHub
+      url: https://github.com/devsuit-berlin/erdify
+    - name: Documentation
+      type: doc
+      provider: GitHub
+      url: https://devsuit-berlin.github.io/erdify/
+    - name: PyPI
+      type: other
+      url: https://pypi.org/project/erdify/
+spec:
+  lifecycle: production
+  tier: tier-3
+  languages:
+    - python
+datadog:
+  codeLocations:
+    - repositoryURL: https://github.com/devsuit-berlin/erdify.git
+      paths:
+        - src/erdify/**

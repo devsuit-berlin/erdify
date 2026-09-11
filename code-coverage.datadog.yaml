@@ -1,0 +1,27 @@
+# Datadog Code Coverage configuration.
+#
+# Reports are uploaded by the "Upload coverage to Datadog" step in
+# .github/workflows/test.yml (one matrix leg, Linux + Python 3.13). Coverage
+# paths in coverage.xml are repository-relative (src/erdify/...), so no
+# base-path override is needed.
+schema-version: v1
+
+services:
+  - id: erdify
+    paths:
+      - "src/erdify/**"
+
+ignore:
+  - "tests/**"
+  - "scripts/**"
+  - "docs/**"
+
+gates:
+  # Mirrors [tool.coverage.report] fail_under = 90 in pyproject.toml, which
+  # already fails the test job below that number. Keep the two in sync.
+  - type: total_coverage_percentage
+    config:
+      threshold: 90
+  - type: patch_coverage_percentage
+    config:
+      threshold: 90

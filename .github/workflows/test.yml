@@ -58,6 +58,84 @@ jobs:
         run: uv sync --frozen
       - name: Run Tests
         run: uv run pytest --cov=erdify tests/ --cov-report=xml --cov-report=term-missing
+      # Coverage is uploaded from a single matrix leg. Every leg produces the
+      # same line coverage, so nine uploads per commit would only fragment the
+      # report in Datadog without adding signal.
+      #
+      # The workflow runs on `pull_request` (never `pull_request_target`), so a
+      # PR from a fork has no access to repository secrets. The condition skips
+      # the step there rather than letting it fail on an empty API key — and
+      # switching this trigger to `pull_request_target` would expose the key to
+      # untrusted code, so don't.
+      - name: Upload coverage to Datadog
+        if: >-
+          !cancelled()
+          && matrix.os == 'ubuntu-latest'
+          && matrix.python-version == '3.13'
+          && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77 # v1.0.5
+        with:
+          api_key: ${{ secrets.DATADOG_CODE_COVERAGE_KEY }}
+          site: datadoghq.eu
+          # The action itself is SHA-pinned, but its `version` input defaults to
+          # the floating "v5", which would install whichever datadog-ci release
+          # is newest at job start — a mutable binary that runs with the API key.
+          # Pin it too. Bumping is manual: Dependabot does not track action
+          # inputs, only the `uses` reference above.
+          version: "v5.23.0"
+          flags: "type:unit-tests,language:python"
+          files: coverage.xml
+
+      # README coverage badge. Datadog exposes no public badge endpoint, so the
+      # percentage is published as a shields.io endpoint payload in a Gist:
+      # https://gist.github.com/FabianClemenz/927c3cce6a279569d07035f212836059
+      #
+      # The Gist is patched with plain curl rather than a badge action on
+      # purpose: this repository allows only GitHub-owned, Marketplace-verified
+      # and explicitly listed actions, and a README badge does not justify
+      # widening that allowlist for another third-party dependency.
+      #
+      # Only pushes to `main` update the badge — a PR run must not move what the
+      # default branch advertises, and fork PRs hold no secrets anyway. Same
+      # single matrix leg as the Datadog upload above.
+      - name: Update coverage badge
+        if: >-
+          github.event_name == 'push'
+          && matrix.os == 'ubuntu-latest'
+          && matrix.python-version == '3.13'
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_SECRET }}
+        run: |
+          if [[ -z "$GIST_TOKEN" ]]; then
+            echo "::warning::GIST_SECRET is not set; skipping the coverage badge update."
+            exit 0
+          fi
+          python - <<'PY' > "$RUNNER_TEMP/badge.json"
+          import json
+          import xml.etree.ElementTree as ET
+
+          percentage = float(ET.parse("coverage.xml").getroot().get("line-rate")) * 100
+          # Below fail_under (90) the test run fails anyway, so the scale is
+          # centred on the range that still carries information.
+          thresholds = ((95, "brightgreen"), (90, "green"), (85, "yellowgreen"), (70, "yellow"))
+          color = next((c for t, c in thresholds if percentage >= t), "red")
+          badge = {
+              "schemaVersion": 1,
+              "label": "coverage",
+              "message": f"{percentage:.2f}%",
+              "color": color,
+          }
+          payload = {"files": {"erdify-coverage.json": {"content": json.dumps(badge, indent=2) + "\n"}}}
+          print(json.dumps(payload))
+          PY
+          curl --fail-with-body -sS -X PATCH \
+            -H "Authorization: Bearer $GIST_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/gists/927c3cce6a279569d07035f212836059 \
+            -d @"$RUNNER_TEMP/badge.json" > /dev/null
+          echo "Coverage badge updated: $(python -c "import json;print(json.load(open('$RUNNER_TEMP/badge.json'))['files']['erdify-coverage.json']['content'])" | tr -d '\n')"
 
   # Single aggregate check to require in branch protection / rulesets. It turns
   # green only when every matrix leg above passes, so new Python versions or OSes
