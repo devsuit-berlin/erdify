@@ -2,88 +2,101 @@
   Five frameworks, one diagram - used by README.md, docs/index.md and
   docs/frameworks/index.md.
 
-  Edit this file directly; it is the source. The snippets are trimmed from
-  the runnable examples in docs/examples/*, and the key colours match the
-  !define block PlantUMLGenerator emits (#b8861b primary, #8c8c8c foreign).
-  After editing, re-export the PNG at 1600x840, e.g.
+  Edit this file directly; it is the source. The snippets are trimmed from the
+  runnable examples in docs/examples/*.
+
+  Palette: the devsuit brand tokens.
+    #10172e dsbackgrounddark   ground
+    #192346 dsbluedark         panels
+    #4150aa dsblue             convergence lines
+    #18b4e0 dsbluelight        accent, primary keys
+    #a064d2 dspurple           foreign keys
+    #eceff1 / #cfd8dc / #607d8b / #455a64   dsgrey 10 / 20 / 60 / 80
+
+  After editing, re-export the PNG at 1600x840:
       uv run --group docs python -c "import cairosvg; cairosvg.svg2png(\
           url='docs/examples/frameworks.svg',\
           write_to='docs/examples/frameworks.png',\
           output_width=1600, output_height=840)"
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="840" viewBox="0 0 1600 840" role="img" aria-label="The same User and Order schema written in SQLModel, SQLAlchemy, Django, Pydantic and dataclasses, all producing one ERD">
-<rect width="1600" height="840" fill="#fbfaf8"/>
-<text x="56" y="74" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="44" font-weight="700" fill="#1c1a17" text-anchor="start">Five frameworks. One diagram.</text>
-<text x="56" y="110" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" font-weight="normal" fill="#6b655c" text-anchor="start">erdify reads your model files with the standard library. No imports, no database.</text>
-<text x="1544" y="74" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="30" font-weight="700" fill="#a87513" text-anchor="end">erdify</text>
-<rect x="56.0" y="150" width="281.6" height="178" rx="6" fill="#ffffff" stroke="#e2dfd8" stroke-width="1"/>
-<rect x="56.0" y="150" width="281.6" height="3" rx="1.5" fill="#a87513" opacity="0.8"/>
-<text x="72.0" y="184" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c1a17" text-anchor="start">SQLModel</text>
-<text x="72.0" y="216" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#1c1a17" text-anchor="start" xml:space="preserve">class User(SQLModel, table=True):</text>
-<text x="72.0" y="237" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    id: int = Field(primary_key=True)</text>
-<text x="72.0" y="258" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    name: str</text>
-<text x="72.0" y="279" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    email: str</text>
-<rect x="357.6" y="150" width="281.6" height="178" rx="6" fill="#ffffff" stroke="#e2dfd8" stroke-width="1"/>
-<rect x="357.6" y="150" width="281.6" height="3" rx="1.5" fill="#a87513" opacity="0.8"/>
-<text x="373.6" y="184" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c1a17" text-anchor="start">SQLAlchemy 2.0</text>
-<text x="373.6" y="216" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#1c1a17" text-anchor="start" xml:space="preserve">class User(Base):</text>
-<text x="373.6" y="237" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    __tablename__ = "user"</text>
-<text x="373.6" y="258" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    id: Mapped[int] = mapped_column(</text>
-<text x="373.6" y="279" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">        primary_key=True)</text>
-<rect x="659.2" y="150" width="281.6" height="178" rx="6" fill="#ffffff" stroke="#e2dfd8" stroke-width="1"/>
-<rect x="659.2" y="150" width="281.6" height="3" rx="1.5" fill="#a87513" opacity="0.8"/>
-<text x="675.2" y="184" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c1a17" text-anchor="start">Django</text>
-<text x="675.2" y="216" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#1c1a17" text-anchor="start" xml:space="preserve">class User(models.Model):</text>
-<text x="675.2" y="237" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    name = models.CharField(</text>
-<text x="675.2" y="258" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">        max_length=100)</text>
-<text x="675.2" y="279" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    email = models.EmailField()</text>
-<rect x="960.8" y="150" width="281.6" height="178" rx="6" fill="#ffffff" stroke="#e2dfd8" stroke-width="1"/>
-<rect x="960.8" y="150" width="281.6" height="3" rx="1.5" fill="#a87513" opacity="0.8"/>
-<text x="976.8000000000001" y="184" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c1a17" text-anchor="start">Pydantic</text>
-<text x="976.8000000000001" y="216" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#1c1a17" text-anchor="start" xml:space="preserve">class User(BaseModel):</text>
-<text x="976.8000000000001" y="237" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    id: int</text>
-<text x="976.8000000000001" y="258" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    name: str</text>
-<text x="976.8000000000001" y="279" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    email: str</text>
-<rect x="1262.4" y="150" width="281.6" height="178" rx="6" fill="#ffffff" stroke="#e2dfd8" stroke-width="1"/>
-<rect x="1262.4" y="150" width="281.6" height="3" rx="1.5" fill="#a87513" opacity="0.8"/>
-<text x="1278.4" y="184" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c1a17" text-anchor="start">dataclasses</text>
-<text x="1278.4" y="216" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">@dataclass</text>
-<text x="1278.4" y="237" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#1c1a17" text-anchor="start" xml:space="preserve">class User:</text>
-<text x="1278.4" y="258" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    id: int</text>
-<text x="1278.4" y="279" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="normal" fill="#6b655c" text-anchor="start" xml:space="preserve">    name: str</text>
-<path d="M 196.8 328 V 350 L 800.0 424" fill="none" stroke="#e2dfd8" stroke-width="2"/>
-<path d="M 498.4 328 V 350 L 800.0 424" fill="none" stroke="#e2dfd8" stroke-width="2"/>
-<path d="M 800.0 328 V 350 L 800.0 424" fill="none" stroke="#e2dfd8" stroke-width="2"/>
-<path d="M 1101.6 328 V 350 L 800.0 424" fill="none" stroke="#e2dfd8" stroke-width="2"/>
-<path d="M 1403.2 328 V 350 L 800.0 424" fill="none" stroke="#e2dfd8" stroke-width="2"/>
-<circle cx="800.0" cy="424" r="5" fill="#a87513"/>
-<path d="M 800.0 429 V 462" stroke="#a87513" stroke-width="2"/>
-<path d="M 793.0 458 L 800.0 470 L 807.0 458 Z" fill="#a87513"/>
-<rect x="367.0" y="512" width="348" height="172" rx="6" fill="#ffffff" stroke="#e2dfd8" stroke-width="1.5"/>
-<path d="M 367.0 562 H 715.0" stroke="#e2dfd8" stroke-width="1"/>
-<text x="387.0" y="545" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="20" font-weight="700" fill="#1c1a17" text-anchor="start">user</text>
-<g fill="#b8861b"><circle cx="391.0" cy="582" r="3.6"/><rect x="394.0" y="580.6" width="9" height="2.8" rx="1"/><rect x="400.0" y="580.6" width="2.4" height="5.4" rx="1"/></g>
-<text x="415.0" y="587" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#1c1a17" text-anchor="start">id</text>
-<text x="695.0" y="587" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="normal" fill="#6b655c" text-anchor="end">int</text>
-<text x="415.0" y="623" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="normal" fill="#6b655c" text-anchor="start">name</text>
-<text x="695.0" y="623" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="normal" fill="#6b655c" text-anchor="end">str</text>
-<text x="415.0" y="659" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="normal" fill="#6b655c" text-anchor="start">email</text>
-<text x="695.0" y="659" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="normal" fill="#6b655c" text-anchor="end">str</text>
-<rect x="885.0" y="512" width="348" height="172" rx="6" fill="#ffffff" stroke="#e2dfd8" stroke-width="1.5"/>
-<path d="M 885.0 562 H 1233.0" stroke="#e2dfd8" stroke-width="1"/>
-<text x="905.0" y="545" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="20" font-weight="700" fill="#1c1a17" text-anchor="start">order</text>
-<g fill="#b8861b"><circle cx="909.0" cy="582" r="3.6"/><rect x="912.0" y="580.6" width="9" height="2.8" rx="1"/><rect x="918.0" y="580.6" width="2.4" height="5.4" rx="1"/></g>
-<text x="933.0" y="587" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#1c1a17" text-anchor="start">id</text>
-<text x="1213.0" y="587" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="normal" fill="#6b655c" text-anchor="end">int</text>
-<g fill="#8c8c8c"><circle cx="909.0" cy="618" r="3.6"/><rect x="912.0" y="616.6" width="9" height="2.8" rx="1"/><rect x="918.0" y="616.6" width="2.4" height="5.4" rx="1"/></g>
-<text x="933.0" y="623" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="normal" fill="#6b655c" text-anchor="start">user_id</text>
-<text x="1213.0" y="623" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="normal" fill="#6b655c" text-anchor="end">int</text>
-<text x="933.0" y="659" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="normal" fill="#6b655c" text-anchor="start">total</text>
-<text x="1213.0" y="659" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="normal" fill="#6b655c" text-anchor="end">float</text>
-<path d="M 715.0 623 H 885.0" stroke="#8c8c8c" stroke-width="2"/>
-<path d="M 731.0 612 V 634" stroke="#8c8c8c" stroke-width="2"/>
-<path d="M 741.0 612 V 634" stroke="#8c8c8c" stroke-width="2"/>
-<path d="M 859.0 623 L 883.0 611 M 859.0 623 L 883.0 635" stroke="#8c8c8c" stroke-width="2" fill="none"/>
-<text x="800.0" y="607" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" font-weight="normal" fill="#6b655c" text-anchor="middle">user_id</text>
-<text x="800.0" y="806" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" font-weight="normal" fill="#6b655c" text-anchor="middle" letter-spacing="0.5">SQLModel  ·  SQLAlchemy  ·  Django  ·  Pydantic  ·  dataclasses  ·  SQL DDL</text>
+<defs><linearGradient id="glow" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#18b4e0" stop-opacity="0"/><stop offset="50%" stop-color="#18b4e0" stop-opacity="0.9"/><stop offset="100%" stop-color="#a064d2" stop-opacity="0"/></linearGradient></defs>
+<rect width="1600" height="840" fill="#10172e"/>
+<text x="64" y="82" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="46" font-weight="700" fill="#eceff1" text-anchor="start" letter-spacing="-0.6">Five frameworks. One diagram.</text>
+<text x="64" y="118" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" font-weight="400" fill="#607d8b" text-anchor="start">erdify reads your model files with the standard library — no imports, no database.</text>
+<text x="1536" y="80" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="28" font-weight="700" fill="#18b4e0" text-anchor="end">erdify</text>
+<rect x="64" y="144" width="1472" height="1" fill="#192346"/>
+<rect x="64.0" y="182" width="276.8" height="176" rx="10" fill="#192346"/>
+<text x="82.0" y="214" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#18b4e0" text-anchor="start" letter-spacing="0.2">SQLModel</text>
+<text x="82.0" y="246" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#cfd8dc" text-anchor="start" xml:space="preserve">class User(SQLModel, table=True):</text>
+<text x="82.0" y="267" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    id: int = Field(primary_key=True)</text>
+<text x="82.0" y="288" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    name: str</text>
+<text x="82.0" y="309" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    email: str</text>
+<rect x="362.8" y="182" width="276.8" height="176" rx="10" fill="#192346"/>
+<text x="380.8" y="214" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#18b4e0" text-anchor="start" letter-spacing="0.2">SQLAlchemy 2.0</text>
+<text x="380.8" y="246" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#cfd8dc" text-anchor="start" xml:space="preserve">class User(Base):</text>
+<text x="380.8" y="267" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    __tablename__ = "user"</text>
+<text x="380.8" y="288" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    id: Mapped[int] = mapped_column(</text>
+<text x="380.8" y="309" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">        primary_key=True)</text>
+<rect x="661.6" y="182" width="276.8" height="176" rx="10" fill="#192346"/>
+<text x="679.6" y="214" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#18b4e0" text-anchor="start" letter-spacing="0.2">Django</text>
+<text x="679.6" y="246" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#cfd8dc" text-anchor="start" xml:space="preserve">class User(models.Model):</text>
+<text x="679.6" y="267" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    name = models.CharField(</text>
+<text x="679.6" y="288" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">        max_length=100)</text>
+<text x="679.6" y="309" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    email = models.EmailField()</text>
+<rect x="960.4" y="182" width="276.8" height="176" rx="10" fill="#192346"/>
+<text x="978.4000000000001" y="214" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#18b4e0" text-anchor="start" letter-spacing="0.2">Pydantic</text>
+<text x="978.4000000000001" y="246" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#cfd8dc" text-anchor="start" xml:space="preserve">class User(BaseModel):</text>
+<text x="978.4000000000001" y="267" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    id: int</text>
+<text x="978.4000000000001" y="288" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    name: str</text>
+<text x="978.4000000000001" y="309" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    email: str</text>
+<rect x="1259.2" y="182" width="276.8" height="176" rx="10" fill="#192346"/>
+<text x="1277.2" y="214" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#18b4e0" text-anchor="start" letter-spacing="0.2">dataclasses</text>
+<text x="1277.2" y="246" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">@dataclass</text>
+<text x="1277.2" y="267" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#cfd8dc" text-anchor="start" xml:space="preserve">class User:</text>
+<text x="1277.2" y="288" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    id: int</text>
+<text x="1277.2" y="309" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#607d8b" text-anchor="start" xml:space="preserve">    name: str</text>
+<path d="M 202.4 358 V 378 L 800.0 448" fill="none" stroke="#4150aa" stroke-width="1.5" opacity="0.75"/>
+<path d="M 501.2 358 V 378 L 800.0 448" fill="none" stroke="#4150aa" stroke-width="1.5" opacity="0.75"/>
+<path d="M 800.0 358 V 378 L 800.0 448" fill="none" stroke="#4150aa" stroke-width="1.5" opacity="0.75"/>
+<path d="M 1098.8 358 V 378 L 800.0 448" fill="none" stroke="#4150aa" stroke-width="1.5" opacity="0.75"/>
+<path d="M 1397.6 358 V 378 L 800.0 448" fill="none" stroke="#4150aa" stroke-width="1.5" opacity="0.75"/>
+<rect x="64" y="447.5" width="1472" height="1.5" fill="url(#glow)"/>
+<circle cx="800.0" cy="448" r="5.5" fill="#18b4e0"/>
+<path d="M 800.0 456 V 482" stroke="#18b4e0" stroke-width="1.5"/>
+<path d="M 794.0 478 L 800.0 490 L 806.0 478 Z" fill="#18b4e0"/>
+<rect x="360.0" y="530" width="352" height="174" rx="10" fill="#192346"/>
+<rect x="360.0" y="544" width="3" height="146" rx="1.5" fill="#18b4e0"/>
+<path d="M 380.0 582 H 692.0" stroke="#10172e" stroke-width="1.5"/>
+<text x="380.0" y="569" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="20" font-weight="700" fill="#18b4e0" text-anchor="start">user</text>
+<circle cx="386.0" cy="602" r="3.6" fill="#18b4e0"/>
+<rect x="390.0" y="600.6" width="10" height="2.8" rx="1.4" fill="#18b4e0"/>
+<text x="692.0" y="607" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#18b4e0" text-anchor="end" letter-spacing="0.6">PK</text>
+<text x="410.0" y="607" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#eceff1" text-anchor="start">id</text>
+<text x="646.0" y="607" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#607d8b" text-anchor="end">int</text>
+<text x="410.0" y="643" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#cfd8dc" text-anchor="start">name</text>
+<text x="692.0" y="643" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#607d8b" text-anchor="end">str</text>
+<text x="410.0" y="679" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#cfd8dc" text-anchor="start">email</text>
+<text x="692.0" y="679" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#607d8b" text-anchor="end">str</text>
+<rect x="888.0" y="530" width="352" height="174" rx="10" fill="#192346"/>
+<rect x="888.0" y="544" width="3" height="146" rx="1.5" fill="#18b4e0"/>
+<path d="M 908.0 582 H 1220.0" stroke="#10172e" stroke-width="1.5"/>
+<text x="908.0" y="569" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="20" font-weight="700" fill="#18b4e0" text-anchor="start">order</text>
+<circle cx="914.0" cy="602" r="3.6" fill="#18b4e0"/>
+<rect x="918.0" y="600.6" width="10" height="2.8" rx="1.4" fill="#18b4e0"/>
+<text x="1220.0" y="607" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#18b4e0" text-anchor="end" letter-spacing="0.6">PK</text>
+<text x="938.0" y="607" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#eceff1" text-anchor="start">id</text>
+<text x="1174.0" y="607" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#607d8b" text-anchor="end">int</text>
+<circle cx="914.0" cy="638" r="3.6" fill="#a064d2"/>
+<rect x="918.0" y="636.6" width="10" height="2.8" rx="1.4" fill="#a064d2"/>
+<text x="1220.0" y="643" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#a064d2" text-anchor="end" letter-spacing="0.6">FK</text>
+<text x="938.0" y="643" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#eceff1" text-anchor="start">user_id</text>
+<text x="1174.0" y="643" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#607d8b" text-anchor="end">int</text>
+<text x="938.0" y="679" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#cfd8dc" text-anchor="start">total</text>
+<text x="1220.0" y="679" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#607d8b" text-anchor="end">float</text>
+<path d="M 712.0 643 H 888.0" stroke="#455a64" stroke-width="1.5"/>
+<path d="M 732.0 633 V 653 M 742.0 633 V 653" stroke="#455a64" stroke-width="1.5"/>
+<path d="M 860.0 643 L 884.0 632 M 860.0 643 L 884.0 654" stroke="#455a64" stroke-width="1.5" fill="none"/>
+<text x="800.0" y="628" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#607d8b" text-anchor="middle">user_id</text>
+<text x="800.0" y="798" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#455a64" text-anchor="middle" letter-spacing="0.8">SQLModel   ·   SQLAlchemy   ·   Django   ·   Pydantic   ·   dataclasses   ·   SQL DDL</text>
 </svg>
