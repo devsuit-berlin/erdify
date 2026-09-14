@@ -60,12 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   That workflow is precisely the one an empty result damages, and the flag did
   not exist when the example was written.
 
-- The Datadog coverage upload is now also gated on the API key actually being
-  present. The existing fork check covers pull requests from forks, but a
-  Dependabot pull request's head branch lives in this repository, and GitHub
-  runs those with Dependabot secrets rather than Actions secrets — so the step
-  would have run with an empty key and failed the required `Tests passed`
-  check on every dependency bump.
+- The Datadog coverage upload is now also skipped for Dependabot. The existing
+  fork check covers pull requests from forks, but a Dependabot pull request's
+  head branch lives in this repository, and GitHub runs those with Dependabot
+  secrets rather than Actions secrets — so the step would have run with an
+  empty key and failed the required `Tests passed` check on every dependency
+  bump. The condition matches on the actor: secrets cannot be referenced in an
+  `if:` conditional, and the documented job-level-env workaround would put the
+  API key in the environment of every step in the job.
 - `SECURITY.md` scopes its absolute claims to the core install. "Does not
   execute / import / connect / send" holds for the stdlib-only core; the
   `erdify[sql]` extra runs third-party code (sqlglot) in your process and is now

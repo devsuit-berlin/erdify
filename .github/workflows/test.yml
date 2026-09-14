@@ -68,19 +68,25 @@ jobs:
       # switching this trigger to `pull_request_target` would expose the key to
       # untrusted code, so don't.
       #
-      # The secret check is the load-bearing one: it is empty for a fork PR
-      # *and* for a Dependabot PR, whose head branch lives in this repository
-      # but which GitHub runs with Dependabot secrets instead of Actions
-      # secrets. Without it, every Dependabot PR would run the upload with an
-      # empty API key and fail the required `Tests passed` check. The explicit
-      # fork condition stays because it documents the intent that only
-      # devsuit committers' pushes ever reach (and bill) Datadog.
+      # Dependabot needs its own clause: its head branch lives in this
+      # repository, so the fork condition above passes, but GitHub runs those
+      # workflows with Dependabot secrets instead of Actions secrets. The key
+      # would be empty and the upload would fail the required `Tests passed`
+      # check on every dependency bump.
+      #
+      # Do NOT express that as `secrets.X != ''`: "Secrets cannot be directly
+      # referenced in `if:` conditionals" (GitHub docs, Using secrets in GitHub
+      # Actions). Doing so is a workflow validation error — the whole run ends
+      # in startup_failure with no jobs at all, which is how this was found.
+      # The documented workaround is a job-level env var, but that would put
+      # the API key in the environment of every step in the job, including
+      # `uv sync` and `pytest`, so match on the actor instead.
       - name: Upload coverage to Datadog
         if: >-
           !cancelled()
           && matrix.os == 'ubuntu-latest'
           && matrix.python-version == '3.13'
-          && secrets.DATADOG_CODE_COVERAGE_KEY != ''
+          && github.actor != 'dependabot[bot]'
           && (github.event_name != 'pull_request'
           || github.event.pull_request.head.repo.full_name == github.repository)
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77 # v1.0.5
