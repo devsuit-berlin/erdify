@@ -26,18 +26,20 @@ See the [full feature matrix](https://erdify.devsuit.io/features/) for everythin
 
 ## 🤔 Why erdify and not X?
 
-| | **erdify** | eralchemy | sqlalchemy-schemadisplay | erdantic | `graph_models` | DBML/dbdiagram |
-|---|---|---|---|---|---|---|
-| Needs a live DB connection | **No** | Optional | Optional | No | No | Only for `db2dbml` |
-| Imports/executes your code | **No** | Yes | Yes | Yes | Yes (full Django setup) | n/a |
-| Frameworks read | **5 + SQL DDL** | SQLAlchemy | SQLAlchemy | Pydantic, attrs, msgspec, dataclasses | Django | SQL dumps |
-| Runtime dependencies | **None** | SQLAlchemy + Graphviz | SQLAlchemy, pydot, Graphviz | pydantic, pygraphviz, … | Django + Graphviz | Node.js |
-| CI drift gate | **`--check`** | No | No | No | No | No |
+| | **erdify** | paracelsus | eralchemy | sqlalchemy-schemadisplay | erdantic | `graph_models` | DBML/dbdiagram |
+|---|---|---|---|---|---|---|---|
+| Needs a live DB connection | **No** | No | Optional | Optional | No | No | Only for `db2dbml` |
+| Imports/executes your code | **No** | Yes | Yes | Yes | Yes | Yes (full Django setup) | n/a |
+| Frameworks read | **5 + SQL DDL** | SQLAlchemy | SQLAlchemy | SQLAlchemy | Pydantic, attrs, msgspec, dataclasses | Django | SQL dumps |
+| Runtime dependencies | **None** | SQLAlchemy, pydot, typer | SQLAlchemy + Graphviz | SQLAlchemy, pydot, Graphviz | pydantic, pygraphviz, … | Django + Graphviz | Node.js |
+| CI drift gate | **`--check`** | `--check` | No | No | No | No | No |
 
 erdify reads your source with the stdlib `ast` module, so it runs in a docs
 pipeline, a pre-commit hook or a CI job against a repository it cannot even
-install. That is a trade-off, not a free win — anything your code builds at
-runtime is invisible to it, and none of these tools renders images for you.
+install — and one command covers five frameworks plus raw SQL, where every
+other tool here covers one. That is a trade-off, not a free win: anything your
+code builds at runtime is invisible to it, and none of these tools renders
+images for you.
 
 👉 **[Full comparison, including when to use something else](https://erdify.devsuit.io/comparison/)**
 
