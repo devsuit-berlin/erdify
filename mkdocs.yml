@@ -25,6 +25,8 @@ theme:
     - navigation.sections
     - navigation.top
     - navigation.instant
+    - navigation.footer
+    - content.action.edit
     - content.code.copy
     - search.suggest
 
@@ -43,6 +45,7 @@ nav:
       - Overview: frameworks/index.md
       - Django ORM: frameworks/django.md
       - SQL DDL: frameworks/sql.md
+  - Changelog: changelog.md
 
 markdown_extensions:
   - admonition
@@ -50,6 +53,11 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.highlight
+  - pymdownx.snippets:
+      base_path: [!relative $config_dir]
+      check_paths: true
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -58,3 +66,6 @@ markdown_extensions:
 
 plugins:
   - search
+  # Renders the social card (og:image) for every page. Needs the imaging
+  # dependencies from `mkdocs-material[imaging]` and their system libraries.
+  - social
