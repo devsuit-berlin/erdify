@@ -54,6 +54,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `SECURITY.md` scopes its absolute claims to the core install. "Does not
+  execute / import / connect / send" holds for the stdlib-only core; the
+  `erdify[sql]` extra runs third-party code (sqlglot) in your process and is now
+  described as its own trust boundary. Added: `--output`/`--inject` do write to
+  the paths you name, and the rendering step (PlantUML server, Mermaid, browser)
+  is outside erdify's control. The response times are stated as what a small
+  team aims for rather than a service-level guarantee.
+- `docs/usage/ci.md` leads with the `--check` drift gate and presents the
+  auto-commit workflow as the alternative, with its trade-off stated. The
+  workflow examples keep floating action tags for readability, and a note now
+  says so explicitly and tells readers to pin to a SHA in their own repository —
+  as erdify's own workflows do.
+- Reduced decorative emoji in `SECURITY.md` and `CONTRIBUTING.md`, which people
+  reach when something is wrong or when they are trying to get set up.
 - The "No tables found" warning is now actionable: it names the active
   `--include` patterns, reports how many `.py`/`.sql` files were scanned and how
   many matched, and distinguishes "nothing matched the patterns" (the usual

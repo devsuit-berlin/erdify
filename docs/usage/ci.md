@@ -8,8 +8,50 @@ Keep your ERD diagrams automatically up to date in continuous integration and on
 
 ## Integration with CI/CD
 
+### Gate on drift (recommended)
+
+The strongest thing CI can do is **fail** when the committed diagram no longer
+matches the models. `--check` regenerates in memory, compares, and writes
+nothing:
+
 ```yaml
-# .github/workflows/docs.yml
+# .github/workflows/erd.yml
+name: ERD
+
+on: pull_request
+
+jobs:
+  erd-up-to-date:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check the ERD is up to date
+        run: pipx run erdify ./src/database --title "Database Schema" -o docs/erd.puml --check
+```
+
+A stale diagram fails the pull request; the contributor re-runs erdify locally
+and commits the regenerated file, so the change to the schema **and** the change
+to the diagram are reviewed together. That is the behavior you usually want:
+the diagram is documentation, and documentation should go through review.
+
+`--check` validates every `--format` target, and works the same way for an
+[injected Markdown diagram](#keeping-an-embedded-readme-diagram-fresh).
+
+### Alternative: regenerate and commit
+
+If you would rather have CI keep the diagram current by itself, generate it and
+push the result back. The trade-off: the diagram lands on your default branch
+without review, and a misconfigured run can commit an empty or wrong diagram
+over a good one.
+
+```yaml
+# .github/workflows/erd.yml
 name: Generate ERD
 
 on:
@@ -64,6 +106,18 @@ Or with uvx:
 ```bash
 uvx --from 'erdify[sql]' erdify ./schema --include '*.sql' --sql-dialect postgres -o docs/erd.puml
 ```
+
+!!! note "About the unpinned actions in these examples"
+
+    The workflow snippets on this page use floating tags (`actions/checkout@v4`)
+    for readability. erdify's own workflows pin every action to a full commit
+    SHA, and **you should too** in a repository you control — a moving tag is a
+    supply-chain risk that a SHA removes. Pinning here would mean shipping SHAs
+    that go stale in the docs; pin them when you copy the snippet:
+
+    ```yaml
+    - uses: actions/checkout@<full-sha>  # v4.x
+    ```
 
 ## Integration with pre-commit hooks
 

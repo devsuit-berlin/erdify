@@ -1,4 +1,4 @@
-# 🔒 Security Policy
+# Security Policy
 
 ## Supported Versions
 
@@ -7,85 +7,99 @@ most recent release.
 
 | Version        | Supported |
 | -------------- | --------- |
-| Latest release | ✅ Yes    |
-| Older          | ❌ No     |
+| Latest release | Yes       |
+| Older          | No        |
 
-## 🛡️ Security Model
+## Security Model
 
-### How erdify Works
+### The core install
 
-This tool uses Python's `ast` module to parse model files as text. It:
+`pip install erdify` has **no runtime dependencies** and parses model files with
+Python's standard-library `ast` module. For that install, erdify:
 
-- ✅ **Does NOT execute** any Python code from the parsed files
-- ✅ **Does NOT import** any modules from the parsed files
-- ✅ **Does NOT connect** to any database
-- ✅ **Does NOT send** any data over the network
-- ✅ Has **zero runtime dependencies** (stdlib only)
+- does **not execute** any code from the files it reads
+- does **not import** any module from the files it reads
+- does **not open** a database connection
+- does **not make** network requests
 
-### What This Means
+So a malicious `models.py` cannot get its code run by pointing erdify at it, and
+the only third-party code in the process is erdify itself.
 
-- The tool is safe to run on untrusted model files
-- Malicious code in model files cannot be executed
-- No risk of SQL injection or database access
-- No network-based attacks possible
+### The `sql` extra
 
-## 🚨 Reporting a Vulnerability
+`pip install erdify[sql]` adds one dependency,
+[sqlglot](https://github.com/tobymao/sqlglot), which parses `.sql` files. The
+statements above about not executing, importing or connecting still hold — but
+the trust boundary is wider: sqlglot is third-party code running in your
+process, and a vulnerability in it is a vulnerability in your `erdify[sql]`
+install. Weigh that the way you would any other dependency, and keep it updated.
 
-We take security seriously. If you discover a security vulnerability, please report it responsibly.
+### Filesystem writes
 
-### How to Report
+erdify writes where you tell it to: `--output` creates or overwrites the target
+file, and `--inject` rewrites the region between the markers in the Markdown
+file you name. It does not write anywhere else, and it never deletes. Treat
+those paths as you would any other output path in a pipeline — in particular,
+do not build them from untrusted input.
 
-1. **DO NOT** open a public GitHub issue for security vulnerabilities
-2. Email us at: [tech@devsuit.de](mailto:tech@devsuit.de)
-3. Include:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Any suggested fixes (optional)
+### What is not covered
 
-### What to Expect
+- The **rendering** step. erdify emits PlantUML, Mermaid, JSON or HTML; what
+  you then feed a PlantUML server, a Mermaid renderer or a browser is outside
+  erdify's control. Entity, column and enum names from the parsed source appear
+  verbatim in that output.
+- Anything erdify is pointed at that it does not parse.
 
-- **Acknowledgment**: Within 48 hours
-- **Initial Assessment**: Within 1 week
-- **Resolution Timeline**: Depends on severity
-  - 🔴 Critical: 24-48 hours
-  - 🟠 High: 1 week
-  - 🟡 Medium: 2 weeks
-  - 🟢 Low: Next release
+## Reporting a Vulnerability
 
-### After Reporting
+Please report vulnerabilities privately.
 
-1. We'll investigate and validate the issue
-2. We'll work on a fix
-3. We'll coordinate disclosure timing with you
-4. We'll credit you in the release notes (unless you prefer anonymity)
+1. **Do not** open a public GitHub issue for a security vulnerability.
+2. Email [tech@devsuit.de](mailto:tech@devsuit.de).
+3. Include a description, steps to reproduce, the potential impact, and any
+   suggested fix.
 
-## 🔐 Best Practices for Users
+### What to expect
 
-While erdify is designed to be safe, we recommend:
+erdify is maintained by a small team, so the times below are what we aim for
+rather than a guaranteed service level:
 
-1. **Keep Updated**: Use the latest version
-2. **Review Output**: Check generated diagrams before sharing
-3. **CI/CD Security**: Run in isolated environments
-4. **Input Validation**: Only process trusted directories
+- **Acknowledgment**: usually within a few business days.
+- **Initial assessment**: once we have reproduced it, we will tell you whether
+  we consider it a vulnerability and roughly how we plan to handle it.
+- **Fix**: as fast as the severity warrants. A critical issue takes priority
+  over everything else; a low-severity one ships with the next release.
 
-## 📋 Security Checklist for Contributors
+If you have not heard back within a week, please send a reminder — mail does go
+astray.
 
-When contributing, ensure:
+### After reporting
 
-- [ ] No use of `eval()`, `exec()`, or `__import__()`
-- [ ] No dynamic code execution
-- [ ] No file operations outside specified paths
-- [ ] No network requests
-- [ ] Input validation for all user-provided paths
-- [ ] Tests for edge cases and malformed input
+1. We investigate and validate the issue.
+2. We work on a fix.
+3. We coordinate disclosure timing with you.
+4. We credit you in the release notes, unless you prefer to stay anonymous.
 
-## 🏆 Security Hall of Fame
+## Recommendations for Users
 
-We thank the following individuals for responsibly disclosing security issues:
+- Run the latest release.
+- Run erdify in an isolated environment in CI, as you would any build step.
+- Review generated diagrams before publishing them: they contain your table,
+  column and enum names, which can themselves be sensitive.
 
-*No reports yet - be the first!*
+## Security Checklist for Contributors
 
----
+When contributing, make sure there is:
 
-Thank you for helping keep erdify secure! 🙏
+- [ ] no `eval()`, `exec()` or `__import__()`
+- [ ] no dynamic code execution
+- [ ] no file operations outside the paths the user specified
+- [ ] no network requests
+- [ ] validation of user-provided paths
+- [ ] test coverage for edge cases and malformed input
+
+## Acknowledgments
+
+Our thanks to everyone who has reported a security issue responsibly:
+
+*No reports yet.*
