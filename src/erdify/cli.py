@@ -158,11 +158,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--fail-on-empty",
+        "--allow-empty",
         action="store_true",
         help=(
-            "Exit non-zero when no entities were found, instead of warning and "
-            "writing an empty diagram (for CI jobs that commit the result)"
+            "Treat 'no tables found' as a warning instead of an error: write "
+            "the empty diagram and exit 0 (default since 0.13.0: exit 1)"
         ),
     )
     parser.add_argument(
@@ -212,7 +212,7 @@ def main() -> int:
     no_enums = args.no_enums or bool(config.get("no_enums", False))
     no_relationships = args.no_relationships or bool(config.get("no_relationships", False))
     no_default_excludes = args.no_default_excludes or bool(config.get("no_default_excludes", False))
-    fail_on_empty = args.fail_on_empty or bool(config.get("fail_on_empty", False))
+    allow_empty = args.allow_empty or bool(config.get("allow_empty", False))
 
     # Output: CLI path (relative to cwd) > config path (relative to the project) > stdout.
     output_path: Path | None = args.output
@@ -288,7 +288,7 @@ def main() -> int:
             include_patterns=include,
         )
         patterns = " ".join(repr(p) for p in report.include_patterns)
-        level = "Error" if fail_on_empty else "Warning"
+        level = "Warning" if allow_empty else "Error"
         print(f"{level}: No tables found in {args.input}", file=sys.stderr)
         print(
             f"  Scanned {report.candidate_files} .py/.sql file(s); "
@@ -311,7 +311,7 @@ def main() -> int:
             "  https://erdify.devsuit.io/troubleshooting/",
             file=sys.stderr,
         )
-        if fail_on_empty:
+        if not allow_empty:
             return 1
 
     # Generate, then write each format to <output>.<ext> (or stdout / --check).

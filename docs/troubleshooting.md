@@ -39,9 +39,10 @@ like a model:
 - The models are built at runtime; see
   [Python parsing limitations](frameworks/limitations.md).
 
-In CI, add `--fail-on-empty` so an empty result fails the job instead of
-committing an empty diagram over a good one — see
-[CI/CD & pre-commit](usage/ci.md#alternative-regenerate-and-commit).
+Since 0.13.0 an empty result exits `1` and writes nothing, so a CI job fails
+here instead of committing an empty diagram over a good one. If an empty schema
+is legitimate for your project, pass
+[`--allow-empty`](usage/cli.md#empty-results-allow-empty).
 
 ## Too many entities
 
