@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-14
+
 ### Added
 
 - `--base-classes NAME [NAME ...]` (and `base_classes` in `[tool.erdify]`) names
@@ -545,7 +547,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/devsuit-berlin/erdify/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/devsuit-berlin/erdify/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/devsuit-berlin/erdify/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/devsuit-berlin/erdify/compare/v0.12.1...v0.12.2
