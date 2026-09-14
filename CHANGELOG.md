@@ -54,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The "No tables found" message now ends with a link to the troubleshooting
+  page, which did not exist when the message was written.
+- The auto-commit CI example in `docs/usage/ci.md` passes `--fail-on-empty`.
+  That workflow is precisely the one an empty result damages, and the flag did
+  not exist when the example was written.
+
 - The Datadog coverage upload is now also gated on the API key actually being
   present. The existing fork check covers pull requests from forks, but a
   Dependabot pull request's head branch lives in this repository, and GitHub

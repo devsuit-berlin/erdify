@@ -307,6 +307,10 @@ def main() -> int:
                 "and --exclude, and see the supported frameworks in the docs.",
                 file=sys.stderr,
             )
+        print(
+            "  https://erdify.devsuit.io/troubleshooting/",
+            file=sys.stderr,
+        )
         if fail_on_empty:
             return 1
 
