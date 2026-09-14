@@ -248,17 +248,17 @@ class TestCLI:
         assert "foreign_key(customer_id)" not in captured.out
 
     def test_cli_empty_models_warning(self, empty_models_dir: Path, capsys):
-        """Test CLI warns when no tables found."""
+        """Test CLI reports when no tables are found."""
         with patch.object(sys, "argv", ["erdify", str(empty_models_dir)]):
             result = main()
 
-        assert result == 0  # Not an error, just a warning
+        assert result == 1  # An empty result is an error by default
         captured = capsys.readouterr()
         assert "No tables found" in captured.err
 
 
 class TestCLIEmptyResult:
-    """The empty-result path: what it reports, and --fail-on-empty."""
+    """The empty-result path: what it reports, and --allow-empty."""
 
     @staticmethod
     def _tree_with_models_in_schema_py(root: Path) -> Path:
@@ -277,7 +277,7 @@ class TestCLIEmptyResult:
         """Nothing matched: report the pattern, the counts, and how to fix it."""
         root = self._tree_with_models_in_schema_py(tmp_path)
 
-        with patch.object(sys, "argv", ["erdify", str(root)]):
+        with patch.object(sys, "argv", ["erdify", str(root), "--allow-empty"]):
             result = main()
 
         assert result == 0
@@ -288,7 +288,7 @@ class TestCLIEmptyResult:
 
     def test_warning_distinguishes_matched_but_unrecognized(self, empty_models_dir: Path, capsys):
         """A models.py that holds no models is a different problem than no match."""
-        with patch.object(sys, "argv", ["erdify", str(empty_models_dir)]):
+        with patch.object(sys, "argv", ["erdify", str(empty_models_dir), "--allow-empty"]):
             result = main()
 
         assert result == 0
@@ -304,52 +304,58 @@ class TestCLIEmptyResult:
 
         assert "https://erdify.devsuit.io/troubleshooting/" in capsys.readouterr().err
 
-    def test_fail_on_empty_exits_non_zero(self, empty_models_dir: Path, capsys):
-        """--fail-on-empty turns the warning into a failure."""
-        with patch.object(sys, "argv", ["erdify", str(empty_models_dir), "--fail-on-empty"]):
+    def test_empty_result_exits_non_zero_by_default(self, empty_models_dir: Path, capsys):
+        """An empty result is an error unless the caller opts out."""
+        with patch.object(sys, "argv", ["erdify", str(empty_models_dir)]):
             result = main()
 
         assert result == 1
         assert "Error: No tables found" in capsys.readouterr().err
 
-    def test_fail_on_empty_leaves_an_existing_output_file_alone(
+    def test_empty_result_leaves_an_existing_output_file_alone(
         self, empty_models_dir: Path, temp_dir: Path
     ):
         """The failure comes before generation, so a good diagram survives."""
         output = temp_dir / "erd.puml"
         output.write_text("@startuml\nentity Author\n@enduml\n")
 
-        argv = ["erdify", str(empty_models_dir), "-o", str(output), "--fail-on-empty"]
+        argv = ["erdify", str(empty_models_dir), "-o", str(output)]
         with patch.object(sys, "argv", argv):
             result = main()
 
         assert result == 1
         assert output.read_text() == "@startuml\nentity Author\n@enduml\n"
 
-    def test_empty_result_still_writes_without_the_flag(
-        self, empty_models_dir: Path, temp_dir: Path
-    ):
-        """Default behavior is unchanged: warn, write, exit 0."""
+    def test_allow_empty_writes_and_exits_zero(self, empty_models_dir: Path, temp_dir: Path):
+        """--allow-empty restores the warn-write-exit-0 behavior."""
         output = temp_dir / "erd.puml"
 
-        argv = ["erdify", str(empty_models_dir), "-o", str(output)]
+        argv = ["erdify", str(empty_models_dir), "-o", str(output), "--allow-empty"]
         with patch.object(sys, "argv", argv):
             result = main()
 
         assert result == 0
         assert output.exists()
 
-    def test_fail_on_empty_from_pyproject_config(self, tmp_path: Path, capsys):
-        """[tool.erdify] fail_on_empty = true works like the flag."""
-        (tmp_path / "pyproject.toml").write_text("[tool.erdify]\nfail_on_empty = true\n")
+    def test_allow_empty_from_pyproject_config(self, tmp_path: Path, capsys):
+        """[tool.erdify] allow_empty = true works like the flag."""
+        (tmp_path / "pyproject.toml").write_text("[tool.erdify]\nallow_empty = true\n")
         models = tmp_path / "models.py"
         models.write_text("# no models here\n")
 
         with patch.object(sys, "argv", ["erdify", str(tmp_path)]):
             result = main()
 
-        assert result == 1
-        assert "Error: No tables found" in capsys.readouterr().err
+        assert result == 0
+        assert "Warning: No tables found" in capsys.readouterr().err
+
+    def test_fail_on_empty_is_gone(self, empty_models_dir: Path):
+        """The unreleased opt-in flag was replaced, not kept as an alias."""
+        with patch.object(sys, "argv", ["erdify", str(empty_models_dir), "--fail-on-empty"]):
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 2
 
 
 class TestCLIVersion:

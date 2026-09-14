@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-14
+
+### Changed — **breaking**
+
+- **A run that finds no tables now exits `1` instead of `0`**, and writes
+  nothing. Up to 0.12.3 it warned, wrote a structurally valid but empty
+  diagram, and exited `0` — so a CI job that commits the regenerated ERD
+  silently replaced a good diagram with an empty one whenever `--include`
+  stopped matching, which a rename or a moved package is enough to cause. The
+  overwhelmingly likely cause of zero entities is a misconfiguration, so that
+  is now an error.
+
+  Failing before generation means an existing output file is left untouched.
+
+  If an empty schema is a legitimate outcome for your project — everything
+  filtered out by `--exclude`, a `--sources` filter that matches nothing, a
+  schema mid-migration — pass `--allow-empty` or set `allow_empty = true` under
+  `[tool.erdify]`. That restores the previous behavior exactly.
+
 ### Added
 
 - New documentation page **Comparison** — erdify next to eralchemy,
@@ -25,12 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every documentation page now carries its own `description` frontmatter, so
   each page gets its own search-engine snippet and social-card subtitle instead
   of repeating `site_description`.
-- `--fail-on-empty` (and `fail_on_empty` in `[tool.erdify]`) exits `1` when a
-  run finds no tables, instead of warning and writing an empty diagram. It
-  fails *before* generating, so an existing output file is left untouched —
-  which is the point for CI jobs that commit whatever erdify produced, where an
-  empty diagram would otherwise silently replace a good one. The default exit
-  code is unchanged.
+- `--allow-empty` (and `allow_empty` in `[tool.erdify]`) opts back in to the
+  pre-0.13.0 behavior for an empty result: warn, write the empty diagram, exit
+  `0`. See the breaking change below.
 - erdify now ships `.pre-commit-hooks.yaml`, so it can be used as a pre-commit
   repository instead of a `repo: local` / `language: system` hook that requires
   erdify to be installed in the consumer's environment first. Two ids are
@@ -56,9 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The "No tables found" message now ends with a link to the troubleshooting
   page, which did not exist when the message was written.
-- The auto-commit CI example in `docs/usage/ci.md` passes `--fail-on-empty`.
-  That workflow is precisely the one an empty result damages, and the flag did
-  not exist when the example was written.
 
 - The Datadog coverage upload is now also gated on the API key actually being
   present. The existing fork check covers pull requests from forks, but a
@@ -504,7 +517,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.12.3...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/devsuit-berlin/erdify/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/devsuit-berlin/erdify/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/devsuit-berlin/erdify/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/devsuit-berlin/erdify/compare/v0.12.0...v0.12.1
