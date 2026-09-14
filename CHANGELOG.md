@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.14.1] - 2026-09-14
+
+### Fixed
 
 - erdify now recognises ninja-style `ModelSchema` classes — those taking their
   fields from a Django model via an inner `Meta` (django-ninja) or `Config`
@@ -19,9 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class and Django's own `class Meta` are both untouched. Resolving those
   schemas properly remains open in
   [#171](https://github.com/devsuit-berlin/erdify/issues/171).
-
-### Fixed
-
 - `docs/examples/frameworks.svg` is well-formed XML again. Its header comment
   contained a command-line flag, and XML comments may not contain a double
   hyphen, so the file failed to parse — harmless for the site, which serves the
@@ -582,7 +581,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/devsuit-berlin/erdify/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/devsuit-berlin/erdify/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/devsuit-berlin/erdify/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/devsuit-berlin/erdify/compare/v0.12.2...v0.12.3
