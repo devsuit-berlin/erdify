@@ -38,6 +38,16 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: readme-erd
+        name: Check the README ERD is up to date
+        # Dogfoods --inject + --check on our own front page: fails when the
+        # embedded diagram no longer matches docs/examples/sqlmodel. Re-run
+        # without --check to refresh it. CI runs this via pre-commit too.
+        entry: uv run erdify docs/examples/sqlmodel --inject README.md --check
+        language: system
+        always_run: true
+        pass_filenames: false
+
       - id: gen-cli-docs
         name: Sync CLI reference in docs with erdify --help
         # Regenerates the cli-help block; fails (like uv-lock) if it changed,

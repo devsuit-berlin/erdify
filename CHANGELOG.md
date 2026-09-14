@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The README now answers "why erdify and not X" right after the feature list,
+  with a condensed comparison table and a link to the full one.
+- The README shows its example ERD as a live Mermaid diagram injected with
+  `erdify --inject` instead of a committed PNG — the format the README itself
+  advertises as rendering natively on GitHub. A `readme-erd` pre-commit hook
+  runs the same command with `--check`, so the embedded diagram cannot go stale
+  (and it dogfoods both flags on the project's own front page).
+- The README badge row is down from ten to six: PyPI version, Python versions,
+  License, Tests, Coverage and a new docs badge. The Linting, Ruff, mypy and
+  download badges added rows without adding information a reader acts on.
 - The PyPI project page now links to the documentation site
   (https://erdify.devsuit.io/) instead of the README anchor on GitHub, and
   gains `Changelog` and `Issues` links.

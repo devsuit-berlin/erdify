@@ -4,11 +4,8 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/erdify)](https://pypi.org/project/erdify/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://github.com/devsuit-berlin/erdify/actions/workflows/test.yml/badge.svg)](https://github.com/devsuit-berlin/erdify/actions/workflows/test.yml)
-[![Linting](https://github.com/devsuit-berlin/erdify/actions/workflows/lint.yml/badge.svg)](https://github.com/devsuit-berlin/erdify/actions/workflows/lint.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/devsuit-berlin/erdify/badges/coverage.json)](https://github.com/devsuit-berlin/erdify/actions/workflows/test.yml)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Checked with mypy](https://img.shields.io/badge/mypy-checked-blue)](https://mypy-lang.org/)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/erdify?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/erdify)
+[![Docs](https://img.shields.io/badge/docs-erdify.devsuit.io-blue)](https://erdify.devsuit.io/)
 
 > 🚀 Generate beautiful PlantUML Entity Relationship Diagrams from your SQLModel, SQLAlchemy, Django, Pydantic and dataclass models automatically!
 
@@ -26,6 +23,23 @@
 - ✅ **Drift Check** - `--check` fails CI/pre-commit when the committed diagram is stale
 
 See the [full feature matrix](https://erdify.devsuit.io/features/) for everything erdify recognizes.
+
+## 🤔 Why erdify and not X?
+
+| | **erdify** | eralchemy | sqlalchemy-schemadisplay | erdantic | `graph_models` | DBML/dbdiagram |
+|---|---|---|---|---|---|---|
+| Needs a live DB connection | **No** | Optional | Optional | No | No | Only for `db2dbml` |
+| Imports/executes your code | **No** | Yes | Yes | Yes | Yes (full Django setup) | n/a |
+| Frameworks read | **5 + SQL DDL** | SQLAlchemy | SQLAlchemy | Pydantic, attrs, msgspec, dataclasses | Django | SQL dumps |
+| Runtime dependencies | **None** | SQLAlchemy + Graphviz | SQLAlchemy, pydot, Graphviz | pydantic, pygraphviz, … | Django + Graphviz | Node.js |
+| CI drift gate | **`--check`** | No | No | No | No | No |
+
+erdify reads your source with the stdlib `ast` module, so it runs in a docs
+pipeline, a pre-commit hook or a CI job against a repository it cannot even
+install. That is a trade-off, not a free win — anything your code builds at
+runtime is invisible to it, and none of these tools renders images for you.
+
+👉 **[Full comparison, including when to use something else](https://erdify.devsuit.io/comparison/)**
 
 ## 🚀 Quick Start
 
@@ -47,7 +61,26 @@ The same `User` / `Order` schema in **SQLModel, SQLAlchemy 2.0, Django, Pydantic
 and dataclasses** — only the syntax differs. Each one produces the **identical**
 diagram:
 
-![Framework comparison ERD](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/examples/erd.png "The same ERD from all five frameworks")
+`erdify docs/examples/sqlmodel --inject README.md` keeps the diagram below in
+this file. It is Mermaid, so GitHub renders it directly — and a pre-commit hook
+runs the same command with `--check`, so it cannot go stale:
+
+<!-- erdify:start -->
+```mermaid
+erDiagram
+    User {
+        int id PK
+        str name
+        str email
+    }
+    Order {
+        int id PK
+        int user_id FK
+        float total
+    }
+    Order }o--|| User : "user_id"
+```
+<!-- erdify:end -->
 
 👉 **See the full side-by-side comparison and the detection/parsing table in the
 [Frameworks Overview](https://erdify.devsuit.io/frameworks/)** (with a worked
@@ -65,6 +98,8 @@ The runnable sources live in [`docs/examples/`](https://github.com/devsuit-berli
 - [Frameworks Overview](https://erdify.devsuit.io/frameworks/) — a worked example with the generated PlantUML output
 - [Django ORM](https://erdify.devsuit.io/frameworks/django/) — Django-specific parsing details
 - [SQL DDL](https://erdify.devsuit.io/frameworks/sql/) — generate ERDs from `.sql` files with `erdify[sql]`
+- [Comparison](https://erdify.devsuit.io/comparison/) — erdify next to the other ERD generators
+- [Troubleshooting](https://erdify.devsuit.io/troubleshooting/) — symptom-first fixes for the common surprises
 
 ## 📋 Supported Features
 
