@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--base-classes NAME [NAME ...]` (and `base_classes` in `[tool.erdify]`) names
+  extra base classes to treat as Pydantic models. Pydantic detection resolves
+  ancestors only across the scanned files, so a base defined in an installed
+  package — `ninja.Schema` from django-ninja — or in an internal library that
+  `--include` does not match was unresolvable, and every subclass of it was
+  silently skipped. Both the bare (`Schema`) and qualified (`ninja.Schema`)
+  forms are matched, and intermediate bases defined in scanned files still
+  resolve transitively. Partially addresses
+  [#171](https://github.com/devsuit-berlin/erdify/issues/171); the
+  `ModelSchema` variants, whose fields come from an inner `Meta`/`Config`
+  rather than the class body, remain unsupported.
+
 ### Fixed
 
 - The comparison page and the README comparison table were wrong about two

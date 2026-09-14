@@ -32,6 +32,10 @@ like a model:
 
 - The classes are not one of the five recognized frameworks. See
   [Frameworks Overview](frameworks/index.md).
+- They inherit from a base class defined **outside** the scanned files — the
+  django-ninja `Schema`, or a shared `BaseSchema` from an internal library.
+  erdify cannot resolve that chain; name the base with
+  [`--base-classes`](usage/cli.md#bases-defined-outside-the-scan-base-classes).
 - SQLModel classes are missing `table=True` (a model without it is not a table).
 - `--sources` is narrower than you think: `--sources sqlmodel` drops your Django
   models silently.

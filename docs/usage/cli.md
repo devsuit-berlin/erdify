@@ -14,9 +14,10 @@ erdify ships a command-line interface, a module entry point, and a Python API fo
 usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
               [--exclude-paths [PATTERN ...]] [--no-default-excludes]
               [--sources [KIND ...]] [--include PATTERN [PATTERN ...]]
-              [--sql-dialect NAME] [--infer-keys] [--django-raw-types]
-              [--no-enums] [--no-relationships] [--format FMT [FMT ...]]
-              [--inject FILE] [--allow-empty] [--check] [-v]
+              [--base-classes NAME [NAME ...]] [--sql-dialect NAME]
+              [--infer-keys] [--django-raw-types] [--no-enums]
+              [--no-relationships] [--format FMT [FMT ...]] [--inject FILE]
+              [--allow-empty] [--check] [-v]
               input
 
 Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and
@@ -53,6 +54,12 @@ options:
                         filename at any depth. Replaces the default, so list
                         models.py too if you want it, e.g. --include models.py
                         '**/models/*.py' tables.py
+  --base-classes NAME [NAME ...]
+                        Extra base-class names to treat as Pydantic models,
+                        for bases defined outside the scanned files (erdify
+                        resolves ancestors only across those), e.g. --base-
+                        classes Schema for django-ninja, or a shared
+                        BaseSchema from an internal library
   --sql-dialect NAME    SQL dialect hint for parsing .sql DDL with the [sql]
                         extra (e.g. postgres, mysql, sqlite). Default: a
                         permissive generic read
@@ -104,6 +111,7 @@ format = ["plantuml", "mermaid"]    # one or both
 sources = ["django"]
 exclude = ["audit_log", "*Link"]
 exclude_paths = ["migrations", "legacy"]
+base_classes = ["Schema"]           # extra Pydantic bases defined outside the scan
 infer_keys = true
 django_raw_types = false
 allow_empty = true                  # downgrade "no tables found" to a warning
@@ -113,6 +121,50 @@ sql_dialect = "postgres"            # required for CREATE TYPE … AS ENUM suppo
 With that in place, `erdify .` uses these settings. Precedence is **explicit CLI
 flag > `[tool.erdify]` value > built-in default**. (Boolean flags merge by OR: a
 flag enabled in config can be added to on the CLI but not turned off there.)
+
+## Bases defined outside the scan (`--base-classes`)
+
+erdify classifies a class as a Pydantic model when `BaseModel` appears in its
+bases — and it resolves ancestors **only across the files it scanned**. A base
+class that lives in an installed package, or in a module `--include` does not
+match, is therefore unresolvable and its subclasses are skipped entirely.
+
+The common case is [django-ninja](https://django-ninja.dev/). `ninja.Schema`
+does subclass `pydantic.BaseModel`, but that inheritance is inside the installed
+package, which erdify never reads:
+
+```python
+from ninja import Schema
+
+class AuthorOut(Schema):      # not recognized by default
+    id: int
+    name: str
+```
+
+Name the base and it is treated as a Pydantic model:
+
+```bash
+erdify ./api --base-classes Schema --infer-keys
+```
+
+```toml
+[tool.erdify]
+base_classes = ["Schema", "BaseSchema"]
+```
+
+This works for a shared base in your own internal library just as well — the
+`BaseSchema` every service imports from a company package is the same problem.
+Both the bare form (`Schema`) and the qualified form (`ninja.Schema`) are
+matched, and a class that reaches the named base through an intermediate
+defined in a scanned file is picked up too.
+
+!!! note "Model-derived schemas are a different matter"
+
+    `ninja.ModelSchema` and `ninja_schema.ModelSchema` take their fields from a
+    Django model via an inner `Meta` / `Config` class, leaving the class body
+    empty. Naming those bases produces entities with no fields, so it is not
+    supported — see
+    [issue #171](https://github.com/devsuit-berlin/erdify/issues/171).
 
 ## Empty results (`--allow-empty`)
 

@@ -100,6 +100,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--base-classes",
+        nargs="+",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Extra base-class names to treat as Pydantic models, for bases "
+            "defined outside the scanned files (erdify resolves ancestors only "
+            "across those), e.g. --base-classes Schema for django-ninja, or a "
+            "shared BaseSchema from an internal library"
+        ),
+    )
+    parser.add_argument(
         "--sql-dialect",
         default=None,
         metavar="NAME",
@@ -204,6 +216,7 @@ def main() -> int:
     exclude = pick(args.exclude, "exclude", [])
     exclude_paths = pick(args.exclude_paths, "exclude_paths", [])
     include = pick(args.include, "include", ["models.py"])
+    base_classes = pick(args.base_classes, "base_classes", [])
     # Hint only when the user left discovery at the default (neither CLI nor config).
     include_is_default = args.include is None and "include" not in config
     # Boolean flags merge by OR (a flag enabled in config or on the CLI is enabled).
@@ -275,6 +288,7 @@ def main() -> int:
             include_patterns=include,
             hint_unmatched_model_packages=include_is_default,
             sql_dialect=sql_dialect,
+            base_classes=base_classes,
         )
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)
