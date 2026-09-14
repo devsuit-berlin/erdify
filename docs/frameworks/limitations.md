@@ -145,6 +145,7 @@ names, so it can be wrong in both directions.
 | Composite foreign keys | Not supported |
 | Foreign keys inside `sa_column=Column(...)` | Not detected |
 | Unannotated `x = relationship("Target")` | Not detected |
+| ninja-style `ModelSchema` (fields from an inner `Meta`/`Config`) | Detected and skipped with a warning, rather than drawn empty ([#171](https://github.com/devsuit-berlin/erdify/issues/171)) |
 | `attrs` / `msgspec` models | Not supported ([erdantic](../comparison.md) covers these) |
 | Live database introspection | Not supported by design |
 

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- erdify now recognises ninja-style `ModelSchema` classes — those taking their
+  fields from a Django model via an inner `Meta` (django-ninja) or `Config`
+  (ninja-schema) — and **skips them with an explanatory warning** instead of
+  drawing an entity with no fields. Naming `ModelSchema` via `--base-classes`
+  previously produced an empty box beside the real table, which was worse than
+  no support at all. Detection is narrow: only an inner `Meta`/`Config` that
+  assigns `model` counts, so an ordinary Pydantic model with a nested config
+  class and Django's own `class Meta` are both untouched. Resolving those
+  schemas properly remains open in
+  [#171](https://github.com/devsuit-berlin/erdify/issues/171).
+
 ### Fixed
 
 - `docs/examples/frameworks.svg` is well-formed XML again. Its header comment
