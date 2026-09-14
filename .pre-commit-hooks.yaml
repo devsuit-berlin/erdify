@@ -1,0 +1,41 @@
+# Hooks consumers get by pointing pre-commit at this repository:
+#
+#   repos:
+#     - repo: https://github.com/devsuit-berlin/erdify
+#       rev: v0.12.3
+#       hooks:
+#         - id: erdify
+#           args: [./src/database, -o, docs/erd.puml]
+#
+# `args` is required: erdify needs the directory (or file) to read models from.
+# Everything else can also come from `[tool.erdify]` in your pyproject.toml.
+#
+# SQL DDL projects do not get their own hook id. `erdify[sql]` only adds the
+# `sqlglot` runtime dependency, so pull it into the hook environment instead and
+# keep the two ids below meaning exactly one thing each:
+#
+#         - id: erdify
+#           args: [./schema, --include, '*.sql', --sql-dialect, postgres, -o, docs/erd.puml]
+#           files: ^schema/.*\.sql$
+#           additional_dependencies: ['sqlglot>=25']
+
+- id: erdify
+  name: Generate ERD diagram
+  description: Regenerate the ERD diagram from your model files.
+  entry: erdify
+  language: python
+  pass_filenames: false
+  always_run: false
+  files: (^|/)models\.py$
+
+- id: erdify-check
+  name: Check ERD diagram is up to date
+  description: >-
+    Fail when the committed ERD diagram no longer matches the models, without
+    rewriting it. `--check` is part of the entry point, so it cannot be dropped
+    by overriding `args`.
+  entry: erdify --check
+  language: python
+  pass_filenames: false
+  always_run: false
+  files: (^|/)models\.py$
