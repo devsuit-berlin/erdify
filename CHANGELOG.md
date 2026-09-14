@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The documentation site now renders a social card (`og:image`) for every page,
+  so links shared on chat, social and link-preview surfaces show a real card
+  instead of a bare text entry. This enables mkdocs-material's `social` plugin,
+  which pulls in the `mkdocs-material[imaging]` dependencies and their system
+  libraries in the docs workflow.
+- The changelog is published as a page on the documentation site. It includes
+  the repository's `CHANGELOG.md` verbatim via `pymdownx.snippets`, so there is
+  still a single source of truth.
+- Every documentation page now has an edit link back to its source on GitHub
+  (`content.action.edit`; `edit_uri` was already configured but Material never
+  rendered the button without the feature) and previous/next navigation in the
+  footer (`navigation.footer`).
+
 ### Changed
 
 - The PyPI project page now links to the documentation site
