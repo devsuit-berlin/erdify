@@ -35,6 +35,7 @@ nav:
   - Installation: installation.md
   - Quickstart: quickstart.md
   - Features: features.md
+  - Comparison: comparison.md
   - Usage:
       - CLI & Python API: usage/cli.md
       - Output Formats: usage/output-formats.md
@@ -45,6 +46,8 @@ nav:
       - Overview: frameworks/index.md
       - Django ORM: frameworks/django.md
       - SQL DDL: frameworks/sql.md
+      - Python Parsing Limitations: frameworks/limitations.md
+  - Troubleshooting: troubleshooting.md
   - Changelog: changelog.md
 
 markdown_extensions:

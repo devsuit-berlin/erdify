@@ -1,3 +1,7 @@
+---
+description: "Keep ERDs current in CI and pre-commit: erdify's own pre-commit hooks, GitHub Actions examples, and the --check drift gate."
+---
+
 # CI/CD & pre-commit
 
 Keep your ERD diagrams automatically up to date in continuous integration and on every commit.

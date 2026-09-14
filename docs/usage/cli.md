@@ -1,3 +1,7 @@
+---
+description: "Every erdify command-line option, the pyproject.toml [tool.erdify] table, --check drift gating, and the Python API."
+---
+
 # CLI & Python API
 
 erdify ships a command-line interface, a module entry point, and a Python API for programmatic use.

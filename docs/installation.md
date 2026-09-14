@@ -1,3 +1,7 @@
+---
+description: "Install erdify with pip, uv, pipx or uvx, add the optional [sql] extra, and check the supported Python versions."
+---
+
 # Installation
 
 erdify can be installed with your Python package manager of choice, or run on demand without installing.

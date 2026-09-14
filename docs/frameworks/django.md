@@ -1,3 +1,7 @@
+---
+description: "Django-specific erdify parsing: foreign key mapping, field-to-type mapping, TextChoices enums, abstract bases and Meta.db_table."
+---
+
 # Django ORM
 
 erdify parses Django models from source — no Django runtime, settings, or app registry required.

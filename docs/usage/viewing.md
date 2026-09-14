@@ -1,3 +1,7 @@
+---
+description: "Render an erdify PlantUML or Mermaid diagram online, locally with PlantUML or Graphviz, or inside VS Code."
+---
+
 # Viewing the Diagram
 
 Once erdify produces a `.puml` file, render it online, locally, or in your editor.

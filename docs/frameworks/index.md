@@ -1,3 +1,7 @@
+---
+description: "How erdify detects SQLModel, SQLAlchemy 2.0, Django, Pydantic and dataclass models, side by side, with a worked example."
+---
+
 # Frameworks Overview
 
 erdify recognizes five Python model frameworks from source and renders them into
@@ -212,7 +216,7 @@ class Order(SQLModel, table=True):
 
 The tool generates:
 
-![Example ERD Image](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/example_erd.png "Example ERD Image")
+![Example ERD Image](../examples/example_erd.png "Example ERD Image")
 
 with following code:
 
