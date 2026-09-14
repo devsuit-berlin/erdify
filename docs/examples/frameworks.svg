@@ -1,11 +1,11 @@
 <!--
-  Five frameworks, one diagram - used by README.md, docs/index.md and
+  Five frameworks, one diagram. Used by README.md, docs/index.md and
   docs/frameworks/index.md.
 
-  Edit this file directly; it is the source. The snippets are trimmed from the
-  runnable examples in docs/examples/*.
+  Edit this file directly; it is the source.
+  Snippets are trimmed from the runnable examples in docs/examples/.
 
-  Palette: the devsuit brand tokens.
+  Palette: devsuit brand tokens.
     #10172e dsbackgrounddark   ground
     #192346 dsbluedark         panels
     #4150aa dsblue             convergence lines
@@ -13,11 +13,18 @@
     #a064d2 dspurple           foreign keys
     #eceff1 / #cfd8dc / #607d8b / #455a64   dsgrey 10 / 20 / 60 / 80
 
-  After editing, re-export the PNG at 1600x840:
-      uv run --group docs python -c "import cairosvg; cairosvg.svg2png(\
-          url='docs/examples/frameworks.svg',\
-          write_to='docs/examples/frameworks.png',\
-          output_width=1600, output_height=840)"
+  After editing, re-export the PNG at 1600x840 with CairoSVG (it ships with the
+  docs dependency group):
+
+      import cairosvg
+      cairosvg.svg2png(
+          url="docs/examples/frameworks.svg",
+          write_to="docs/examples/frameworks.png",
+          output_width=1600, output_height=840,
+      )
+
+  Note: XML comments may not contain a double hyphen, so command line flags are
+  spelled out in prose above rather than shown literally.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="840" viewBox="0 0 1600 840" role="img" aria-label="The same User and Order schema written in SQLModel, SQLAlchemy, Django, Pydantic and dataclasses, all producing one ERD">
 <defs><linearGradient id="glow" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#18b4e0" stop-opacity="0"/><stop offset="50%" stop-color="#18b4e0" stop-opacity="0.9"/><stop offset="100%" stop-color="#a064d2" stop-opacity="0"/></linearGradient></defs>
@@ -98,5 +105,5 @@
 <path d="M 732.0 633 V 653 M 742.0 633 V 653" stroke="#455a64" stroke-width="1.5"/>
 <path d="M 860.0 643 L 884.0 632 M 860.0 643 L 884.0 654" stroke="#455a64" stroke-width="1.5" fill="none"/>
 <text x="800.0" y="628" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#607d8b" text-anchor="middle">user_id</text>
-<text x="800.0" y="798" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#455a64" text-anchor="middle" letter-spacing="0.8">SQLModel   ·   SQLAlchemy   ·   Django   ·   Pydantic   ·   dataclasses   ·   SQL DDL</text>
+<text x="800.0" y="798" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#455a64" text-anchor="middle" letter-spacing="0.8">SQLModel   ·   SQLAlchemy   ·   Django   ·   Pydantic   ·   dataclasses   ·   and raw SQL DDL</text>
 </svg>

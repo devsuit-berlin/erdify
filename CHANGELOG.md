@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `docs/examples/frameworks.svg` is well-formed XML again. Its header comment
+  contained a command-line flag, and XML comments may not contain a double
+  hyphen, so the file failed to parse — harmless for the site, which serves the
+  PNG, but the file documented as "the editable source" would not open in a
+  browser or vector editor.
+- The image footer reads "and raw SQL DDL" rather than listing it as a sixth
+  bullet. The headline counts five *frameworks*; SQL DDL is an input format, and
+  the flat list made the two numbers look like they disagreed.
+
 ### Changed
 
 - The README and the documentation home page now open with a "five frameworks,
