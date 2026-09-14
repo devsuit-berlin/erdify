@@ -8,7 +8,7 @@ from typing import Any
 from . import __version__
 from .generator import generate_html, generate_json, generate_mermaid, generate_plantuml
 from .inject import MarkerError, current_region, inject, render_region
-from .parser import MODEL_SOURCES, parse_models_directory
+from .parser import MODEL_SOURCES, parse_models_directory, scan_report
 from .pyproject import load_config
 
 #: Supported output formats: name -> (generator function, file extension).
@@ -158,6 +158,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--fail-on-empty",
+        action="store_true",
+        help=(
+            "Exit non-zero when no entities were found, instead of warning and "
+            "writing an empty diagram (for CI jobs that commit the result)"
+        ),
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help=(
@@ -204,6 +212,7 @@ def main() -> int:
     no_enums = args.no_enums or bool(config.get("no_enums", False))
     no_relationships = args.no_relationships or bool(config.get("no_relationships", False))
     no_default_excludes = args.no_default_excludes or bool(config.get("no_default_excludes", False))
+    fail_on_empty = args.fail_on_empty or bool(config.get("fail_on_empty", False))
 
     # Output: CLI path (relative to cwd) > config path (relative to the project) > stdout.
     output_path: Path | None = args.output
@@ -272,10 +281,34 @@ def main() -> int:
         return 1
 
     if not entities:
+        report = scan_report(
+            args.input,
+            exclude_paths=exclude_paths,
+            use_default_excludes=not no_default_excludes,
+            include_patterns=include,
+        )
+        patterns = " ".join(repr(p) for p in report.include_patterns)
+        level = "Error" if fail_on_empty else "Warning"
+        print(f"{level}: No tables found in {args.input}", file=sys.stderr)
         print(
-            f"Warning: No tables found in {args.input}",
+            f"  Scanned {report.candidate_files} .py/.sql file(s); "
+            f"{report.matched_files} matched --include {patterns}.",
             file=sys.stderr,
         )
+        if report.matched_files == 0:
+            print(
+                "  --include defaults to 'models.py'. If your models live in a "
+                "differently named file, name it, e.g. --include schema.py.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "  Files matched but held no recognized models. Check --sources "
+                "and --exclude, and see the supported frameworks in the docs.",
+                file=sys.stderr,
+            )
+        if fail_on_empty:
+            return 1
 
     # Generate, then write each format to <output>.<ext> (or stdout / --check).
     stale = False

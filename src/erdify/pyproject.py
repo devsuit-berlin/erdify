@@ -21,6 +21,7 @@ CONFIG_KEYS = frozenset(
         "no_enums",
         "no_relationships",
         "no_default_excludes",
+        "fail_on_empty",
         "sql_dialect",
     }
 )
