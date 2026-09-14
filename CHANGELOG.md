@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- erdify now ships `.pre-commit-hooks.yaml`, so it can be used as a pre-commit
+  repository instead of a `repo: local` / `language: system` hook that requires
+  erdify to be installed in the consumer's environment first. Two ids are
+  provided: `erdify` regenerates the diagram (pre-commit fails the commit when
+  the file changed), and `erdify-check` never writes and exits non-zero when the
+  committed diagram has drifted. `--check` is part of the latter's entry point,
+  so overriding `args` cannot drop it. SQL DDL projects add
+  `additional_dependencies: ['sqlglot>=25']` rather than using a separate id.
 - The documentation site now renders a social card (`og:image`) for every page,
   so links shared on chat, social and link-preview surfaces show a real card
   instead of a bare text entry. This enables mkdocs-material's `social` plugin,
