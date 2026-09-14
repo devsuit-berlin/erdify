@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The comparison page and the README comparison table were wrong about two
+  rows. Both claimed no alternative ships a Markdown-injection or a CI
+  drift-check feature; [paracelsus](https://github.com/tedivm/paracelsus) ships
+  both, along with `[tool.paracelsus]` configuration and Mermaid output. It is
+  now a column in the comparison table and a named entry under "when to use
+  something else": it reaches models by importing them (`--import-module`), so
+  it sees the fully-resolved metadata an AST scan cannot, and for a
+  single-SQLAlchemy project that accuracy may be worth more than erdify's
+  independence.
+
 ## [0.13.0] - 2026-09-14
 
 ### Changed — **breaking**

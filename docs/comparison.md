@@ -14,21 +14,22 @@ Every alternative below wins at something erdify deliberately does not do.
 
 ## At a glance
 
-| | **erdify** | [eralchemy](https://github.com/eralchemy/eralchemy) | [sqlalchemy-schemadisplay](https://github.com/fschulze/sqlalchemy_schemadisplay) | [erdantic](https://github.com/drivendataorg/erdantic) | [django-extensions `graph_models`](https://django-extensions.readthedocs.io/en/latest/graph_models.html) | [DBML / dbdiagram](https://dbml.dbdiagram.io/) |
-|---|---|---|---|---|---|---|
-| **Needs a live DB connection** | No | Optional (a DB URL is one of its inputs) | Optional (or bound metadata) | No | No | Only for `db2dbml` |
-| **Imports/executes your code** | **No** — stdlib `ast` only | Yes (models must import) | Yes | Yes (classes must be importable) | Yes (full Django setup + app registry) | n/a — you write DBML by hand |
-| **Frameworks read** | SQLModel, SQLAlchemy 2.0, Django, Pydantic, dataclasses, SQL DDL | SQLAlchemy (+ live DBs, `.er` files) | SQLAlchemy | Pydantic v1/v2, attrs, msgspec, dataclasses | Django | SQL dumps (Postgres, MySQL, MSSQL, Oracle, Snowflake, BigQuery) |
-| **Runtime dependencies** | **None** (`sqlglot` only for the `sql` extra) | SQLAlchemy, + Graphviz/pygraphviz for images | SQLAlchemy, pydot, Pillow, Graphviz | pydantic, pygraphviz, typer, … + Graphviz | Django, + pydot/pygraphviz for images | Node.js 18+ |
-| **System toolchain** | None | Graphviz for image output | Graphviz | Graphviz (pygraphviz builds against it) | Graphviz for image output | Node |
-| **Text output formats** | PlantUML, Mermaid, JSON, standalone HTML | Mermaid, Graphviz `.gv`, its own `.er` markdown | — (pydot writes images) | Graphviz, D2 | Graphviz `.dot`, JSON | DBML, SQL |
-| **Image output** | No (render the PlantUML/Mermaid yourself) | PNG, PDF, SVG | PNG (+ pydot formats) | PNG, SVG, PDF, … | PNG, SVG, PDF, … | via dbdiagram.io |
-| **CI drift gate** | `--check` (non-zero exit on a stale diagram) | No | No | No | No | No |
-| **Embeds into Markdown** | `--inject` between markers | No | No | No | No | No |
-| **License** | MIT | Apache-2.0 | MIT | MIT | MIT | Apache-2.0 |
+| | **erdify** | [paracelsus](https://github.com/tedivm/paracelsus) | [eralchemy](https://github.com/eralchemy/eralchemy) | [sqlalchemy-schemadisplay](https://github.com/fschulze/sqlalchemy_schemadisplay) | [erdantic](https://github.com/drivendataorg/erdantic) | [django-extensions `graph_models`](https://django-extensions.readthedocs.io/en/latest/graph_models.html) | [DBML / dbdiagram](https://dbml.dbdiagram.io/) |
+|---|---|---|---|---|---|---|---|
+| **Needs a live DB connection** | No | No | Optional (a DB URL is one of its inputs) | Optional (or bound metadata) | No | No | Only for `db2dbml` |
+| **Imports/executes your code** | **No** — stdlib `ast` only | Yes (`--import-module`, like Alembic) | Yes (models must import) | Yes | Yes (classes must be importable) | Yes (full Django setup + app registry) | n/a — you write DBML by hand |
+| **Frameworks read** | SQLModel, SQLAlchemy 2.0, Django, Pydantic, dataclasses, SQL DDL | SQLAlchemy | SQLAlchemy (+ live DBs, `.er` files) | SQLAlchemy | Pydantic v1/v2, attrs, msgspec, dataclasses | Django | SQL dumps (Postgres, MySQL, MSSQL, Oracle, Snowflake, BigQuery) |
+| **Runtime dependencies** | **None** (`sqlglot` only for the `sql` extra) | SQLAlchemy, pydot, typer | SQLAlchemy, + Graphviz/pygraphviz for images | SQLAlchemy, pydot, Pillow, Graphviz | pydantic, pygraphviz, typer, … + Graphviz | Django, + pydot/pygraphviz for images | Node.js 18+ |
+| **System toolchain** | None | Graphviz only for image output | Graphviz for image output | Graphviz | Graphviz (pygraphviz builds against it) | Graphviz for image output | Node |
+| **Text output formats** | PlantUML, Mermaid, JSON, standalone HTML | Mermaid, Graphviz `.dot` | Mermaid, Graphviz `.gv`, its own `.er` markdown | — (pydot writes images) | Graphviz, D2 | Graphviz `.dot`, JSON | DBML, SQL |
+| **Image output** | No (render the PlantUML/Mermaid yourself) | via Graphviz from the `.dot` | PNG, PDF, SVG | PNG (+ pydot formats) | PNG, SVG, PDF, … | PNG, SVG, PDF, … | via dbdiagram.io |
+| **CI drift gate** | `--check` (non-zero exit on a stale diagram) | **`--check`** | No | No | No | No | No |
+| **Embeds into Markdown** | `--inject` between markers | **Yes, between markers** | No | No | No | No | No |
+| **License** | MIT | MIT | Apache-2.0 | MIT | MIT | MIT | Apache-2.0 |
 
-Versions checked while writing this page: eralchemy 1.7.0, sqlalchemy-schemadisplay 2.0,
-erdantic 1.2.1, django-extensions (`main`), `@dbml/cli` 3.x. Please
+Versions checked while writing this page: paracelsus 0.15.0, eralchemy 1.7.0,
+sqlalchemy-schemadisplay 2.0, erdantic 1.2.1, django-extensions (`main`),
+`@dbml/cli` 3.x. Please
 [open an issue](https://github.com/devsuit-berlin/erdify/issues) if something
 here has gone out of date — an inaccurate comparison is worse than none.
 
@@ -84,12 +85,13 @@ them is often the thing you want to find.
 
 - **One tool for a polyglot repository.** A Django service, a FastAPI service on
   SQLModel, and a `schema.sql` used by the analytics team produce the same
-  diagram format from the same command. The other tools here each cover one
+  diagram format from the same command. Every other tool here covers one
   framework.
 - **Documentation that cannot silently rot.** `--inject` writes the diagram into
   a Markdown file between markers, and `--check` exits non-zero when it drifts,
   so a stale ERD fails a build instead of quietly misleading the next reader.
-  None of the alternatives ship a drift gate.
+  paracelsus is the only alternative here that does the same; the rest leave
+  keeping the diagram current to you.
 - **Environments where installing the project is not on the table** — a docs
   pipeline, a pre-commit hook, a review of a repository you do not own.
 - **Diagram-as-text workflows.** PlantUML and Mermaid are diffable and review
