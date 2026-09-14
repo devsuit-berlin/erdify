@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The PyPI project page now links to the documentation site
+  (https://erdify.devsuit.io/) instead of the README anchor on GitHub, and
+  gains `Changelog` and `Issues` links.
+- `[tool.ruff] target-version` is `py311`, matching `requires-python = ">=3.11"`
+  instead of contradicting it with `py310`.
+
 - The required `Tests passed` check now fails for a pull request from the
   machine-written `badges` branch into `main` (the only base the test workflow
   runs for). GitHub cannot bar a branch from being a pull-request source, and
