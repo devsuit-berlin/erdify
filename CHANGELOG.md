@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The README and the documentation home page now open with a "five frameworks,
+  one diagram" image — the same `User`/`Order` schema written in SQLModel,
+  SQLAlchemy, Django, Pydantic and dataclasses, converging on the ERD they all
+  produce. The previous image was the bare ERD under a caption claiming five
+  frameworks, which the picture itself never showed. The snippets are taken
+  from the runnable examples in `docs/examples/`, and the entity boxes use the
+  primary/foreign-key colours `generator.py` emits, so the illustration matches
+  real output. `docs/examples/frameworks.svg` is the editable source; the
+  now-unreferenced `docs/examples/erd.png` is removed.
+
 ## [0.14.0] - 2026-09-14
 
 ### Added

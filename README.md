@@ -63,6 +63,8 @@ The same `User` / `Order` schema in **SQLModel, SQLAlchemy 2.0, Django, Pydantic
 and dataclasses** — only the syntax differs. Each one produces the **identical**
 diagram:
 
+![The same User/Order schema in SQLModel, SQLAlchemy, Django, Pydantic and dataclasses, all producing one ERD](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/examples/frameworks.png "Five frameworks, one diagram")
+
 `erdify docs/examples/sqlmodel --inject README.md` keeps the diagram below in
 this file. It is Mermaid, so GitHub renders it directly — and a pre-commit hook
 runs the same command with `--check`, so it cannot go stale:
