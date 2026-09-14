@@ -162,9 +162,20 @@ defined in a scanned file is picked up too.
 
     `ninja.ModelSchema` and `ninja_schema.ModelSchema` take their fields from a
     Django model via an inner `Meta` / `Config` class, leaving the class body
-    empty. Naming those bases produces entities with no fields, so it is not
-    supported — see
-    [issue #171](https://github.com/devsuit-berlin/erdify/issues/171).
+    empty. erdify does not resolve that reference, so naming those bases would
+    produce entities with no fields. It detects the shape and **skips them**
+    instead, with a note on stderr:
+
+    ```
+    Warning: skipped UserSchema - its fields come from Meta.model (User), which
+      erdify does not resolve. Drawing it would add an entity with no fields.
+    ```
+
+    The Django model itself is still drawn as usual. Whether a response schema
+    belongs in an ERD at all — it is a projection of a table, not a table — is
+    an open question in
+    [issue #171](https://github.com/devsuit-berlin/erdify/issues/171); if you
+    have a view, that is the place for it.
 
 ## Empty results (`--allow-empty`)
 

@@ -196,6 +196,17 @@ class ASTDatabaseParser:
                 continue
             source = self._classify_source(class_node)
             if source is not None and (self.sources is None or source in self.sources):
+                derived = self._model_derived_schema(class_node) if source == "pydantic" else None
+                if derived is not None:
+                    holder, target = derived
+                    print(
+                        f"Warning: skipped {class_node.name} - its fields come from "
+                        f"{holder}.model ({target}), which erdify does not resolve. "
+                        "Drawing it would add an entity with no fields. "
+                        "See https://github.com/devsuit-berlin/erdify/issues/171",
+                        file=sys.stderr,
+                    )
+                    continue
                 self._parse_table_class(class_node, source)
 
         # Synthesize link entities from module-level Core Table(...) association
@@ -367,6 +378,41 @@ class ASTDatabaseParser:
         if self._inherits_basemodel(class_node):
             return "pydantic"
 
+        return None
+
+    def _model_derived_schema(self, class_node: ast.ClassDef) -> Tuple[str, str] | None:
+        """Detect a ninja-style ``ModelSchema`` and report where its fields come from.
+
+        django-ninja's ``ModelSchema`` (inner ``Meta``) and ninja-schema's
+        (inner ``Config``) take their fields from a Django model named in that
+        inner class rather than from the class body. erdify cannot resolve the
+        reference, so the entity would be drawn with no fields at all — worse
+        than not drawing it. Detection is deliberately narrow: only an inner
+        ``Meta``/``Config`` that assigns ``model`` counts, so an ordinary
+        Pydantic model with a nested config class is untouched.
+
+        Returns:
+            ``(holder, target)`` where *holder* is ``"Meta"`` or ``"Config"``
+            and *target* is the referenced model's name, or ``None`` when the
+            class is not a model-derived schema.
+        """
+        for node in class_node.body:
+            if not isinstance(node, ast.ClassDef) or node.name not in ("Meta", "Config"):
+                continue
+            for inner in node.body:
+                if not isinstance(inner, ast.Assign):
+                    continue
+                for target in inner.targets:
+                    if not (isinstance(target, ast.Name) and target.id == "model"):
+                        continue
+                    value = inner.value
+                    if isinstance(value, ast.Name):
+                        return node.name, value.id
+                    if isinstance(value, ast.Attribute):
+                        return node.name, value.attr
+                    if isinstance(value, ast.Call):
+                        return node.name, "unresolved"
+                    return node.name, "unresolved"
         return None
 
     def _inherits_django_model(
