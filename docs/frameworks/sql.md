@@ -1,3 +1,7 @@
+---
+description: "Generate an ERD from .sql DDL files with the optional erdify[sql] extra: CREATE TABLE, foreign keys, enums and dialect handling."
+---
+
 # SQL DDL Frontend
 
 erdify can generate an ERD directly from `.sql` files — no database connection, no

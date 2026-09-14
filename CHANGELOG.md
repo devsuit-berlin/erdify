@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New documentation page **Comparison** — erdify next to eralchemy,
+  sqlalchemy-schemadisplay, erdantic, `django-extensions graph_models` and
+  DBML/dbdiagram, on the axes that actually differ (live connection, importing
+  your code, frameworks covered, runtime dependencies, output formats, CI drift
+  gate), including where each alternative is the better choice.
+- New documentation page **Python Parsing Limitations** — the Python-side
+  counterpart to the SQL frontend's "Deferred / Not Supported" table: what the
+  AST parser cannot see (runtime-constructed models, non-literal
+  `__tablename__`, `__table_args__`, composite foreign keys, foreign keys inside
+  `sa_column`, unannotated `relationship()` assignments) and what to do instead.
+- New documentation page **Troubleshooting** — symptom-first fixes for models
+  not being found, too many entities, missing relationships and missing keys on
+  Pydantic/dataclass models.
+- Every documentation page now carries its own `description` frontmatter, so
+  each page gets its own search-engine snippet and social-card subtitle instead
+  of repeating `site_description`.
 - `--fail-on-empty` (and `fail_on_empty` in `[tool.erdify]`) exits `1` when a
   run finds no tables, instead of warning and writing an empty diagram. It
   fails *before* generating, so an existing output file is left untouched —
@@ -58,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gains `Changelog` and `Issues` links.
 - `[tool.ruff] target-version` is `py311`, matching `requires-python = ">=3.11"`
   instead of contradicting it with `py310`.
+- The documentation home page now leads with what erdify is, the
+  framework-comparison diagram and a three-line install-and-run, instead of
+  restating the sidebar. The `Comparison`, `Python Parsing Limitations` and
+  `Troubleshooting` pages are in the nav.
+- `docs/frameworks/index.md` loads its second example image from the repository
+  instead of `raw.githubusercontent.com`, matching the first one on the page.
+- The Mermaid section of `docs/usage/output-formats.md` shows the `.mmd` source
+  and the rendered diagram in side-by-side tabs; the rendered-only fence never
+  showed readers what the file actually contains.
+
 - The required `Tests passed` check now fails for a pull request from the
   machine-written `badges` branch into `main` (the only base the test workflow
   runs for). GitHub cannot bar a branch from being a pull-request source, and

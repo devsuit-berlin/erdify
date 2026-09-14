@@ -1,3 +1,7 @@
+---
+description: "The handful of erdify commands you will actually use: generate, pick a format, filter, inject into Markdown and gate CI."
+---
+
 # Quickstart
 
 Already [installed erdify](installation.md)? These are the commands you'll reach
@@ -55,6 +59,8 @@ erdify ./schema --include '*.sql' --sql-dialect postgres -o erd.puml
 | Keep the ERD fresh in CI / pre-commit | [CI/CD & pre-commit](usage/ci.md) |
 | Generate diagrams from Python | [Python API](usage/cli.md#python-api) |
 | Generate from SQL DDL files | [SQL DDL](frameworks/sql.md) |
+| Fix an empty or wrong-looking diagram | [Troubleshooting](troubleshooting.md) |
+| Decide between erdify and another tool | [Comparison](comparison.md) |
 
 ## Next steps
 
