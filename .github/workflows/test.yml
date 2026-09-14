@@ -67,11 +67,20 @@ jobs:
       # the step there rather than letting it fail on an empty API key — and
       # switching this trigger to `pull_request_target` would expose the key to
       # untrusted code, so don't.
+      #
+      # The secret check is the load-bearing one: it is empty for a fork PR
+      # *and* for a Dependabot PR, whose head branch lives in this repository
+      # but which GitHub runs with Dependabot secrets instead of Actions
+      # secrets. Without it, every Dependabot PR would run the upload with an
+      # empty API key and fail the required `Tests passed` check. The explicit
+      # fork condition stays because it documents the intent that only
+      # devsuit committers' pushes ever reach (and bill) Datadog.
       - name: Upload coverage to Datadog
         if: >-
           !cancelled()
           && matrix.os == 'ubuntu-latest'
           && matrix.python-version == '3.13'
+          && secrets.DATADOG_CODE_COVERAGE_KEY != ''
           && (github.event_name != 'pull_request'
           || github.event.pull_request.head.repo.full_name == github.repository)
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77 # v1.0.5

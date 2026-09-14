@@ -54,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Datadog coverage upload is now also gated on the API key actually being
+  present. The existing fork check covers pull requests from forks, but a
+  Dependabot pull request's head branch lives in this repository, and GitHub
+  runs those with Dependabot secrets rather than Actions secrets — so the step
+  would have run with an empty key and failed the required `Tests passed`
+  check on every dependency bump.
 - `SECURITY.md` scopes its absolute claims to the core install. "Does not
   execute / import / connect / send" holds for the stdlib-only core; the
   `erdify[sql]` extra runs third-party code (sqlglot) in your process and is now
