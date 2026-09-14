@@ -21,7 +21,12 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 # handling. django: Django models cannot be imported standalone (they require a
 # configured settings module / app registry); erdify only ever reads them as
 # text, and the django fixture is exercised end-to-end by test_django.py.
-EXCLUDED = {"malformed", "django"}
+# base_classes: importable by construction is the one thing it must NOT be - it
+# exists to reproduce a base class that lives outside the scanned files, so its
+# imports deliberately resolve to nothing. Depending on django-ninja just to
+# make it import would add a dev dependency to prove a parser behavior that is
+# about *not* importing. Exercised end-to-end by test_base_classes.py.
+EXCLUDED = {"malformed", "django", "base_classes"}
 
 FIXTURE_MODULES = sorted(
     path for path in FIXTURES_DIR.glob("*/models.py") if path.parent.name not in EXCLUDED

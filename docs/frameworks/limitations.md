@@ -45,6 +45,7 @@ erdify . --include models.py entities.py
 | Fields attached with `setattr()` or in a loop | Invisible. Only class-body assignments and annotations are read. |
 | Fields under `if TYPE_CHECKING:` | Invisible. |
 | Models registered by a third-party package | Invisible unless their source is in the scanned files. |
+| A **base class** defined outside the scan (`ninja.Schema`, a shared internal `BaseSchema`) | Its subclasses are skipped, because the inheritance chain to `BaseModel` cannot be resolved. Name it with [`--base-classes`](../usage/cli.md#bases-defined-outside-the-scan-base-classes). |
 
 If your schema is genuinely assembled at runtime, an import-based tool is the
 right instrument — see the [comparison](../comparison.md).

@@ -134,6 +134,7 @@ class ASTDatabaseParser:
         use_default_excludes: bool = True,
         include_patterns: List[str] | None = None,
         hint_unmatched_model_packages: bool = False,
+        base_classes: List[str] | None = None,
     ):
         self.database_path = database_path
         self.exclude_patterns = exclude_patterns or []
@@ -157,6 +158,11 @@ class ASTDatabaseParser:
         #: directory pruning. This is the population --include selects from;
         #: the CLI reports it when a run produces no entities.
         self.candidate_file_count = 0
+        #: Extra base-class names to treat as Pydantic models. Pydantic detection
+        #: resolves ancestors only across the scanned files, so a base defined in
+        #: an installed package (``ninja.Schema``) or an unscanned internal library
+        #: is invisible; naming it here closes that gap.
+        self.base_classes = set(base_classes) if base_classes else set()
         #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
         self.sources = set(sources) if sources else None
         self.entities: Dict[str, EntityInfo] = {}
@@ -428,7 +434,12 @@ class ASTDatabaseParser:
     def _inherits_basemodel(
         self, class_node: ast.ClassDef, visited: set[str] | None = None
     ) -> bool:
-        """Check if a class inherits from Pydantic's BaseModel, directly or via ancestors."""
+        """Check if a class inherits from Pydantic's BaseModel, directly or via ancestors.
+
+        Any name in ``self.base_classes`` counts as well, which is how a base
+        defined outside the scanned files (``ninja.Schema``, a shared internal
+        ``BaseSchema``) can be recognised at all.
+        """
         visited = visited if visited is not None else set()
         if class_node.name in visited:
             return False
@@ -436,13 +447,14 @@ class ASTDatabaseParser:
 
         for base in class_node.bases:
             if isinstance(base, ast.Name):
-                if base.id == "BaseModel":
+                if base.id == "BaseModel" or base.id in self.base_classes:
                     return True
                 ancestor = self.all_classes.get(base.id)
                 if ancestor is not None and self._inherits_basemodel(ancestor, visited):
                     return True
-            elif isinstance(base, ast.Attribute) and base.attr == "BaseModel":
-                return True
+            elif isinstance(base, ast.Attribute):
+                if base.attr == "BaseModel" or base.attr in self.base_classes:
+                    return True
         return False
 
     def _has_tablename(self, class_node: ast.ClassDef) -> bool:
@@ -1119,6 +1131,7 @@ def parse_models_directory(
     include_patterns: List[str] | None = None,
     hint_unmatched_model_packages: bool = False,
     sql_dialect: str | None = None,
+    base_classes: List[str] | None = None,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
     Parse Python model frameworks (SQLModel, SQLAlchemy, Django, Pydantic, dataclass)
@@ -1150,6 +1163,9 @@ def parse_models_directory(
             ``["models.py"]``.
         sql_dialect: Optional SQL dialect hint passed to ``SqlSchemaParser``
             (e.g. ``"postgres"``). ``None`` uses sqlglot's dialect-agnostic mode.
+        base_classes: Extra base-class names to treat as Pydantic models, for
+            bases defined outside the scanned files (``["Schema"]`` for
+            django-ninja, or an internal shared ``BaseSchema``).
 
     Returns:
         Tuple of (entities dict, enums dict)
@@ -1174,6 +1190,7 @@ def parse_models_directory(
         use_default_excludes=use_default_excludes,
         include_patterns=include,
         hint_unmatched_model_packages=hint,
+        base_classes=base_classes,
     )
     entities, enums = parser.parse_all_models()
 

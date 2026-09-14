@@ -27,6 +27,6 @@ framework is detected and a worked example, see the
 | SQLModel | ✅ | `Field()` / `Relationship()` |
 | SQLAlchemy 2.0 | ✅ | `Mapped[...]` / `mapped_column()` |
 | Django ORM | ✅ | `models.Model`, `ForeignKey` / `OneToOneField` / `ManyToManyField` |
-| Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships |
+| Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships; `--base-classes` adds bases defined outside the scan (e.g. django-ninja's `Schema`) |
 | Dataclass | ✅ | `@dataclass`, nested refs as relationships |
 | SQL DDL | ✅ | via `erdify[sql]` (sqlglot); `CREATE TABLE` + FK/PK + enums; `CREATE INDEX` is JSON-only (see Indexes note above) |
