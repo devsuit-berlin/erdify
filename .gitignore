@@ -1,5 +1,7 @@
 .venv
 .pytest_cache
+__pycache__/
+*.py[cod]
 .coverage
 coverage.xml
 .ruff_cache
@@ -8,5 +10,7 @@ dist/
 *.egg-info/
 .DS_Store
 site/
+# MkDocs plugin cache (social cards)
+.cache/
 # Local-only planning artifacts from the superpowers workflow (specs/plans)
 docs/superpowers/
