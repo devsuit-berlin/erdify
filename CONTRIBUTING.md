@@ -1,22 +1,22 @@
-# 🤝 Contributing to erdify
+# Contributing to erdify
 
-First off, thank you for considering contributing to erdify! 🎉
+Thank you for considering a contribution to erdify.
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [Code of Conduct](#-code-of-conduct)
-- [Getting Started](#-getting-started)
-- [Development Setup](#️-development-setup)
-- [Making Changes](#️-making-changes)
-- [Testing](#-testing)
-- [Submitting Changes](#-submitting-changes)
-- [Style Guide](#-style-guide)
+- [Code of Conduct](#code-of-conduct)
+- [Getting Started](#getting-started)
+- [Development Setup](#development-setup)
+- [Making Changes](#making-changes)
+- [Testing](#testing)
+- [Submitting Changes](#submitting-changes)
+- [Style Guide](#style-guide)
 
-## 📜 Code of Conduct
+## Code of Conduct
 
 This project and everyone participating in it is governed by our commitment to providing a welcoming and inclusive environment. Please be respectful and constructive in all interactions.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -26,12 +26,12 @@ This project and everyone participating in it is governed by our commitment to p
 
 ### Finding Something to Work On
 
-- 🐛 **Bug fixes**: Check the [issues](https://github.com/devsuit-berlin/erdify/issues) labeled `bug`
-- ✨ **Features**: Look for issues labeled `enhancement`
-- 📖 **Documentation**: Help improve our docs
-- 🧪 **Tests**: Increase test coverage
+- **Bug fixes**: Check the [issues](https://github.com/devsuit-berlin/erdify/issues) labeled `bug`
+- **Features**: Look for issues labeled `enhancement`
+- **Documentation**: Help improve our docs
+- **Tests**: Increase test coverage
 
-## 🛠️ Development Setup
+## Development Setup
 
 ### 1. Fork and Clone
 
@@ -77,7 +77,7 @@ uv run mypy src/
 uv run ruff check src/ tests/
 ```
 
-## ✏️ Making Changes
+## Making Changes
 
 ### 1. Create a Branch
 
@@ -114,7 +114,7 @@ erdify/
 - Add/update tests for your changes
 - Update documentation if needed
 
-## 🧪 Testing
+## Testing
 
 ### Running Tests
 
@@ -164,7 +164,7 @@ SQL DDL test fixtures live in `tests/fixtures/sql/` — each subdirectory contai
 one or more `.sql` files and the corresponding expected output. Make sure you have
 the `[sql]` extra installed (`uv sync --extra sql`) before running the SQL tests.
 
-## 📤 Submitting Changes
+## Submitting Changes
 
 ### 1. Ensure Quality
 
@@ -217,7 +217,7 @@ Then open a Pull Request on GitHub with:
 - Description of what and why
 - Link to related issues (e.g., "Fixes #123")
 
-## 📝 Style Guide
+## Style Guide
 
 ### Python Code
 
@@ -258,13 +258,13 @@ def parse_models_directory(
     """
 ```
 
-## 💡 Tips
+## Tips
 
 - **Small PRs are better**: They're easier to review and merge
 - **Ask questions**: Open an issue if you're unsure about something
 - **Test edge cases**: Think about what could go wrong
 - **Update docs**: If you add a feature, document it
 
-## 🎉 Thank You!
+## Thank You
 
-Every contribution helps make erdify better. We appreciate your time and effort! 💪
+Every contribution helps make erdify better. We appreciate your time and effort.
