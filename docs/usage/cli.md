@@ -12,7 +12,7 @@ usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
               [--sources [KIND ...]] [--include PATTERN [PATTERN ...]]
               [--sql-dialect NAME] [--infer-keys] [--django-raw-types]
               [--no-enums] [--no-relationships] [--format FMT [FMT ...]]
-              [--inject FILE] [--check] [-v]
+              [--inject FILE] [--fail-on-empty] [--check] [-v]
               input
 
 Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and
@@ -70,6 +70,9 @@ options:
                         (only that region is rewritten). Uses a single
                         --format (default mermaid). Combine with --check to
                         fail on drift, e.g. --inject README.md
+  --fail-on-empty       Exit non-zero when no entities were found, instead of
+                        warning and writing an empty diagram (for CI jobs that
+                        commit the result)
   --check               Don't write; exit non-zero if the --output file is
                         missing or differs from the freshly generated diagram
                         (for CI / pre-commit drift checks)
@@ -99,12 +102,32 @@ exclude = ["audit_log", "*Link"]
 exclude_paths = ["migrations", "legacy"]
 infer_keys = true
 django_raw_types = false
+fail_on_empty = true                # treat "no tables found" as an error
 sql_dialect = "postgres"            # required for CREATE TYPE … AS ENUM support
 ```
 
 With that in place, `erdify .` uses these settings. Precedence is **explicit CLI
 flag > `[tool.erdify]` value > built-in default**. (Boolean flags merge by OR: a
 flag enabled in config can be added to on the CLI but not turned off there.)
+
+## Empty results (`--fail-on-empty`)
+
+When a run finds no tables, erdify says so on stderr — naming the active
+`--include` patterns, how many `.py`/`.sql` files it scanned, and how many of
+them matched — then writes an empty but structurally valid diagram and exits
+`0`. That default is deliberate: a schema can legitimately become empty, and
+in a `--check` run an empty result still has to be compared.
+
+It is the wrong default for a CI job that commits whatever erdify produced,
+where an empty diagram silently replaces a good one. Add `--fail-on-empty`
+there:
+
+```bash
+erdify ./src/database -o docs/erd.puml --fail-on-empty
+```
+
+erdify then exits `1` **before** generating anything, so the file already on
+disk is left untouched.
 
 ## Keeping the diagram in sync (`--check`)
 

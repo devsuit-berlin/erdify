@@ -257,6 +257,94 @@ class TestCLI:
         assert "No tables found" in captured.err
 
 
+class TestCLIEmptyResult:
+    """The empty-result path: what it reports, and --fail-on-empty."""
+
+    @staticmethod
+    def _tree_with_models_in_schema_py(root: Path) -> Path:
+        """A package whose models live in schema.py, which --include misses."""
+        pkg = root / "app"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "schema.py").write_text(
+            "from sqlmodel import Field, SQLModel\n\n\n"
+            "class Author(SQLModel, table=True):\n"
+            "    id: int | None = Field(default=None, primary_key=True)\n"
+        )
+        return root
+
+    def test_warning_names_the_include_patterns_and_counts(self, tmp_path: Path, capsys):
+        """Nothing matched: report the pattern, the counts, and how to fix it."""
+        root = self._tree_with_models_in_schema_py(tmp_path)
+
+        with patch.object(sys, "argv", ["erdify", str(root)]):
+            result = main()
+
+        assert result == 0
+        err = capsys.readouterr().err
+        assert "No tables found" in err
+        assert "2 .py/.sql file(s); 0 matched --include 'models.py'" in err
+        assert "--include defaults to 'models.py'" in err
+
+    def test_warning_distinguishes_matched_but_unrecognized(self, empty_models_dir: Path, capsys):
+        """A models.py that holds no models is a different problem than no match."""
+        with patch.object(sys, "argv", ["erdify", str(empty_models_dir)]):
+            result = main()
+
+        assert result == 0
+        err = capsys.readouterr().err
+        assert "1 matched --include 'models.py'" in err
+        assert "held no recognized models" in err
+        assert "--include defaults to" not in err
+
+    def test_fail_on_empty_exits_non_zero(self, empty_models_dir: Path, capsys):
+        """--fail-on-empty turns the warning into a failure."""
+        with patch.object(sys, "argv", ["erdify", str(empty_models_dir), "--fail-on-empty"]):
+            result = main()
+
+        assert result == 1
+        assert "Error: No tables found" in capsys.readouterr().err
+
+    def test_fail_on_empty_leaves_an_existing_output_file_alone(
+        self, empty_models_dir: Path, temp_dir: Path
+    ):
+        """The failure comes before generation, so a good diagram survives."""
+        output = temp_dir / "erd.puml"
+        output.write_text("@startuml\nentity Author\n@enduml\n")
+
+        argv = ["erdify", str(empty_models_dir), "-o", str(output), "--fail-on-empty"]
+        with patch.object(sys, "argv", argv):
+            result = main()
+
+        assert result == 1
+        assert output.read_text() == "@startuml\nentity Author\n@enduml\n"
+
+    def test_empty_result_still_writes_without_the_flag(
+        self, empty_models_dir: Path, temp_dir: Path
+    ):
+        """Default behavior is unchanged: warn, write, exit 0."""
+        output = temp_dir / "erd.puml"
+
+        argv = ["erdify", str(empty_models_dir), "-o", str(output)]
+        with patch.object(sys, "argv", argv):
+            result = main()
+
+        assert result == 0
+        assert output.exists()
+
+    def test_fail_on_empty_from_pyproject_config(self, tmp_path: Path, capsys):
+        """[tool.erdify] fail_on_empty = true works like the flag."""
+        (tmp_path / "pyproject.toml").write_text("[tool.erdify]\nfail_on_empty = true\n")
+        models = tmp_path / "models.py"
+        models.write_text("# no models here\n")
+
+        with patch.object(sys, "argv", ["erdify", str(tmp_path)]):
+            result = main()
+
+        assert result == 1
+        assert "Error: No tables found" in capsys.readouterr().err
+
+
 class TestCLIVersion:
     """Tests for version reporting (single-sourced from package metadata)."""
 

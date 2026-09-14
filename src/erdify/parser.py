@@ -4,6 +4,7 @@ import ast
 import os
 import re
 import sys
+from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Dict, List, Tuple, TypeGuard
@@ -152,6 +153,10 @@ class ASTDatabaseParser:
         #: the library stays silent so programmatic callers get no stderr noise.
         self.hint_unmatched_model_packages = hint_unmatched_model_packages
         self._unmatched_model_packages: List[Path] = []
+        #: Number of .py/.sql files seen during the last discovery walk, after
+        #: directory pruning. This is the population --include selects from;
+        #: the CLI reports it when a run produces no entities.
+        self.candidate_file_count = 0
         #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
         self.sources = set(sources) if sources else None
         self.entities: Dict[str, EntityInfo] = {}
@@ -208,6 +213,7 @@ class ASTDatabaseParser:
         base = self.database_path
         found: List[Path] = []
         model_packages: List[Path] = []
+        self.candidate_file_count = 0
         for dirpath, dirnames, filenames in os.walk(base):
             if self.use_default_excludes:
                 # In-place prune so os.walk does not descend into excluded dirs.
@@ -220,6 +226,8 @@ class ASTDatabaseParser:
             ):
                 model_packages.append(dpath)
             for filename in filenames:
+                if filename.endswith((".py", ".sql")):
+                    self.candidate_file_count += 1
                 if not filename.endswith(".py"):
                     continue
                 candidate = dpath / filename
@@ -1182,3 +1190,62 @@ def parse_models_directory(
             enums.setdefault(name, enum)
 
     return entities, enums
+
+
+@dataclass(frozen=True)
+class ScanReport:
+    """How a discovery walk selected files — used to explain an empty result.
+
+    Attributes:
+        base: Directory the walk started from.
+        include_patterns: Patterns that were in effect.
+        candidate_files: ``.py``/``.sql`` files seen after directory pruning,
+            i.e. the population ``include_patterns`` selected from.
+        matched_files: Files the patterns selected, after ``exclude_paths``.
+    """
+
+    base: Path
+    include_patterns: List[str]
+    candidate_files: int
+    matched_files: int
+
+
+def scan_report(
+    path: Path,
+    exclude_paths: List[str] | None = None,
+    use_default_excludes: bool = True,
+    include_patterns: List[str] | None = None,
+) -> ScanReport:
+    """Re-run file discovery for ``path`` and report what it selected.
+
+    Runs the same discovery as :func:`parse_models_directory` without parsing
+    anything, so a caller that got no entities can tell "nothing matched the
+    include patterns" apart from "files matched but held no recognized models".
+    The arguments mirror the discovery-related parameters of
+    :func:`parse_models_directory`.
+    """
+    if path.is_file():
+        base = path.parent
+        include = [path.name]
+    else:
+        base = path
+        include = include_patterns if include_patterns is not None else ["models.py"]
+
+    parser = ASTDatabaseParser(
+        base,
+        exclude_paths=exclude_paths,
+        use_default_excludes=use_default_excludes,
+        include_patterns=include,
+    )
+    python_files = parser._discover_model_files()
+
+    from .sql_parser import discover_sql_files
+
+    sql_files = discover_sql_files(base, include, exclude_paths or [], use_default_excludes)
+
+    return ScanReport(
+        base=base,
+        include_patterns=list(include),
+        candidate_files=parser.candidate_file_count,
+        matched_files=len(python_files) + len(sql_files),
+    )

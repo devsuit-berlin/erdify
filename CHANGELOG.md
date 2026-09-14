@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--fail-on-empty` (and `fail_on_empty` in `[tool.erdify]`) exits `1` when a
+  run finds no tables, instead of warning and writing an empty diagram. It
+  fails *before* generating, so an existing output file is left untouched —
+  which is the point for CI jobs that commit whatever erdify produced, where an
+  empty diagram would otherwise silently replace a good one. The default exit
+  code is unchanged.
 - erdify now ships `.pre-commit-hooks.yaml`, so it can be used as a pre-commit
   repository instead of a `repo: local` / `language: system` hook that requires
   erdify to be installed in the consumer's environment first. Two ids are
@@ -32,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The "No tables found" warning is now actionable: it names the active
+  `--include` patterns, reports how many `.py`/`.sql` files were scanned and how
+  many matched, and distinguishes "nothing matched the patterns" (the usual
+  cause — `--include` defaults to `models.py`, so models in e.g. `schema.py` are
+  never seen) from "files matched but held no recognized models".
 - The README now answers "why erdify and not X" right after the feature list,
   with a condensed comparison table and a link to the full one.
 - The README shows its example ERD as a live Mermaid diagram injected with
@@ -47,7 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gains `Changelog` and `Issues` links.
 - `[tool.ruff] target-version` is `py311`, matching `requires-python = ">=3.11"`
   instead of contradicting it with `py310`.
-
 - The required `Tests passed` check now fails for a pull request from the
   machine-written `badges` branch into `main` (the only base the test workflow
   runs for). GitHub cannot bar a branch from being a pull-request source, and

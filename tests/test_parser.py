@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from erdify.parser import MODEL_SOURCES, parse_models_directory
+from erdify.parser import MODEL_SOURCES, parse_models_directory, scan_report
 
 
 MIXED_SOURCES_MODELS = """\
@@ -178,3 +178,50 @@ class TestSourceFilter:
             "pydantic",
             "dataclass",
         }
+
+
+class TestScanReport:
+    """scan_report explains why a scan selected the files it did."""
+
+    def test_counts_candidates_and_matches(self, tmp_path: Path):
+        """Candidates are every .py/.sql file; matches are what --include picked."""
+        (tmp_path / "models.py").write_text("")
+        (tmp_path / "schema.py").write_text("")
+        (tmp_path / "tables.sql").write_text("")
+        (tmp_path / "notes.txt").write_text("")
+
+        report = scan_report(tmp_path)
+
+        assert report.include_patterns == ["models.py"]
+        assert report.candidate_files == 3
+        assert report.matched_files == 1
+
+    def test_sql_files_count_as_matches(self, tmp_path: Path):
+        """A .sql include matches through the SQL discovery walk."""
+        (tmp_path / "tables.sql").write_text("")
+
+        report = scan_report(tmp_path, include_patterns=["*.sql"])
+
+        assert report.matched_files == 1
+
+    def test_single_file_input_is_its_own_include(self, tmp_path: Path):
+        """A file input is treated as base=parent with that file as the pattern."""
+        target = tmp_path / "schema.py"
+        target.write_text("")
+        (tmp_path / "models.py").write_text("")
+
+        report = scan_report(target)
+
+        assert report.base == tmp_path
+        assert report.include_patterns == ["schema.py"]
+        assert report.matched_files == 1
+
+    def test_excluded_paths_are_not_matches(self, tmp_path: Path):
+        """exclude_paths filters after the include patterns."""
+        (tmp_path / "migrations").mkdir()
+        (tmp_path / "migrations" / "models.py").write_text("")
+
+        report = scan_report(tmp_path, exclude_paths=["migrations"])
+
+        assert report.candidate_files == 1
+        assert report.matched_files == 0
