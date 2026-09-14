@@ -17,7 +17,7 @@ see [SQL DDL](sql.md) for details.
 The snippets below all describe the **same** `User` / `Order` schema — only the
 syntax differs. Each one produces the **identical** diagram:
 
-![Framework comparison ERD](../examples/erd.png "The same ERD from all five frameworks")
+![The same User/Order schema in SQLModel, SQLAlchemy, Django, Pydantic and dataclasses, all producing one ERD](../examples/frameworks.png "Five frameworks, one diagram")
 
 !!! info
 

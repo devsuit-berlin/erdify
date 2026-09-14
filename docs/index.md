@@ -7,7 +7,7 @@ description: "erdify generates PlantUML, Mermaid, JSON and HTML ER diagrams from
 **One ERD generator for every Python schema in your repository — parsed from
 source, with no imports, no database connection and no runtime dependencies.**
 
-![Framework comparison ERD](examples/erd.png "The same ERD from all five frameworks")
+![The same User/Order schema in SQLModel, SQLAlchemy, Django, Pydantic and dataclasses, all producing one ERD](examples/frameworks.png "Five frameworks, one diagram")
 
 The same two tables, written in SQLModel, SQLAlchemy 2.0, Django, Pydantic and
 dataclasses, all render to the same diagram.
