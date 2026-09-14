@@ -1,3 +1,7 @@
+---
+description: "Every released change to erdify, in Keep a Changelog format."
+---
+
 <!--
   The changelog lives in CHANGELOG.md at the repository root so that it is
   visible on GitHub and in the sdist/wheel. This page includes that file

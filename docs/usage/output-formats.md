@@ -1,3 +1,7 @@
+---
+description: "PlantUML, Mermaid, JSON and standalone HTML output from erdify, how --output extensions are normalized, and Markdown injection."
+---
+
 # Output Formats
 
 erdify renders to four formats, chosen (one or more) with `--format`:
@@ -37,22 +41,43 @@ output = "docs/erd"
 ## Mermaid
 
 Mermaid `erDiagram` output renders natively on GitHub and GitLab, so you can
-embed an ERD directly in Markdown without a PlantUML/Graphviz toolchain:
+embed an ERD directly in Markdown without a PlantUML/Graphviz toolchain. The
+left tab is what erdify writes to the `.mmd` file; the right tab is what GitHub
+(and this page) draws from it:
 
-```mermaid
-erDiagram
-    User {
-        int id PK
-        str name
-        str email
-    }
-    Order {
-        int id PK
-        int user_id FK
-        float total
-    }
-    Order }o--|| User : "user_id"
-```
+=== "Source"
+
+    ```
+    erDiagram
+        User {
+            int id PK
+            str name
+            str email
+        }
+        Order {
+            int id PK
+            int user_id FK
+            float total
+        }
+        Order }o--|| User : "user_id"
+    ```
+
+=== "Rendered"
+
+    ```mermaid
+    erDiagram
+        User {
+            int id PK
+            str name
+            str email
+        }
+        Order {
+            int id PK
+            int user_id FK
+            float total
+        }
+        Order }o--|| User : "user_id"
+    ```
 
 Notes:
 

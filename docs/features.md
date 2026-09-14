@@ -1,3 +1,7 @@
+---
+description: "The full matrix of what erdify recognizes per framework: primary and foreign keys, relationships, enums, link tables, inheritance and type mapping."
+---
+
 # Supported Features
 
 The full matrix of what erdify recognizes when parsing your models. For how each

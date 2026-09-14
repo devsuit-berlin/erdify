@@ -1,3 +1,7 @@
+---
+description: "Narrow an erdify diagram with --exclude, --exclude-paths and --sources, and derive keys for Pydantic and dataclass models with --infer-keys."
+---
+
 # Filtering & Key Inference
 
 Control which entities and model kinds appear in the diagram, and derive keys for keyless models.
