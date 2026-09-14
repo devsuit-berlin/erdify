@@ -297,6 +297,13 @@ class TestCLIEmptyResult:
         assert "held no recognized models" in err
         assert "--include defaults to" not in err
 
+    def test_warning_links_the_troubleshooting_page(self, empty_models_dir: Path, capsys):
+        """The message points at the page that explains every cause."""
+        with patch.object(sys, "argv", ["erdify", str(empty_models_dir)]):
+            main()
+
+        assert "https://erdify.devsuit.io/troubleshooting/" in capsys.readouterr().err
+
     def test_fail_on_empty_exits_non_zero(self, empty_models_dir: Path, capsys):
         """--fail-on-empty turns the warning into a failure."""
         with patch.object(sys, "argv", ["erdify", str(empty_models_dir), "--fail-on-empty"]):

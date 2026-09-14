@@ -50,6 +50,12 @@ push the result back. The trade-off: the diagram lands on your default branch
 without review, and a misconfigured run can commit an empty or wrong diagram
 over a good one.
 
+Use `--fail-on-empty` here. It is exactly the failure this workflow is exposed
+to: if `--include` stops matching — a rename, a moved package — erdify would
+otherwise warn on stderr, write an empty diagram, exit `0`, and let the commit
+step replace a good ERD with an empty one. With the flag, erdify exits non-zero
+**before** generating, so the job fails and the file on disk is untouched.
+
 ```yaml
 # .github/workflows/erd.yml
 name: Generate ERD
@@ -74,7 +80,7 @@ jobs:
         run: pip install erdify        # use 'erdify[sql]' for SQL DDL projects
 
       - name: Generate ERD
-        run: erdify ./src/database --title "Database Schema" -o docs/erd.puml
+        run: erdify ./src/database --title "Database Schema" -o docs/erd.puml --fail-on-empty
 
       - name: Generate PNG
         run: |

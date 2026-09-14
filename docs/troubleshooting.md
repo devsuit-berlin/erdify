@@ -40,7 +40,8 @@ like a model:
   [Python parsing limitations](frameworks/limitations.md).
 
 In CI, add `--fail-on-empty` so an empty result fails the job instead of
-committing an empty diagram over a good one.
+committing an empty diagram over a good one — see
+[CI/CD & pre-commit](usage/ci.md#alternative-regenerate-and-commit).
 
 ## Too many entities
 
