@@ -104,6 +104,7 @@ The runnable sources live in [`docs/examples/`](https://github.com/devsuit-berli
 - [SQL DDL](https://erdify.devsuit.io/frameworks/sql/) — generate ERDs from `.sql` files with `erdify[sql]`
 - [Comparison](https://erdify.devsuit.io/comparison/) — erdify next to the other ERD generators
 - [Troubleshooting](https://erdify.devsuit.io/troubleshooting/) — symptom-first fixes for the common surprises
+- [Stability & Versioning](https://erdify.devsuit.io/stability/) — what a major, minor or patch release may change
 
 ## 📋 Supported Features
 

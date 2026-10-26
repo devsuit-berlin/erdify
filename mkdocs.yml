@@ -48,6 +48,7 @@ nav:
       - SQL DDL: frameworks/sql.md
       - Python Parsing Limitations: frameworks/limitations.md
   - Troubleshooting: troubleshooting.md
+  - Stability & Versioning: stability.md
   - Changelog: changelog.md
 
 markdown_extensions:

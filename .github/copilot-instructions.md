@@ -125,6 +125,11 @@ release — check that all of these still agree, and update whatever has drifted
 - `CONTRIBUTING.md` — commands, supported Python versions, project structure.
 - `pyproject.toml` — `requires-python`, classifiers, keywords.
 
+Classify every change against `docs/stability.md` (the versioning policy) and file
+its changelog entry under the matching heading: `### Changed — **breaking**`,
+`### Deprecated`, or `### Output changes`. Use `### Output changes` when the
+generated diagram text changes (it makes `--check` fail once after upgrading).
+
 The feature matrix and CLI flags are the parts that drift most often. When in
 doubt, verify a claimed feature against the code (`parser.py` for detection,
 `generator.py` for what's actually rendered) before documenting it.
