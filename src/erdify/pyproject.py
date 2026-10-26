@@ -23,6 +23,7 @@ CONFIG_KEYS = frozenset(
         "no_relationships",
         "no_default_excludes",
         "allow_empty",
+        "strict",
         "sql_dialect",
     }
 )

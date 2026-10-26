@@ -12,7 +12,7 @@ from .generator import (
     generate_mermaid,
     generate_plantuml,
 )
-from .parser import ASTDatabaseParser, parse_models_directory
+from .parser import ASTDatabaseParser, ModelParseError, parse_models_directory
 from .sql_parser import SqlDependencyError, SqlSchemaParser
 
 try:
@@ -28,6 +28,7 @@ __all__ = [
     # Parser
     "ASTDatabaseParser",
     "parse_models_directory",
+    "ModelParseError",
     "SqlSchemaParser",
     "SqlDependencyError",
     # Generator

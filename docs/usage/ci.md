@@ -56,6 +56,10 @@ generating, so the job fails and the commit step never replaces a good ERD with
 an empty one. Pass [`--allow-empty`](cli.md#empty-results-allow-empty) only if
 an empty schema is a legitimate outcome for your project.
 
+A file that erdify cannot parse is only reported on stderr by default, and the
+job still passes with that file's entities missing from the diagram. Add
+[`--strict`](cli.md#files-that-cannot-be-parsed-strict) to fail the job instead.
+
 ```yaml
 # .github/workflows/erd.yml
 name: Generate ERD

@@ -17,7 +17,7 @@ usage: erdify [-h] [-o OUTPUT] [--title TITLE] [--exclude [PATTERN ...]]
               [--base-classes NAME [NAME ...]] [--sql-dialect NAME]
               [--infer-keys] [--django-raw-types] [--no-enums]
               [--no-relationships] [--format FMT [FMT ...]] [--inject FILE]
-              [--allow-empty] [--check] [-v]
+              [--allow-empty] [--strict] [--check] [-v]
               input
 
 Generate PlantUML ERD diagrams from SQLModel, SQLAlchemy, Django, Pydantic and
@@ -84,6 +84,9 @@ options:
   --allow-empty         Treat 'no tables found' as a warning instead of an
                         error: write the empty diagram and exit 0 (default
                         since 0.13.0: exit 1)
+  --strict              Fail (exit 1, write nothing) if any model or .sql file
+                        cannot be parsed. Without it, such a file is reported
+                        on stderr and skipped
   --check               Don't write; exit non-zero if the --output file is
                         missing or differs from the freshly generated diagram
                         (for CI / pre-commit drift checks)
@@ -115,6 +118,7 @@ base_classes = ["Schema"]           # extra Pydantic bases defined outside the s
 infer_keys = true
 django_raw_types = false
 allow_empty = true                  # downgrade "no tables found" to a warning
+strict = true                       # fail if any model/.sql file cannot be parsed
 sql_dialect = "postgres"            # required for CREATE TYPE … AS ENUM support
 ```
 
@@ -209,6 +213,36 @@ allow_empty = true
 That restores the old behavior exactly: the message becomes a warning, the
 empty diagram is written, and the exit code is `0`.
 
+## Files that cannot be parsed (`--strict`)
+
+By default, a model or `.sql` file that erdify cannot parse (a syntax error, a
+file that isn't valid SQL) does not stop the run. erdify prints
+`Error parsing <file>: ...` on stderr, skips the file and renders the rest, and
+the exit code is `0`. That keeps a single broken or work-in-progress file from
+blocking everything else, but the diagram is then silently missing that file's
+entities.
+
+`--strict` turns this into an error. erdify still reports every failing file,
+then **exits `1` without writing anything**, so an existing diagram is left
+untouched:
+
+```bash
+erdify ./src/database -o docs/erd.puml --strict
+```
+
+or, permanently:
+
+```toml
+[tool.erdify]
+strict = true
+```
+
+`--strict` is a good fit for CI: together with `--check`, it fails the job
+both when the committed diagram is stale and when part of the schema could not
+be read. From Python, pass `strict=True` to `parse_models_directory` (or to
+`ASTDatabaseParser` / `SqlSchemaParser`). It raises `erdify.ModelParseError`,
+whose `errors` attribute lists every `(file, message)` pair.
+
 ## Keeping the diagram in sync (`--check`)
 
 `--check` regenerates the diagram in memory and compares it to the existing
@@ -302,6 +336,7 @@ Everything listed in `erdify.__all__` is the public Python API. Within it:
 | `PlantUMLGenerator`, `MermaidGenerator` | The constructor (`entities`, `enums` positional, `title` keyword-only) and `generate()`. |
 | `EntityInfo`, `FieldInfo`, `EnumInfo` | The dataclass fields. New fields may be added with defaults. |
 | `SqlDependencyError` | The exception type. |
+| `ModelParseError` | The exception type and its `errors` attribute (`(file, message)` pairs). |
 | `JSON_SCHEMA_VERSION` | The current [JSON output](output-formats.md#json) `schema_version`. |
 
 Any other attribute or method on these classes, and anything imported from a

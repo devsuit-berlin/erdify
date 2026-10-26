@@ -178,6 +178,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Fail (exit 1, write nothing) if any model or .sql file cannot be "
+            "parsed. Without it, such a file is reported on stderr and skipped"
+        ),
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help=(
@@ -226,6 +234,7 @@ def main() -> int:
     no_relationships = args.no_relationships or bool(config.get("no_relationships", False))
     no_default_excludes = args.no_default_excludes or bool(config.get("no_default_excludes", False))
     allow_empty = args.allow_empty or bool(config.get("allow_empty", False))
+    strict = args.strict or bool(config.get("strict", False))
 
     # Output: CLI path (relative to cwd) > config path (relative to the project) > stdout.
     output_path: Path | None = args.output
@@ -289,6 +298,7 @@ def main() -> int:
             hint_unmatched_model_packages=include_is_default,
             sql_dialect=sql_dialect,
             base_classes=base_classes,
+            strict=strict,
         )
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)

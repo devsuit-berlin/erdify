@@ -120,6 +120,19 @@ def _match_include(rel_path: str, filename: str, patterns: List[str]) -> bool:
     return False
 
 
+class ModelParseError(Exception):
+    """Raised in strict mode when one or more input files could not be parsed.
+
+    Attributes:
+        errors: ``(file, message)`` for every file that failed, in scan order.
+    """
+
+    def __init__(self, errors: List[Tuple[Path, str]]):
+        self.errors = errors
+        files = ", ".join(str(path) for path, _ in errors)
+        super().__init__(f"{len(errors)} file(s) could not be parsed (strict mode): {files}")
+
+
 class ASTDatabaseParser:
     """Parses database models using AST to extract schema information.
 
@@ -148,6 +161,8 @@ class ASTDatabaseParser:
         hint_unmatched_model_packages: Warn once on stderr about a ``models/``
             package the include patterns skip.
         base_classes: Extra base-class names to treat as Pydantic models.
+        strict: Raise :class:`ModelParseError` if any file fails to parse,
+            instead of reporting it on stderr and skipping it.
     """
 
     def __init__(
@@ -163,8 +178,12 @@ class ASTDatabaseParser:
         include_patterns: List[str] | None = None,
         hint_unmatched_model_packages: bool = False,
         base_classes: List[str] | None = None,
+        strict: bool = False,
     ):
         self.database_path = database_path
+        self.strict = strict
+        #: (file, message) for every file that failed to parse in the last run.
+        self._parse_errors: List[Tuple[Path, str]] = []
         self.exclude_patterns = exclude_patterns or []
         self.infer_keys = infer_keys
         #: Show original Django field names (CharField) instead of mapped Python types.
@@ -203,8 +222,13 @@ class ASTDatabaseParser:
 
         Returns:
             Tuple of (entities, enums), both keyed by class name.
+
+        Raises:
+            ModelParseError: ``strict`` is set and at least one file failed to
+                parse. Every failure is still reported on stderr first.
         """
         model_files = self._discover_model_files()
+        self._parse_errors = []
 
         # First pass: parse all files and collect class definitions
         for model_file in model_files:
@@ -220,6 +244,10 @@ class ASTDatabaseParser:
                         self._all_classes[node.name] = node
             except Exception as e:
                 print(f"Error parsing {model_file}: {e}", file=sys.stderr)
+                self._parse_errors.append((model_file, str(e)))
+
+        if self.strict and self._parse_errors:
+            raise ModelParseError(self._parse_errors)
 
         # Second pass: process enum and model classes
         for class_node in self._all_classes.values():
@@ -1213,6 +1241,7 @@ def parse_models_directory(
     hint_unmatched_model_packages: bool = False,
     sql_dialect: str | None = None,
     base_classes: List[str] | None = None,
+    strict: bool = False,
 ) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """
     Parse Python model frameworks (SQLModel, SQLAlchemy, Django, Pydantic, dataclass)
@@ -1250,6 +1279,9 @@ def parse_models_directory(
         base_classes: Extra base-class names to treat as Pydantic models, for
             bases defined outside the scanned files (``["Schema"]`` for
             django-ninja, or an internal shared ``BaseSchema``).
+        strict: Raise :class:`ModelParseError` if any Python or ``.sql`` file
+            fails to parse. Without it, such a file is reported on stderr and
+            skipped, and the rest is still returned.
 
     Returns:
         Tuple of (entities, enums), both keyed by name. Python models win over
@@ -1258,6 +1290,8 @@ def parse_models_directory(
     Raises:
         SqlDependencyError: ``.sql`` files were found but the optional
             ``sqlglot`` dependency (``erdify[sql]``) is not installed.
+        ModelParseError: ``strict`` is set and at least one file failed to
+            parse. It lists the failures from both the Python and SQL scans.
     """
     # Normalize a file input: treat it as base=parent with that file as the sole include.
     if path.is_file():
@@ -1282,18 +1316,25 @@ def parse_models_directory(
         base_classes=base_classes,
     )
     entities, enums = parser.parse_all_models()
+    parse_errors = list(parser._parse_errors)
 
     from .sql_parser import SqlSchemaParser, discover_sql_files
 
     sql_files = discover_sql_files(base, include, exclude_paths or [], use_default_excludes)
     if sql_files:
-        sql_entities, sql_enums = SqlSchemaParser(
+        sql_parser = SqlSchemaParser(
             sql_files, dialect=sql_dialect, exclude_patterns=exclude_patterns
-        ).parse()
+        )
+        sql_entities, sql_enums = sql_parser.parse()
+        parse_errors.extend(sql_parser._parse_errors)
         for name, entity in sql_entities.items():
             entities.setdefault(name, entity)
         for name, enum in sql_enums.items():
             enums.setdefault(name, enum)
+
+    # Collect failures from both scans before raising, so one run reports them all.
+    if strict and parse_errors:
+        raise ModelParseError(parse_errors)
 
     return entities, enums
 
