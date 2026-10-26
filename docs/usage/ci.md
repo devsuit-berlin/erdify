@@ -135,7 +135,7 @@ environment for it:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/devsuit-berlin/erdify
-    rev: v0.14.1
+    rev: v0.15.0
     hooks:
       - id: erdify
         args: [./src/database, -o, docs/erd.puml]
