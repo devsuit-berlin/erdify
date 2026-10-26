@@ -7,14 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — **breaking**
+
+- **The public Python API is now defined and narrowed** ahead of 1.0 (#195).
+  Only the names in `erdify.__all__` are public; the CLI is unaffected.
+  - Options after the first argument are now **keyword-only** on
+    `parse_models_directory`, `ASTDatabaseParser` and `SqlSchemaParser`, and
+    after `enums` on the `generate_*` functions and the generator classes.
+    `parse_models_directory(path, ["Base*"])` becomes
+    `parse_models_directory(path, exclude_patterns=["Base*"])`.
+  - Parser state is now private: `ASTDatabaseParser.entities`, `.enums`,
+    `.all_classes`, `.file_trees`, `.candidate_file_count` and
+    `SqlSchemaParser.entities` / `.enums` gained a `_` prefix. Use the values
+    returned by `parse_all_models()` / `parse()` instead.
+
 ### Added
 
+- `SqlSchemaParser`, `MermaidGenerator` and the `generate_mermaid`,
+  `generate_json` and `generate_html` functions are now documented, together
+  with a "What is public" section in the CLI & Python API page.
+- `SqlDependencyError` is exported from `erdify`, so callers of
+  `SqlSchemaParser` can catch it without importing an internal module.
 - `--format json` output now starts with a `"schema_version": 1` key, so
   downstream tools can detect the document shape. Adding keys never bumps it;
   removing or renaming a key, or changing a value's type, bumps it and ships
   only in a major release. The Output Formats page now documents every key, its
   type and nullability, plus these compatibility rules. The version is also
-  available as `erdify.generator.JSON_SCHEMA_VERSION`.
+  available as `erdify.JSON_SCHEMA_VERSION`.
 
 ## [0.15.0] - 2026-10-26
 

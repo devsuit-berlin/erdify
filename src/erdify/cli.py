@@ -279,7 +279,7 @@ def main() -> int:
     try:
         entities, enums = parse_models_directory(
             args.input,
-            exclude,
+            exclude_patterns=exclude,
             infer_keys=infer_keys,
             sources=sources,
             django_raw_types=django_raw_types,

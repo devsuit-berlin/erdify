@@ -52,19 +52,24 @@ class SqlDependencyError(RuntimeError):
 
 
 class SqlSchemaParser:
-    """Parse SQL DDL files into erdify's IR using sqlglot (lazy-imported)."""
+    """Parse SQL DDL files into erdify's IR using sqlglot (lazy-imported).
+
+    Public API: the constructor and :meth:`parse`. Every other attribute and
+    method is internal and may change in any release.
+    """
 
     def __init__(
         self,
         files: list[Path],
+        *,
         dialect: str | None = None,
         exclude_patterns: list[str] | None = None,
     ):
         self.files = files
         self.dialect = dialect
         self.exclude_patterns = exclude_patterns or []
-        self.entities: dict[str, EntityInfo] = {}
-        self.enums: dict[str, EnumInfo] = {}
+        self._entities: dict[str, EntityInfo] = {}
+        self._enums: dict[str, EnumInfo] = {}
 
     def parse(self) -> tuple[dict[str, EntityInfo], dict[str, EnumInfo]]:
         try:
@@ -100,7 +105,7 @@ class SqlSchemaParser:
                 self._mark_index(stmt, exp)
 
         self._finalize()
-        return self.entities, self.enums
+        return self._entities, self._enums
 
     def _add_table(self, create: "object", exp: "object") -> None:
         schema = create.this  # type: ignore[attr-defined]  # exp.Schema: table + column/constraint expressions
@@ -111,7 +116,7 @@ class SqlSchemaParser:
         unique_cols = self._table_level_unique_columns(schema, exp)
         for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]
             entity.fields.append(self._column(coldef, exp, pk_cols, unique_cols))
-        self.entities[table_name] = entity
+        self._entities[table_name] = entity
 
     def _add_enum(self, create: "object", exp: "object") -> None:
         # stmt.this is an exp.Table node whose .name is the type name
@@ -124,7 +129,7 @@ class SqlSchemaParser:
                 if isinstance(lit, exp.Literal) and lit.is_string:  # type: ignore[attr-defined]
                     values.append(lit.this)
         if name and values:
-            self.enums[name] = EnumInfo(name=name, values=values)
+            self._enums[name] = EnumInfo(name=name, values=values)
 
     def _column(
         self, coldef: "object", exp: "object", pk_cols: set[str], unique_cols: set[str]
@@ -213,7 +218,7 @@ class SqlSchemaParser:
     def _set_fk(self, table: str, column: str, ref_table: str, ref_col: str) -> None:
         if not ref_table:
             return
-        entity = self.entities.get(table)
+        entity = self._entities.get(table)
         if entity is None:
             return
         for f in entity.fields:
@@ -294,7 +299,7 @@ class SqlSchemaParser:
         table_node = index.find(exp.Table)  # type: ignore[attr-defined]
         if table_node is None:
             return
-        entity = self.entities.get(table_node.name)
+        entity = self._entities.get(table_node.name)
         if entity is None:
             return
         indexed = {c.name for c in index.find_all(exp.Column)}  # type: ignore[attr-defined]
@@ -303,7 +308,7 @@ class SqlSchemaParser:
                 f.index = True
 
     def _finalize(self) -> None:
-        for entity in self.entities.values():
+        for entity in self._entities.values():
             entity.is_link_table = is_structural_link_table(entity.fields)
         self._apply_excludes()
 
@@ -317,7 +322,7 @@ class SqlSchemaParser:
                 for p in self.exclude_patterns
             )
 
-        names = {n for n, e in self.entities.items() if excluded(e)}
-        self.entities = {n: e for n, e in self.entities.items() if n not in names}
-        for e in self.entities.values():
+        names = {n for n, e in self._entities.items() if excluded(e)}
+        self._entities = {n: e for n, e in self._entities.items() if n not in names}
+        for e in self._entities.values():
             e.relationships = [r for r in e.relationships if r[0] not in names]

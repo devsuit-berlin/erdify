@@ -27,6 +27,7 @@ class _ERGenerator:
         self,
         entities: Dict[str, EntityInfo],
         enums: Dict[str, EnumInfo] | None = None,
+        *,
         title: str = "Database ERD",
     ):
         self.entities = entities
@@ -226,7 +227,10 @@ class _ERGenerator:
 
 
 class PlantUMLGenerator(_ERGenerator):
-    """Generates a PlantUML ERD diagram from entities."""
+    """Generates a PlantUML ERD diagram from entities.
+
+    Public API: the constructor and :meth:`generate`.
+    """
 
     def generate(self) -> str:
         """Generate PlantUML diagram."""
@@ -328,7 +332,10 @@ class PlantUMLGenerator(_ERGenerator):
 
 
 class MermaidGenerator(_ERGenerator):
-    """Generates a Mermaid ``erDiagram`` from entities."""
+    """Generates a Mermaid ``erDiagram`` from entities.
+
+    Public API: the constructor and :meth:`generate`.
+    """
 
     def generate(self) -> str:
         """Generate a Mermaid erDiagram."""
@@ -409,6 +416,7 @@ class MermaidGenerator(_ERGenerator):
 def generate_plantuml(
     entities: Dict[str, EntityInfo],
     enums: Dict[str, EnumInfo] | None = None,
+    *,
     title: str = "Database ERD",
     include_enums: bool = True,
     include_relationships: bool = True,
@@ -437,6 +445,7 @@ def generate_plantuml(
 def generate_mermaid(
     entities: Dict[str, EntityInfo],
     enums: Dict[str, EnumInfo] | None = None,
+    *,
     title: str = "Database ERD",
     include_enums: bool = True,
     include_relationships: bool = True,
@@ -465,6 +474,7 @@ def generate_mermaid(
 def generate_json(
     entities: Dict[str, EntityInfo],
     enums: Dict[str, EnumInfo] | None = None,
+    *,
     title: str = "Database ERD",
     include_enums: bool = True,
     include_relationships: bool = True,
@@ -525,6 +535,7 @@ def generate_json(
 def generate_html(
     entities: Dict[str, EntityInfo],
     enums: Dict[str, EnumInfo] | None = None,
+    *,
     title: str = "Database ERD",
     include_enums: bool = True,
     include_relationships: bool = True,
@@ -535,7 +546,13 @@ def generate_html(
     The page loads Mermaid from a pinned CDN (``MERMAID_CDN``), so it needs
     internet access to render. Open it in a browser to view the diagram.
     """
-    diagram = generate_mermaid(entities, enums, title, include_enums, include_relationships)
+    diagram = generate_mermaid(
+        entities,
+        enums,
+        title=title,
+        include_enums=include_enums,
+        include_relationships=include_relationships,
+    )
     safe_title = html.escape(title)
     return (
         "<!DOCTYPE html>\n"

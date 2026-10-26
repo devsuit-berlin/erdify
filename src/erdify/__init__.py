@@ -4,6 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .config import EntityInfo, EnumInfo, FieldInfo
 from .generator import (
+    JSON_SCHEMA_VERSION,
     MermaidGenerator,
     PlantUMLGenerator,
     generate_html,
@@ -12,7 +13,7 @@ from .generator import (
     generate_plantuml,
 )
 from .parser import ASTDatabaseParser, parse_models_directory
-from .sql_parser import SqlSchemaParser
+from .sql_parser import SqlDependencyError, SqlSchemaParser
 
 try:
     __version__ = version("erdify")
@@ -28,12 +29,14 @@ __all__ = [
     "ASTDatabaseParser",
     "parse_models_directory",
     "SqlSchemaParser",
+    "SqlDependencyError",
     # Generator
     "PlantUMLGenerator",
     "generate_plantuml",
     "MermaidGenerator",
     "generate_mermaid",
     "generate_json",
+    "JSON_SCHEMA_VERSION",
     "generate_html",
     # Version
     "__version__",
