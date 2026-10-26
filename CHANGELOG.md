@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-commit hook ids, the Python API and the JSON schema. It also states the
   policies for diagram output changes, deprecations, Python version support and
   the `sqlglot` range. Exit codes `0`/`1`/`2` are documented there for the
-  first time.
+  first time, including that a file which fails to parse is skipped with an
+  error on stderr rather than failing the run.
 - `SqlSchemaParser`, `MermaidGenerator` and the `generate_mermaid`,
   `generate_json` and `generate_html` functions are now documented, together
   with a "What is public" section in the CLI & Python API page.
