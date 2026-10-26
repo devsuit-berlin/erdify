@@ -111,8 +111,10 @@ class SqlSchemaParser:
         statements = []
         self._parse_errors = []
         for f in self.files:
-            text = f.read_text()
             try:
+                # Read inside the try: an unreadable or non-UTF-8 file is a parse
+                # failure for this file only, like a syntax error.
+                text = f.read_text()
                 statements.extend(sqlglot.parse(text, dialect=self.dialect))
             except Exception as err:
                 print(f"Error parsing {f}: {err}", file=sys.stderr)
