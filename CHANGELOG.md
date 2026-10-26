@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Official support for **Python 3.15**. The 3.15 CI leg is no longer
+  allowed to fail, macOS and Windows now smoke-test 3.15 instead of 3.14, and
+  the package carries the `Python :: 3.15` classifier.
+- The installation page lists the supported Python versions, as its
+  description already promised.
+
 ## [0.14.1] - 2026-09-14
 
 ### Fixed

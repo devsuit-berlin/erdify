@@ -6,6 +6,12 @@ description: "Install erdify with pip, uv, pipx or uvx, add the optional [sql] e
 
 erdify can be installed with your Python package manager of choice, or run on demand without installing.
 
+## Requirements
+
+erdify supports **Python 3.11 – 3.15** and has no runtime dependencies. Every
+supported version is tested in CI on Linux; the oldest and newest are also
+tested on macOS and Windows.
+
 ## Using pip
 
 ```bash
