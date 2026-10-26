@@ -121,11 +121,39 @@ def _match_include(rel_path: str, filename: str, patterns: List[str]) -> bool:
 
 
 class ASTDatabaseParser:
-    """Parses database models using AST to extract schema information."""
+    """Parses database models using AST to extract schema information.
+
+    Handles Python model files only; use :func:`parse_models_directory` for
+    SQL DDL or mixed input.
+
+    Public API: the constructor and :meth:`parse_all_models`. Every other
+    attribute and method is internal and may change in any release.
+
+    Args:
+        database_path: Directory to scan for model files.
+        exclude_patterns: Case-sensitive globs; an entity is dropped if one
+            matches its class name or table name.
+        infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
+            key from ``id`` and a foreign key from ``<x>_id``.
+        sources: Restrict which model kinds become entities (subset of
+            ``MODEL_SOURCES``). ``None`` includes all kinds.
+        django_raw_types: Show Django field names (``CharField``) instead of
+            mapped Python types (``str``).
+        exclude_paths: Case-sensitive globs matched against each file path
+            (relative to ``database_path``) or any path segment.
+        use_default_excludes: Skip ``DEFAULT_EXCLUDE_DIRS`` (venv,
+            site-packages, caches) during the walk.
+        include_patterns: Globs selecting which files are scanned. Defaults to
+            ``["models.py"]``.
+        hint_unmatched_model_packages: Warn once on stderr about a ``models/``
+            package the include patterns skip.
+        base_classes: Extra base-class names to treat as Pydantic models.
+    """
 
     def __init__(
         self,
         database_path: Path,
+        *,
         exclude_patterns: List[str] | None = None,
         infer_keys: bool = False,
         sources: List[str] | None = None,
@@ -157,7 +185,7 @@ class ASTDatabaseParser:
         #: Number of .py/.sql files seen during the last discovery walk, after
         #: directory pruning. This is the population --include selects from;
         #: the CLI reports it when a run produces no entities.
-        self.candidate_file_count = 0
+        self._candidate_file_count = 0
         #: Extra base-class names to treat as Pydantic models. Pydantic detection
         #: resolves ancestors only across the scanned files, so a base defined in
         #: an installed package (``ninja.Schema``) or an unscanned internal library
@@ -165,13 +193,17 @@ class ASTDatabaseParser:
         self.base_classes = set(base_classes) if base_classes else set()
         #: Restrict which model kinds become entities; None = all of MODEL_SOURCES.
         self.sources = set(sources) if sources else None
-        self.entities: Dict[str, EntityInfo] = {}
-        self.enums: Dict[str, EnumInfo] = {}
-        self.all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
-        self.file_trees: Dict[Path, ast.Module] = {}
+        self._entities: Dict[str, EntityInfo] = {}
+        self._enums: Dict[str, EnumInfo] = {}
+        self._all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
+        self._file_trees: Dict[Path, ast.Module] = {}
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
-        """Parse all model files in the database directory."""
+        """Parse all model files under ``database_path``.
+
+        Returns:
+            Tuple of (entities, enums), both keyed by class name.
+        """
         model_files = self._discover_model_files()
 
         # First pass: parse all files and collect class definitions
@@ -180,17 +212,17 @@ class ASTDatabaseParser:
                 with open(model_file, "r") as f:
                     content = f.read()
                 tree = ast.parse(content)
-                self.file_trees[model_file] = tree
+                self._file_trees[model_file] = tree
 
                 # Collect all class definitions
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
-                        self.all_classes[node.name] = node
+                        self._all_classes[node.name] = node
             except Exception as e:
                 print(f"Error parsing {model_file}: {e}", file=sys.stderr)
 
         # Second pass: process enum and model classes
-        for class_node in self.all_classes.values():
+        for class_node in self._all_classes.values():
             if self._is_enum_class(class_node):
                 self._parse_enum_class(class_node)
                 continue
@@ -216,7 +248,7 @@ class ASTDatabaseParser:
         # Third pass: apply exclude patterns
         self._apply_exclude_patterns()
 
-        return self.entities, self.enums
+        return self._entities, self._enums
 
     def _discover_model_files(self) -> List[Path]:
         """Find model files, pruning excluded directories during the walk.
@@ -230,7 +262,7 @@ class ASTDatabaseParser:
         base = self.database_path
         found: List[Path] = []
         model_packages: List[Path] = []
-        self.candidate_file_count = 0
+        self._candidate_file_count = 0
         for dirpath, dirnames, filenames in os.walk(base):
             if self.use_default_excludes:
                 # In-place prune so os.walk does not descend into excluded dirs.
@@ -244,7 +276,7 @@ class ASTDatabaseParser:
                 model_packages.append(dpath)
             for filename in filenames:
                 if filename.endswith((".py", ".sql")):
-                    self.candidate_file_count += 1
+                    self._candidate_file_count += 1
                 if not filename.endswith(".py"):
                     continue
                 candidate = dpath / filename
@@ -312,11 +344,13 @@ class ASTDatabaseParser:
                 for pattern in self.exclude_patterns
             )
 
-        excluded_names = {name for name, e in self.entities.items() if is_excluded(e)}
+        excluded_names = {name for name, e in self._entities.items() if is_excluded(e)}
 
-        self.entities = {name: e for name, e in self.entities.items() if name not in excluded_names}
+        self._entities = {
+            name: e for name, e in self._entities.items() if name not in excluded_names
+        }
 
-        for entity in self.entities.values():
+        for entity in self._entities.values():
             entity.relationships = [
                 rel for rel in entity.relationships if rel[0] not in excluded_names
             ]
@@ -343,7 +377,7 @@ class ASTDatabaseParser:
                         values.append(target.id)
 
         if values:
-            self.enums[class_node.name] = EnumInfo(name=class_node.name, values=values)
+            self._enums[class_node.name] = EnumInfo(name=class_node.name, values=values)
 
     def _classify_source(self, class_node: ast.ClassDef) -> str | None:
         """Classify which model framework a class belongs to.
@@ -431,7 +465,7 @@ class ASTDatabaseParser:
             if isinstance(base, ast.Name):
                 if base.id == "Model":
                     return True
-                ancestor = self.all_classes.get(base.id)
+                ancestor = self._all_classes.get(base.id)
                 if ancestor is not None and self._inherits_django_model(ancestor, visited):
                     return True
         return False
@@ -495,7 +529,7 @@ class ASTDatabaseParser:
             if isinstance(base, ast.Name):
                 if base.id == "BaseModel" or base.id in self.base_classes:
                     return True
-                ancestor = self.all_classes.get(base.id)
+                ancestor = self._all_classes.get(base.id)
                 if ancestor is not None and self._inherits_basemodel(ancestor, visited):
                     return True
             elif isinstance(base, ast.Attribute):
@@ -602,7 +636,7 @@ class ASTDatabaseParser:
         # an association table regardless of its class name (#35, #118).
         entity.is_link_table = self._is_structural_link_table(entity.fields)
 
-        self.entities[class_node.name] = entity
+        self._entities[class_node.name] = entity
 
     _is_structural_link_table = staticmethod(is_structural_link_table)
 
@@ -619,7 +653,7 @@ class ASTDatabaseParser:
         if self.sources is not None and "sqlalchemy" not in self.sources:
             return
 
-        for tree in self.file_trees.values():
+        for tree in self._file_trees.values():
             for node in tree.body:
                 if not isinstance(node, ast.Assign):
                     continue
@@ -630,8 +664,8 @@ class ASTDatabaseParser:
 
                 var_name = node.targets[0].id
                 entity = self._build_core_table_entity(var_name, node.value)
-                if entity is not None and entity.name not in self.entities:
-                    self.entities[entity.name] = entity
+                if entity is not None and entity.name not in self._entities:
+                    self._entities[entity.name] = entity
 
     def _build_core_table_entity(self, var_name: str, call: ast.Call) -> EntityInfo | None:
         """Build a link EntityInfo from a Core ``Table(...)`` call, or None if it
@@ -722,9 +756,9 @@ class ASTDatabaseParser:
         for base in class_node.bases:
             if isinstance(base, ast.Name):
                 base_name = base.id
-                if base_name in self.all_classes:
+                if base_name in self._all_classes:
                     base_fields, base_rels = self._collect_fields_recursive(
-                        self.all_classes[base_name], visited, model_kind
+                        self._all_classes[base_name], visited, model_kind
                     )
                     fields_dict.update(base_fields)
                     relationships_dict.update(base_rels)
@@ -847,7 +881,7 @@ class ASTDatabaseParser:
 
     def _django_target_table(self, class_name: str) -> str:
         """Resolve a target class name to its table name (Meta.db_table or snake_case)."""
-        node = self.all_classes.get(class_name)
+        node = self._all_classes.get(class_name)
         if node is not None:
             db_table = self._meta_value(node, "db_table")
             if isinstance(db_table, str):
@@ -917,8 +951,8 @@ class ASTDatabaseParser:
                 enum_name = node.id  # choices=Status
             if (
                 enum_name
-                and enum_name in self.all_classes
-                and self._is_enum_class(self.all_classes[enum_name])
+                and enum_name in self._all_classes
+                and self._is_enum_class(self._all_classes[enum_name])
             ):
                 return enum_name
         return None
@@ -1146,7 +1180,7 @@ class ASTDatabaseParser:
         rel_type = "many" if ("list[" in type_str or "List[" in type_str) else "one"
         target = self._clean_target(type_str)
 
-        target_class = self.all_classes.get(target)
+        target_class = self._all_classes.get(target)
         if target_class is not None and self._classify_source(target_class) is not None:
             return (target, rel_type, node.target.id)
         return None
@@ -1168,6 +1202,7 @@ class ASTDatabaseParser:
 
 def parse_models_directory(
     path: Path,
+    *,
     exclude_patterns: List[str] | None = None,
     infer_keys: bool = False,
     sources: List[str] | None = None,
@@ -1207,6 +1242,9 @@ def parse_models_directory(
             Slash patterns match the path relative to ``path`` (``**`` crosses
             dirs); slashless patterns match a basename at any depth. Defaults to
             ``["models.py"]``.
+        hint_unmatched_model_packages: Warn once on stderr about a ``models/``
+            package that the include patterns skip. Ignored when ``path`` is a
+            file. The CLI enables it only for the default include pattern.
         sql_dialect: Optional SQL dialect hint passed to ``SqlSchemaParser``
             (e.g. ``"postgres"``). ``None`` uses sqlglot's dialect-agnostic mode.
         base_classes: Extra base-class names to treat as Pydantic models, for
@@ -1214,7 +1252,12 @@ def parse_models_directory(
             django-ninja, or an internal shared ``BaseSchema``).
 
     Returns:
-        Tuple of (entities dict, enums dict)
+        Tuple of (entities, enums), both keyed by name. Python models win over
+        SQL tables of the same name.
+
+    Raises:
+        SqlDependencyError: ``.sql`` files were found but the optional
+            ``sqlglot`` dependency (``erdify[sql]``) is not installed.
     """
     # Normalize a file input: treat it as base=parent with that file as the sole include.
     if path.is_file():
@@ -1309,6 +1352,6 @@ def scan_report(
     return ScanReport(
         base=base,
         include_patterns=list(include),
-        candidate_files=parser.candidate_file_count,
+        candidate_files=parser._candidate_file_count,
         matched_files=len(python_files) + len(sql_files),
     )

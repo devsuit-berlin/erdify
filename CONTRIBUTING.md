@@ -99,7 +99,8 @@ erdify/
 │   ├── generator.py     # PlantUML / Mermaid / JSON / HTML generation
 │   ├── inject.py        # Markdown embedding (--inject)
 │   ├── pyproject.py     # [tool.erdify] config loading
-│   └── parser.py        # AST parsing logic (all frameworks)
+│   ├── parser.py        # AST parsing logic (all frameworks) + parse_models_directory
+│   └── sql_parser.py    # SQL DDL frontend (optional, erdify[sql] / sqlglot)
 ├── tests/
 │   ├── fixtures/        # Test model files (one dir per scenario/framework)
 │   ├── conftest.py      # Pytest fixtures

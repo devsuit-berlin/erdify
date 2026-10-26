@@ -222,12 +222,12 @@ def test_unresolvable_fk_reference_leaves_plain_column(tmp_path: Path) -> None:
     f = tmp_path / "schema.sql"
     f.write_text("CREATE TABLE order_item (id INTEGER PRIMARY KEY, ghost_id INTEGER);")
     parser = SqlSchemaParser([f])
-    parser.parse()  # populates parser.entities
+    entities, _ = parser.parse()  # same dict _set_fk mutates
 
     # Simulate the code path where ref_table comes back empty (unresolvable node).
     parser._set_fk("order_item", "ghost_id", "", "id")
 
-    cols = {field.name: field for field in parser.entities["order_item"].fields}
+    cols = {field.name: field for field in entities["order_item"].fields}
     assert cols["ghost_id"].is_foreign_key is False
     assert cols["ghost_id"].foreign_table is None
 

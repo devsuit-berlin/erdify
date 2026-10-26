@@ -240,37 +240,39 @@ entities, enums = parse_models_directory(Path("./src/database"))
 entities, enums = parse_models_directory(Path("schema.sql"), sql_dialect="postgres")
 
 # Generate PlantUML
-diagram = generate_plantuml(
-    entities=entities,
-    enums=enums,
-    title="My Database ERD"
-)
+diagram = generate_plantuml(entities, enums, title="My Database ERD")
 
 # Save or use the diagram
 Path("erd.puml").write_text(diagram)
 ```
 
 `parse_models_directory` accepts both a Python models directory and a `.sql` file
-(or a directory scanned with `--include '*.sql'`). For Python models only, the
-lower-level `ASTDatabaseParser` class is also available — it does not handle `.sql`
-input, so use `parse_models_directory` when working with SQL DDL.
+(or a directory scanned with `--include '*.sql'`). Its options mirror the CLI flags
+(`include_patterns`, `exclude_patterns`, `sources`, `infer_keys`, `sql_dialect`, ...).
+
+`generate_mermaid`, `generate_json` and `generate_html` take the same arguments as
+`generate_plantuml` and return the [other output formats](output-formats.md) as a
+string.
 
 ## Programmatic Access
 
 For lower-level control, use the parser and generator classes directly:
 
 ```python
+from pathlib import Path
 from erdify import (
     ASTDatabaseParser,
+    SqlSchemaParser,
     PlantUMLGenerator,
-    EntityInfo,
-    FieldInfo,
-    EnumInfo,
+    MermaidGenerator,
 )
 
-# Low-level parser access (Python models only — use parse_models_directory for .sql)
-parser = ASTDatabaseParser(Path("./models"))
+# Python models only
+parser = ASTDatabaseParser(Path("./models"), include_patterns=["models.py", "models/*.py"])
 entities, enums = parser.parse_all_models()
+
+# SQL DDL only (requires erdify[sql]); takes an explicit list of files
+sql_entities, sql_enums = SqlSchemaParser([Path("schema.sql")], dialect="postgres").parse()
 
 # Access entity details
 for name, entity in entities.items():
@@ -281,11 +283,27 @@ for name, entity in entities.items():
         elif field.is_foreign_key:
             print(f"  FK: {field.name} -> {field.foreign_table}")
 
-# Custom generator with options
-generator = PlantUMLGenerator(
-    entities=entities,
-    enums=enums,
-    title="Custom ERD"
-)
-output = generator.generate()
+puml = PlantUMLGenerator(entities, enums, title="Custom ERD").generate()
+mmd = MermaidGenerator(entities, enums, title="Custom ERD").generate()
 ```
+
+`SqlSchemaParser.parse()` raises `erdify.SqlDependencyError` when the optional
+`sqlglot` dependency is missing.
+
+## What is public
+
+Everything listed in `erdify.__all__` is the public Python API. Within it:
+
+| Name | Public contract |
+|---|---|
+| `parse_models_directory`, `generate_plantuml`, `generate_mermaid`, `generate_json`, `generate_html` | The function and its parameters. Only the first argument (and `enums` for the `generate_*` functions) may be passed positionally; everything else is keyword-only. |
+| `ASTDatabaseParser` | The constructor (`database_path` positional, options keyword-only) and `parse_all_models()`. |
+| `SqlSchemaParser` | The constructor (`files` positional, options keyword-only) and `parse()`. |
+| `PlantUMLGenerator`, `MermaidGenerator` | The constructor (`entities`, `enums` positional, `title` keyword-only) and `generate()`. |
+| `EntityInfo`, `FieldInfo`, `EnumInfo` | The dataclass fields. New fields may be added with defaults. |
+| `SqlDependencyError` | The exception type. |
+| `JSON_SCHEMA_VERSION` | The current [JSON output](output-formats.md#json) `schema_version`. |
+
+Any other attribute or method on these classes, and anything imported from a
+submodule (`erdify.parser`, `erdify.generator`, ...) rather than from `erdify`,
+is internal and may change in any release.

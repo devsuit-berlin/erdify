@@ -68,6 +68,14 @@ parser.py  ──►  config.py (IR)  ──►  generator.py
   detected **structurally** (a composite PK made up entirely of FKs, with no
   payload columns — two FKs or more), not by name.
 
+- **`sql_parser.py`** — the optional SQL DDL frontend (`erdify[sql]`).
+  `SqlSchemaParser` turns `CREATE TABLE` / `CREATE TYPE ... AS ENUM` /
+  `CREATE INDEX` / `ALTER TABLE ... FOREIGN KEY` into the same IR, with
+  `source="sql"`. `sqlglot` is imported lazily inside `parse()` — never at module
+  import time (a test enforces this) — and a missing install raises
+  `SqlDependencyError`. `parse_models_directory()` calls it for any `.sql` files
+  matched by the include patterns, so one input can mix Python models and DDL.
+
 - **`config.py`** — `FieldInfo`, `EnumInfo`, `EntityInfo` dataclasses. This is the
   framework-agnostic intermediate representation that decouples parsing from
   rendering. The parser produces it; the generators consume it.
