@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The installation page lists the supported Python versions, as its
   description already promised.
 
+### Fixed
+
+- The CI test matrix now runs each leg on its named Python version. uv
+  honoured the repository's `.python-version` (3.13) over the interpreter set up
+  for the leg, so every job — 3.11 through 3.15, on all three OSes — had in fact
+  been testing 3.13. A new step fails the job if the versions ever diverge again.
+
 ## [0.14.1] - 2026-09-14
 
 ### Fixed
