@@ -183,6 +183,15 @@ uv run mypy src/
 uv run pytest
 ```
 
+Add a `CHANGELOG.md` entry under `[Unreleased]`. Check the change against the
+[Stability & Versioning](https://erdify.devsuit.io/stability/) policy and file it
+under the right heading:
+
+- `### Changed — **breaking**` for anything the policy calls breaking.
+- `### Deprecated` for something you deprecate.
+- `### Output changes` for changes to the generated diagram text, because they
+  make `--check` fail once after upgrading.
+
 ### 2. Commit Your Changes
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/):
