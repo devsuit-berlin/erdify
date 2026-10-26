@@ -10,6 +10,10 @@ from .config import EntityInfo, EnumInfo, FieldInfo
 #: Pinned Mermaid CDN major version used by the HTML preview format.
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
 
+#: Version of the ``--format json`` document shape. Adding keys does not bump it;
+#: removing or renaming a key, or changing a value's type or meaning, does.
+JSON_SCHEMA_VERSION = 1
+
 
 class _ERGenerator:
     """Shared ERD model: entity/enum bookkeeping and relationship resolution.
@@ -468,12 +472,15 @@ def generate_json(
     """
     Serialize the parsed model as JSON (a stable, documented schema).
 
-    Shape: ``{title, entities: [{name, table_name, source, is_link_table,
+    Shape: ``{schema_version, title, entities: [{name, table_name, source, is_link_table,
     fields: [{name, type, primary_key, foreign_key, nullable, foreign_table,
     index, unique, default}], relationships: [{target, type, attribute}]}], enums:
     [{name, values}]}``. Downstream tools can consume this without re-parsing.
+    ``schema_version`` is :data:`JSON_SCHEMA_VERSION`; consumers should ignore
+    keys they do not know.
     """
     model = {
+        "schema_version": JSON_SCHEMA_VERSION,
         "title": title,
         "entities": [
             {

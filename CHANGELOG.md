@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--format json` output now starts with a `"schema_version": 1` key, so
+  downstream tools can detect the document shape. Adding keys never bumps it;
+  removing or renaming a key, or changing a value's type, bumps it and ships
+  only in a major release. The Output Formats page now documents every key, its
+  type and nullability, plus these compatibility rules. The version is also
+  available as `erdify.generator.JSON_SCHEMA_VERSION`.
+
 ## [0.15.0] - 2026-10-26
 
 ### Added

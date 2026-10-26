@@ -3,11 +3,49 @@
 import json
 from pathlib import Path
 
-from erdify.generator import generate_html, generate_json
+from erdify.generator import JSON_SCHEMA_VERSION, generate_html, generate_json
 from erdify.parser import parse_models_directory
 
 
 class TestJsonFormat:
+    def test_schema_version_is_first_key(self, sample_models_dir: Path):
+        entities, enums = parse_models_directory(sample_models_dir)
+        data = json.loads(generate_json(entities, enums))
+
+        assert JSON_SCHEMA_VERSION == 1
+        assert next(iter(data)) == "schema_version"
+        assert data["schema_version"] == JSON_SCHEMA_VERSION
+
+    def test_document_keys_are_pinned(self, django_models_dir: Path):
+        """Changing a key set is a schema change: bump JSON_SCHEMA_VERSION if a
+        key is removed or renamed, and update docs/usage/output-formats.md."""
+        entities, enums = parse_models_directory(django_models_dir)
+        data = json.loads(generate_json(entities, enums))
+        post = next(e for e in data["entities"] if e["name"] == "Post")
+
+        assert set(data) == {"schema_version", "title", "entities", "enums"}
+        assert set(post) == {
+            "name",
+            "table_name",
+            "source",
+            "is_link_table",
+            "fields",
+            "relationships",
+        }
+        assert set(post["fields"][0]) == {
+            "name",
+            "type",
+            "primary_key",
+            "foreign_key",
+            "nullable",
+            "foreign_table",
+            "index",
+            "unique",
+            "default",
+        }
+        assert set(post["relationships"][0]) == {"target", "type", "attribute"}
+        assert set(data["enums"][0]) == {"name", "values"}
+
     def test_valid_json_with_entities(self, sample_models_dir: Path):
         entities, enums = parse_models_directory(sample_models_dir)
         data = json.loads(generate_json(entities, enums, title="My ERD"))
