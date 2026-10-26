@@ -31,13 +31,11 @@ jobs:
           - os: macos-latest
             python-version: "3.11"
           - os: macos-latest
-            python-version: "3.14"
+            python-version: "3.15"
           - os: windows-latest
             python-version: "3.11"
           - os: windows-latest
-            python-version: "3.14"
-    # 3.15 is still a pre-release; let it run for early signal without blocking CI.
-    continue-on-error: ${{ matrix.python-version == '3.15' }}
+            python-version: "3.15"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,7 +51,6 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-          allow-prereleases: true
       - name: Install dependencies
         run: uv sync --frozen
       - name: Run Tests
@@ -179,8 +176,7 @@ jobs:
 
   # Single aggregate check to require in branch protection / rulesets. It turns
   # green only when every matrix leg above passes, so new Python versions or OSes
-  # can be added to the matrix without editing the required-checks list. The
-  # 3.15 pre-release leg is continue-on-error, so its failures do not block here.
+  # can be added to the matrix without editing the required-checks list.
   gate:
     name: Tests passed
     if: always()
