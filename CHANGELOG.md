@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-26
+
+erdify 1.0.0 is **0.16.0 with a stability promise**. There are no functional
+changes: the CLI, configuration, Python API and output are identical to 0.16.0,
+so upgrading from 0.16.0 needs no changes.
+
+From this release on, erdify follows the
+[Stability & Versioning](https://erdify.devsuit.io/stability/) policy:
+
+- **Covered by semver:** CLI flags, exit codes, `[tool.erdify]` keys,
+  pre-commit hook ids, the Python API (`erdify.__all__`) and the JSON schema
+  (`schema_version`). Breaking changes to any of these ship only in a major
+  release.
+- **Diagram output:** what the diagram shows is stable. Formatting may change
+  in a minor release and is always listed under **Output changes**.
+- **Deprecations:** anything deprecated keeps working until the next major
+  release.
+
+Upgrading from 0.15.x or earlier? See the breaking Python API changes in
+[0.16.0](https://github.com/devsuit-berlin/erdify/releases/tag/v0.16.0) (CLI users are unaffected).
+
+### Changed
+
+- The package classifier is now `Development Status :: 5 - Production/Stable`
+  (was `4 - Beta`).
+
 ## [0.16.0] - 2026-10-26
 
 ### Changed — **breaking**
@@ -639,7 +665,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/devsuit-berlin/erdify/compare/v0.16.0...v1.0.0
 [0.16.0]: https://github.com/devsuit-berlin/erdify/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/devsuit-berlin/erdify/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/devsuit-berlin/erdify/compare/v0.14.0...v0.14.1
