@@ -6,7 +6,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
-from .parser import DEFAULT_EXCLUDE_DIRS, _match_include
+from .parser import DEFAULT_EXCLUDE_DIRS, ModelParseError, _match_include
 
 
 def discover_sql_files(
@@ -64,6 +64,8 @@ class SqlSchemaParser:
             sqlglot's dialect-agnostic mode.
         exclude_patterns: Case-sensitive globs; a table is dropped if one
             matches its name.
+        strict: Raise :class:`~erdify.ModelParseError` if any file fails to
+            parse, instead of reporting it on stderr and skipping it.
     """
 
     def __init__(
@@ -72,8 +74,12 @@ class SqlSchemaParser:
         *,
         dialect: str | None = None,
         exclude_patterns: list[str] | None = None,
+        strict: bool = False,
     ):
         self.files = files
+        self.strict = strict
+        #: (file, message) for every file that failed to parse in the last run.
+        self._parse_errors: list[tuple[Path, str]] = []
         self.dialect = dialect
         self.exclude_patterns = exclude_patterns or []
         self._entities: dict[str, EntityInfo] = {}
@@ -83,13 +89,16 @@ class SqlSchemaParser:
         """Parse ``CREATE TABLE``, ``CREATE TYPE ... AS ENUM``, ``CREATE INDEX``
         and ``ALTER TABLE ... FOREIGN KEY`` statements from all files.
 
-        A file that fails to parse is reported on stderr and skipped.
+        A file that fails to parse is reported on stderr and skipped, unless
+        ``strict`` is set.
 
         Returns:
             Tuple of (entities, enums), both keyed by table / type name.
 
         Raises:
             SqlDependencyError: ``sqlglot`` (``erdify[sql]``) is not installed.
+            ModelParseError: ``strict`` is set and at least one file failed to
+                parse. Every failure is still reported on stderr first.
         """
         try:
             import sqlglot
@@ -100,12 +109,17 @@ class SqlSchemaParser:
             ) from e
 
         statements = []
+        self._parse_errors = []
         for f in self.files:
             text = f.read_text()
             try:
                 statements.extend(sqlglot.parse(text, dialect=self.dialect))
             except Exception as err:
                 print(f"Error parsing {f}: {err}", file=sys.stderr)
+                self._parse_errors.append((f, str(err)))
+
+        if self.strict and self._parse_errors:
+            raise ModelParseError(self._parse_errors)
 
         for stmt in statements:
             if isinstance(stmt, exp.Create) and (stmt.args.get("kind") or "").upper() == "TABLE":

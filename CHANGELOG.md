@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--strict` (and `strict = true` under `[tool.erdify]`) makes a model or
+  `.sql` file that cannot be parsed fail the run: erdify reports every failing
+  file on stderr, then exits `1` without writing anything. Without it, such a
+  file is still reported and skipped, and the run exits `0`, as before. From
+  Python, pass `strict=True` to `parse_models_directory`, `ASTDatabaseParser`
+  or `SqlSchemaParser`. They raise the new `erdify.ModelParseError`, whose
+  `errors` attribute lists every `(file, message)` pair.
+
 ## [1.0.0] - 2026-10-26
 
 erdify 1.0.0 is **0.16.0 with a stability promise**. There are no functional

@@ -38,10 +38,11 @@ default is **not** a breaking change.
 | `1` | Runtime failure: the input is missing, parsing aborted with an error, no tables were found (without `--allow-empty`), or `--check` found a missing or stale file. |
 | `2` | Usage error: invalid or conflicting options. |
 
-A single model or `.sql` file that cannot be parsed (for example, a syntax
-error) does **not** fail the run. erdify prints `Error parsing <file>: ...` on
-stderr, skips that file and renders the rest, so exit code `0` does not mean
-every file was parsed. Check stderr if that matters for you.
+By default, a single model or `.sql` file that cannot be parsed (for example,
+a syntax error) does **not** fail the run. erdify prints `Error parsing <file>: ...`
+on stderr, skips that file and renders the rest, so exit code `0` does not mean
+every file was parsed. Pass [`--strict`](usage/cli.md#files-that-cannot-be-parsed-strict)
+(or set `strict = true`) to exit `1` instead.
 
 ### Diagram output
 

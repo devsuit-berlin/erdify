@@ -13,6 +13,7 @@ def test_public_api_is_pinned():
             "EntityInfo",
             "ASTDatabaseParser",
             "parse_models_directory",
+            "ModelParseError",
             "SqlSchemaParser",
             "SqlDependencyError",
             "PlantUMLGenerator",
