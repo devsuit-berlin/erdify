@@ -47,12 +47,24 @@ jobs:
           # versions then only reach CI through a setup-uv release, i.e. a
           # reviewed, cooldown-gated Dependabot PR.
           version: "latest-known"
+          # Sets UV_PYTHON for every later step. Without it, uv honours the
+          # repository's `.python-version` (the local dev default) over the
+          # interpreter setup-python puts on PATH, and every leg silently tests
+          # that one version instead of its own.
+          python-version: ${{ matrix.python-version }}
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: uv sync --frozen
+      # Fail loudly if the environment ever drifts off the matrix version
+      # again — the job name would otherwise keep claiming coverage it lacks.
+      - name: Assert the matrix Python is in use
+        env:
+          EXPECTED: ${{ matrix.python-version }}
+        shell: bash
+        run: uv run python -c "import os, sys; assert '%d.%d' % sys.version_info[:2] == os.environ['EXPECTED'], sys.version"
       - name: Run Tests
         run: uv run pytest --cov=erdify tests/ --cov-report=xml --cov-report=term-missing
       # Coverage is uploaded from a single matrix leg. Every leg produces the
