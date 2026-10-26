@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `SqlSchemaParser`. They raise the new `erdify.ModelParseError`, whose
   `errors` attribute lists every `(file, message)` pair.
 
+### Fixed
+
+- A `.sql` file that is not valid UTF-8 (or cannot be read) no longer aborts
+  the whole run. Like a file with a syntax error, it is reported on stderr and
+  skipped, and the other files are still rendered. With `--strict` it is
+  reported together with all other failures.
+
 ## [1.0.0] - 2026-10-26
 
 erdify 1.0.0 is **0.16.0 with a stability promise**. There are no functional

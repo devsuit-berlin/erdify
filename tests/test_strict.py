@@ -71,6 +71,29 @@ class TestStrictClasses:
         assert entities == {}
 
 
+class TestUnreadableSqlFile:
+    """A .sql file that is not valid UTF-8 is a per-file failure, not a crash."""
+
+    @pytest.fixture
+    def sql_tree(self, tmp_path: Path) -> Path:
+        (tmp_path / "a.sql").write_text("CREATE TABLE ok (id INT PRIMARY KEY);")
+        (tmp_path / "b.sql").write_bytes(b"CREATE TABLE \xff\xfe bad (id INT);")
+        (tmp_path / "models.py").write_text("class Broken(:\n")
+        return tmp_path
+
+    def test_lenient_skips_it_and_keeps_the_rest(self, sql_tree: Path, capsys):
+        entities, _ = parse_models_directory(sql_tree, include_patterns=["models.py", "*.sql"])
+
+        assert set(entities) == {"ok"}
+        assert "b.sql" in capsys.readouterr().err
+
+    def test_strict_aggregates_it_with_python_failures(self, sql_tree: Path):
+        with pytest.raises(ModelParseError) as exc_info:
+            parse_models_directory(sql_tree, include_patterns=["models.py", "*.sql"], strict=True)
+
+        assert [p.name for p, _ in exc_info.value.errors] == ["models.py", "b.sql"]
+
+
 class TestStrictCLI:
     def test_flag_exits_one_and_writes_nothing(self, mixed_tree: Path, tmp_path: Path, capsys):
         out = tmp_path / "erd.puml"
