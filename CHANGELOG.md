@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-26
+
 ### Added
 
 - `--strict` (and `strict = true` under `[tool.erdify]`) makes a model or
@@ -682,7 +684,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/devsuit-berlin/erdify/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/devsuit-berlin/erdify/compare/v0.16.0...v1.0.0
 [0.16.0]: https://github.com/devsuit-berlin/erdify/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/devsuit-berlin/erdify/compare/v0.14.1...v0.15.0
