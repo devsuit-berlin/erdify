@@ -99,6 +99,7 @@ point for downstream tools that want erdify's model without re-parsing source.
 
 ```json
 {
+  "schema_version": 1,
   "title": "Database ERD",
   "entities": [
     {
@@ -117,6 +118,66 @@ point for downstream tools that want erdify's model without re-parsing source.
   "enums": [{"name": "Status", "values": ["DRAFT", "PUBLISHED"]}]
 }
 ```
+
+### Schema
+
+Top level:
+
+| Key | Type | Description |
+|---|---|---|
+| `schema_version` | integer | Version of this document shape. Currently `1`. |
+| `title` | string | The diagram title (`--title`). |
+| `entities` | array of entity | One object per table / model. |
+| `enums` | array of enum | Empty when enums are disabled (`--no-enums`). |
+
+Entity:
+
+| Key | Type | Description |
+|---|---|---|
+| `name` | string | Class name (or table name for SQL DDL). |
+| `table_name` | string | Database table name. |
+| `source` | string | One of `sqlmodel`, `sqlalchemy`, `django`, `dataclass`, `pydantic`, `sql`. |
+| `is_link_table` | boolean | `true` for a detected many-to-many join table. |
+| `fields` | array of field | Columns, in declaration order. |
+| `relationships` | array of relationship | Empty when relationships are disabled (`--no-relationships`). |
+
+Field:
+
+| Key | Type | Description |
+|---|---|---|
+| `name` | string | Column / attribute name. |
+| `type` | string | Type as written in the source (or the mapped Python type). |
+| `primary_key` | boolean | Part of the primary key. |
+| `foreign_key` | boolean | References another table. |
+| `nullable` | boolean | Column accepts `NULL`. |
+| `foreign_table` | string or null | Referenced `table.column` when `foreign_key` is `true`. |
+| `index` | boolean | Column is indexed. |
+| `unique` | boolean | Column has a unique constraint. |
+| `default` | string or null | Default value as source text, if any. |
+
+Relationship:
+
+| Key | Type | Description |
+|---|---|---|
+| `target` | string | Name of the related entity. |
+| `type` | string | One of `one`, `many`, `one_to_one`, `many_to_many`. |
+| `attribute` | string | Attribute name on this entity. |
+
+Enum:
+
+| Key | Type | Description |
+|---|---|---|
+| `name` | string | Enum class name. |
+| `values` | array of string | Enum members, in declaration order. |
+
+### Compatibility
+
+- **Adding** a key is non-breaking and does not change `schema_version`.
+  Consumers must ignore keys they do not know.
+- **Removing or renaming** a key, or changing a value's type or meaning, bumps
+  `schema_version` and ships only in a major erdify release.
+- Check `schema_version` before reading the document if your tool must fail
+  loudly on an incompatible shape.
 
 ## HTML
 
