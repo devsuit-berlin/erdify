@@ -56,6 +56,14 @@ class SqlSchemaParser:
 
     Public API: the constructor and :meth:`parse`. Every other attribute and
     method is internal and may change in any release.
+
+    Args:
+        files: The ``.sql`` files to parse, in order. Use
+            :func:`erdify.parse_models_directory` to discover them from a directory.
+        dialect: sqlglot dialect name (e.g. ``"postgres"``). ``None`` uses
+            sqlglot's dialect-agnostic mode.
+        exclude_patterns: Case-sensitive globs; a table is dropped if one
+            matches its name.
     """
 
     def __init__(
@@ -72,6 +80,17 @@ class SqlSchemaParser:
         self._enums: dict[str, EnumInfo] = {}
 
     def parse(self) -> tuple[dict[str, EntityInfo], dict[str, EnumInfo]]:
+        """Parse ``CREATE TABLE``, ``CREATE TYPE ... AS ENUM``, ``CREATE INDEX``
+        and ``ALTER TABLE ... FOREIGN KEY`` statements from all files.
+
+        A file that fails to parse is reported on stderr and skipped.
+
+        Returns:
+            Tuple of (entities, enums), both keyed by table / type name.
+
+        Raises:
+            SqlDependencyError: ``sqlglot`` (``erdify[sql]``) is not installed.
+        """
         try:
             import sqlglot
             from sqlglot import exp
@@ -108,6 +127,7 @@ class SqlSchemaParser:
         return self._entities, self._enums
 
     def _add_table(self, create: "object", exp: "object") -> None:
+        """Register a ``CREATE TABLE`` as an entity with its columns (no FKs yet)."""
         schema = create.this  # type: ignore[attr-defined]  # exp.Schema: table + column/constraint expressions
         table_name = schema.this.name
         entity = EntityInfo(name=table_name, table_name=table_name, source="sql")
@@ -119,6 +139,7 @@ class SqlSchemaParser:
         self._entities[table_name] = entity
 
     def _add_enum(self, create: "object", exp: "object") -> None:
+        """Register a ``CREATE TYPE ... AS ENUM`` with its string literal values."""
         # stmt.this is an exp.Table node whose .name is the type name
         name_node = create.this  # type: ignore[attr-defined]
         name = name_node.name if name_node is not None else None
@@ -134,6 +155,8 @@ class SqlSchemaParser:
     def _column(
         self, coldef: "object", exp: "object", pk_cols: set[str], unique_cols: set[str]
     ) -> FieldInfo:
+        """Build a FieldInfo from a column definition (PK, nullability, default,
+        uniqueness); foreign keys are resolved in the second pass."""
         name = coldef.name  # type: ignore[attr-defined]
         kind = coldef.args.get("kind")  # type: ignore[attr-defined]
         type_str = kind.sql().lower() if kind is not None else ""
@@ -169,10 +192,12 @@ class SqlSchemaParser:
 
     @staticmethod
     def _has_constraint(constraints: list[object], kind: "type") -> bool:
+        """Return True if any column constraint is of the given sqlglot type."""
         return any(isinstance(c.kind, kind) for c in constraints)  # type: ignore[attr-defined]
 
     @staticmethod
     def _default_value(constraints: list[object], exp: "object") -> str | None:
+        """Return the ``DEFAULT`` expression as SQL text, or None."""
         for c in constraints:
             if isinstance(c.kind, exp.DefaultColumnConstraint):  # type: ignore[attr-defined]
                 return str(c.kind.this.sql())  # type: ignore[attr-defined]
@@ -180,6 +205,7 @@ class SqlSchemaParser:
 
     @staticmethod
     def _table_level_pk_columns(schema: "object", exp: "object") -> set[str]:
+        """Return names of columns covered by a table-level ``PRIMARY KEY (...)``."""
         cols: set[str] = set()
         for pk in schema.find_all(exp.PrimaryKey):  # type: ignore[attr-defined]
             for col in pk.find_all(exp.Column):  # type: ignore[attr-defined]
@@ -216,6 +242,11 @@ class SqlSchemaParser:
         return cols
 
     def _set_fk(self, table: str, column: str, ref_table: str, ref_col: str) -> None:
+        """Mark ``table.column`` as a foreign key to ``ref_table.ref_col``.
+
+        No-op when the reference target is unresolved (empty ``ref_table``) or the
+        table/column is unknown, so a bogus ``".id"`` target is never recorded.
+        """
         if not ref_table:
             return
         entity = self._entities.get(table)
@@ -228,6 +259,10 @@ class SqlSchemaParser:
                 return
 
     def _table_foreign_keys(self, create: "object", exp: "object") -> None:
+        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses.
+
+        Composite keys pair local and referenced columns positionally.
+        """
         schema = create.this  # type: ignore[attr-defined]
         table = schema.this.name
         # Inline REFERENCES on a column definition.
@@ -255,6 +290,7 @@ class SqlSchemaParser:
                 self._set_fk(table, col, rt, rc)
 
     def _alter_foreign_keys(self, alter: "object", exp: "object") -> None:
+        """Apply ``ALTER TABLE ... ADD FOREIGN KEY`` clauses (paired positionally)."""
         table = alter.this.name if alter.this is not None else ""  # type: ignore[attr-defined]
         for fk in alter.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
             cols = [
@@ -308,11 +344,13 @@ class SqlSchemaParser:
                 f.index = True
 
     def _finalize(self) -> None:
+        """Detect link tables, then apply ``exclude_patterns``."""
         for entity in self._entities.values():
             entity.is_link_table = is_structural_link_table(entity.fields)
         self._apply_excludes()
 
     def _apply_excludes(self) -> None:
+        """Drop excluded tables and relationships pointing at them."""
         if not self.exclude_patterns:
             return
 

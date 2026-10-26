@@ -230,10 +230,19 @@ class PlantUMLGenerator(_ERGenerator):
     """Generates a PlantUML ERD diagram from entities.
 
     Public API: the constructor and :meth:`generate`.
+
+    Args:
+        entities: Entity name to EntityInfo, as returned by the parsers.
+        enums: Optional enum name to EnumInfo.
+        title: Diagram title.
     """
 
     def generate(self) -> str:
-        """Generate PlantUML diagram."""
+        """Render the diagram.
+
+        Returns:
+            PlantUML source, from ``@startuml`` to ``@enduml``.
+        """
         lines = [
             f"@startuml {self.title}",
             '!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>',
@@ -335,10 +344,19 @@ class MermaidGenerator(_ERGenerator):
     """Generates a Mermaid ``erDiagram`` from entities.
 
     Public API: the constructor and :meth:`generate`.
+
+    Args:
+        entities: Entity name to EntityInfo, as returned by the parsers.
+        enums: Optional enum name to EnumInfo.
+        title: Accepted for a uniform API; Mermaid ``erDiagram`` has no title.
     """
 
     def generate(self) -> str:
-        """Generate a Mermaid erDiagram."""
+        """Render the diagram.
+
+        Returns:
+            Mermaid ``erDiagram`` source.
+        """
         lines = ["erDiagram"]
 
         for entity in self.entities.values():
@@ -487,7 +505,19 @@ def generate_json(
     index, unique, default}], relationships: [{target, type, attribute}]}], enums:
     [{name, values}]}``. Downstream tools can consume this without re-parsing.
     ``schema_version`` is :data:`JSON_SCHEMA_VERSION`; consumers should ignore
-    keys they do not know.
+    keys they do not know. The full schema is documented in
+    ``docs/usage/output-formats.md``.
+
+    Args:
+        entities: Dictionary of entity name to EntityInfo
+        enums: Optional dictionary of enum name to EnumInfo
+        title: Value of the ``title`` key
+        include_enums: Whether to fill ``enums`` (otherwise ``[]``)
+        include_relationships: Whether to fill each entity's ``relationships``
+            (otherwise ``[]``)
+
+    Returns:
+        The JSON document as an indented string
     """
     model = {
         "schema_version": JSON_SCHEMA_VERSION,
@@ -545,6 +575,16 @@ def generate_html(
 
     The page loads Mermaid from a pinned CDN (``MERMAID_CDN``), so it needs
     internet access to render. Open it in a browser to view the diagram.
+
+    Args:
+        entities: Dictionary of entity name to EntityInfo
+        enums: Optional dictionary of enum name to EnumInfo
+        title: Page ``<title>`` and heading (HTML-escaped)
+        include_enums: Whether to render used enums as entity blocks
+        include_relationships: Whether to include relationship lines
+
+    Returns:
+        A complete HTML document as string
     """
     diagram = generate_mermaid(
         entities,

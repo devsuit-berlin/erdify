@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SqlSchemaParser`, `MermaidGenerator` and the `generate_mermaid`,
   `generate_json` and `generate_html` functions are now documented, together
   with a "What is public" section in the CLI & Python API page.
+- Every public class and function now has a Google-style docstring covering
+  its parameters, return value and raised errors, and `EntityInfo`,
+  `FieldInfo` and `EnumInfo` document each field (e.g. `foreign_table` is
+  `"table.column"`, the allowed relationship types and `source` values).
 - `SqlDependencyError` is exported from `erdify`, so callers of
   `SqlSchemaParser` can catch it without importing an internal module.
 - `--format json` output now starts with a `"schema_version": 1` key, so

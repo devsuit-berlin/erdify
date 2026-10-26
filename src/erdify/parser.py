@@ -123,8 +123,31 @@ def _match_include(rel_path: str, filename: str, patterns: List[str]) -> bool:
 class ASTDatabaseParser:
     """Parses database models using AST to extract schema information.
 
+    Handles Python model files only; use :func:`parse_models_directory` for
+    SQL DDL or mixed input.
+
     Public API: the constructor and :meth:`parse_all_models`. Every other
     attribute and method is internal and may change in any release.
+
+    Args:
+        database_path: Directory to scan for model files.
+        exclude_patterns: Case-sensitive globs; an entity is dropped if one
+            matches its class name or table name.
+        infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
+            key from ``id`` and a foreign key from ``<x>_id``.
+        sources: Restrict which model kinds become entities (subset of
+            ``MODEL_SOURCES``). ``None`` includes all kinds.
+        django_raw_types: Show Django field names (``CharField``) instead of
+            mapped Python types (``str``).
+        exclude_paths: Case-sensitive globs matched against each file path
+            (relative to ``database_path``) or any path segment.
+        use_default_excludes: Skip ``DEFAULT_EXCLUDE_DIRS`` (venv,
+            site-packages, caches) during the walk.
+        include_patterns: Globs selecting which files are scanned. Defaults to
+            ``["models.py"]``.
+        hint_unmatched_model_packages: Warn once on stderr about a ``models/``
+            package the include patterns skip.
+        base_classes: Extra base-class names to treat as Pydantic models.
     """
 
     def __init__(
@@ -176,7 +199,11 @@ class ASTDatabaseParser:
         self._file_trees: Dict[Path, ast.Module] = {}
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
-        """Parse all model files in the database directory."""
+        """Parse all model files under ``database_path``.
+
+        Returns:
+            Tuple of (entities, enums), both keyed by class name.
+        """
         model_files = self._discover_model_files()
 
         # First pass: parse all files and collect class definitions
@@ -1215,6 +1242,9 @@ def parse_models_directory(
             Slash patterns match the path relative to ``path`` (``**`` crosses
             dirs); slashless patterns match a basename at any depth. Defaults to
             ``["models.py"]``.
+        hint_unmatched_model_packages: Warn once on stderr about a ``models/``
+            package that the include patterns skip. Ignored when ``path`` is a
+            file. The CLI enables it only for the default include pattern.
         sql_dialect: Optional SQL dialect hint passed to ``SqlSchemaParser``
             (e.g. ``"postgres"``). ``None`` uses sqlglot's dialect-agnostic mode.
         base_classes: Extra base-class names to treat as Pydantic models, for
@@ -1222,7 +1252,12 @@ def parse_models_directory(
             django-ninja, or an internal shared ``BaseSchema``).
 
     Returns:
-        Tuple of (entities dict, enums dict)
+        Tuple of (entities, enums), both keyed by name. Python models win over
+        SQL tables of the same name.
+
+    Raises:
+        SqlDependencyError: ``.sql`` files were found but the optional
+            ``sqlglot`` dependency (``erdify[sql]``) is not installed.
     """
     # Normalize a file input: treat it as base=parent with that file as the sole include.
     if path.is_file():
