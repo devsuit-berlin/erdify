@@ -31,7 +31,7 @@
 <rect width="1600" height="840" fill="#10172e"/>
 <text x="64" y="82" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="46" font-weight="700" fill="#eceff1" text-anchor="start" letter-spacing="-0.6">Five frameworks. One diagram.</text>
 <text x="64" y="118" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" font-weight="400" fill="#607d8b" text-anchor="start">erdify reads your model files with the standard library — no imports, no database.</text>
-<svg x="1412" y="48" width="44" height="44" viewBox="0 0 1024 1024">
+<svg x="1380" y="48" width="44" height="44" viewBox="0 0 1024 1024">
 <rect width="1024" height="1024" rx="224" fill="#4150AA"/>
 <path d="M536 344H668V544" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 <path d="M574 312V376" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
@@ -47,7 +47,7 @@
 <rect x="574" y="672" width="220" height="24" rx="12" fill="#C5CAE9"/>
 <rect x="528" y="740" width="180" height="24" rx="12" fill="#C5CAE9"/>
 </svg>
-<text x="1536" y="80" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="28" font-weight="700" fill="#18b4e0" text-anchor="end">erdify</text>
+<text x="1436" y="80" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="28" font-weight="700" fill="#18b4e0" text-anchor="start">erdify</text>
 <rect x="64" y="144" width="1472" height="1" fill="#192346"/>
 <rect x="64.0" y="182" width="276.8" height="176" rx="10" fill="#192346"/>
 <text x="82.0" y="214" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#18b4e0" text-anchor="start" letter-spacing="0.2">SQLModel</text>
