@@ -8,16 +8,20 @@ copyright: 'Created &amp; maintained with ❤️ by <a href="https://devsuit.de"
 
 theme:
   name: material
+  logo: assets/erdify-icon.svg
+  favicon: assets/favicon.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -72,4 +76,9 @@ plugins:
   - search
   # Renders the social card (og:image) for every page. Needs the imaging
   # dependencies from `mkdocs-material[imaging]` and their system libraries.
-  - social
+  - social:
+      cards_layout_options:
+        background_color: "#4150AA"
+
+extra_css:
+  - stylesheets/extra.css
