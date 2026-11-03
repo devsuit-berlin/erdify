@@ -6,7 +6,9 @@
   --md-primary-fg-color: #4150aa;        /* devsuit indigo */
   --md-primary-fg-color--light: #6573c3;
   --md-primary-fg-color--dark: #192346;  /* devsuit navy */
-  --md-accent-fg-color: #18b4e0;         /* devsuit cyan */
+  /* Darkened devsuit cyan: Material uses the accent for link hover/focus,
+     and #18b4e0 is only 2.43:1 on white (WCAG AA needs 4.5:1). */
+  --md-accent-fg-color: #087f9e;         /* 4.63:1 on white */
   --md-typeset-a-color: #4150aa;
 }
 
