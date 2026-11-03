@@ -1,0 +1,28 @@
+/* erdify docs theme: devsuit brand colors on top of MkDocs Material. */
+
+/* Light scheme */
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #4150aa;        /* devsuit indigo */
+  --md-primary-fg-color--light: #6573c3;
+  --md-primary-fg-color--dark: #192346;  /* devsuit navy */
+  /* Darkened devsuit cyan: Material uses the accent for link hover/focus,
+     and #18b4e0 is only 2.43:1 on white (WCAG AA needs 4.5:1). */
+  --md-accent-fg-color: #087f9e;         /* 4.63:1 on white */
+  --md-typeset-a-color: #4150aa;
+}
+
+/* Dark scheme */
+[data-md-color-scheme="slate"] {
+  --md-hue: 228;                         /* tint slate towards devsuit navy */
+  --md-primary-fg-color: #4150aa;
+  --md-primary-fg-color--light: #6573c3;
+  --md-primary-fg-color--dark: #192346;
+  --md-accent-fg-color: #18b4e0;
+  --md-typeset-a-color: #8c9eff;         /* lighter indigo for contrast on dark */
+}
+
+/* Header logo: slightly larger than the Material default */
+.md-header__button.md-logo img {
+  height: 1.6rem;
+}

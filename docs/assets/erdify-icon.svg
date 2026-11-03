@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="erdify">
+<rect width="1024" height="1024" rx="224" fill="#4150AA"/>
+<path d="M536 344H668V544" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M574 312V376" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M668 488L622 544M668 488L714 544" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<rect x="176" y="208" width="360" height="272" rx="36" fill="#FFFFFF"/>
+<path d="M176 244a36 36 0 0 1 36-36h288a36 36 0 0 1 36 36v52H176z" fill="#192346"/>
+<circle cx="230" cy="348" r="14" fill="#F5DC19"/>
+<rect x="262" y="336" width="200" height="24" rx="12" fill="#C5CAE9"/>
+<rect x="216" y="404" width="264" height="24" rx="12" fill="#C5CAE9"/>
+<rect x="488" y="544" width="360" height="272" rx="36" fill="#FFFFFF"/>
+<path d="M488 580a36 36 0 0 1 36-36h288a36 36 0 0 1 36 36v52H488z" fill="#192346"/>
+<circle cx="542" cy="684" r="14" fill="#F5DC19"/>
+<rect x="574" y="672" width="220" height="24" rx="12" fill="#C5CAE9"/>
+<rect x="528" y="740" width="180" height="24" rx="12" fill="#C5CAE9"/>
+</svg>

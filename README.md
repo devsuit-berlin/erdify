@@ -1,4 +1,9 @@
-# 🗃️ erdify
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/assets/erdify-wordmark-dark.svg">
+    <img alt="erdify" src="https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/assets/erdify-wordmark-light.svg" width="420">
+  </picture>
+</p>
 
 [![PyPI version](https://img.shields.io/pypi/v/erdify)](https://pypi.org/project/erdify/)
 [![Python versions](https://img.shields.io/pypi/pyversions/erdify)](https://pypi.org/project/erdify/)
