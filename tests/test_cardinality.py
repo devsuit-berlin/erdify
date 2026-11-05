@@ -341,3 +341,239 @@ class TestTableArgsForms:
         out = generate_plantuml(_parse(tmp_path, src))
         assert "foreign_key(account_id) : int UK" in out
         assert 'Profile |o--|| Account : "account_id"' in out
+
+
+class TestExplicitColumnName:
+    """#221: mapped_column("db_name", ...) sets the DB column name."""
+
+    SRC = (
+        "from sqlalchemy import ForeignKey, Index, UniqueConstraint\n"
+        "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
+        "class Base(DeclarativeBase):\n    pass\n\n"
+        "class Account(Base):\n"
+        "    __tablename__ = 'account'\n"
+        "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
+        "class Profile(Base):\n"
+        "    __tablename__ = 'profile'\n"
+        "    __table_args__ = ({constraint},)\n"
+        "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+        "    account: Mapped[int] = mapped_column('account_id', ForeignKey('account.id'))\n"
+    )
+
+    @pytest.mark.parametrize(
+        "constraint",
+        [
+            "UniqueConstraint('account_id')",  # DB column name
+            "UniqueConstraint(account)",  # bare reference names the attribute
+            "Index('ix', 'account_id', unique=True)",
+        ],
+    )
+    def test_constraint_matches_db_column_name(self, tmp_path: Path, constraint: str):
+        entities = _parse(tmp_path, self.SRC.format(constraint=constraint))
+        assert _field(entities, "Profile", "account").is_unique
+        assert 'Profile |o--|| Account : "account"' in generate_mermaid(entities)
+
+    def test_string_constraint_does_not_match_attribute_name(self, tmp_path: Path):
+        """A string names the DB column; the attribute `account` has DB name account_id."""
+        src = self.SRC.format(constraint="UniqueConstraint('account')")
+        assert not _field(_parse(tmp_path, src), "Profile", "account").is_unique
+
+    def test_db_name_collision_marks_only_the_owner(self, tmp_path: Path):
+        src = self.SRC.format(constraint="UniqueConstraint('account')") + (
+            "    legacy: Mapped[str] = mapped_column('account')\n"
+        )
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Profile", "legacy").is_unique
+        assert not _field(entities, "Profile", "account").is_unique
+
+    @pytest.mark.parametrize(
+        "decl",
+        [
+            "mapped_column(ForeignKey('account.id'), name='account_id')",
+            "orm.mapped_column('account_id', ForeignKey('account.id'))",
+        ],
+    )
+    def test_other_name_forms(self, tmp_path: Path, decl: str):
+        src = self.SRC.format(constraint="UniqueConstraint('account_id')").replace(
+            "mapped_column('account_id', ForeignKey('account.id'))", decl
+        )
+        src = "from sqlalchemy import orm\n" + src
+        assert _field(_parse(tmp_path, src), "Profile", "account").is_unique
+
+    def test_subclass_override_drops_inherited_name(self, tmp_path: Path):
+        src = (
+            "from sqlalchemy import ForeignKey, UniqueConstraint\n"
+            "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
+            "class Base(DeclarativeBase):\n    pass\n\n"
+            "class Account(Base):\n"
+            "    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
+            "class AccountMixin:\n"
+            "    account: Mapped[int] = mapped_column('account_id', ForeignKey('account.id'))\n\n"
+            "class Profile(AccountMixin, Base):\n"
+            "    __tablename__ = 'profile'\n"
+            "    __table_args__ = (UniqueConstraint('account_id'),)\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+            "    account: Mapped[int] = mapped_column(ForeignKey('account.id'))\n"
+        )
+        assert not _field(_parse(tmp_path, src), "Profile", "account").is_unique
+
+    @pytest.mark.parametrize(
+        "decl",
+        [
+            "Field(sa_column=Column('acct', ForeignKey('account.id')))",
+            "Field(foreign_key='account.id', sa_column_kwargs={'name': 'acct'})",
+        ],
+    )
+    def test_sqlmodel_explicit_column_name(self, tmp_path: Path, decl: str):
+        src = (
+            "from sqlalchemy import Column, ForeignKey, UniqueConstraint\n"
+            "from sqlmodel import Field, SQLModel\n\n"
+            "class Account(SQLModel, table=True):\n"
+            "    id: int = Field(primary_key=True)\n\n"
+            "class Profile(SQLModel, table=True):\n"
+            "    __table_args__ = (UniqueConstraint('acct'),)\n"
+            "    id: int = Field(primary_key=True)\n"
+            f"    account_id: int = {decl}\n"
+        )
+        assert _field(_parse(tmp_path, src), "Profile", "account_id").is_unique
+
+    def test_column_name_is_not_a_default(self, tmp_path: Path):
+        src = self.SRC.format(constraint="UniqueConstraint('account_id')")
+        assert _field(_parse(tmp_path, src), "Profile", "account").default_value is None
+
+    def test_inherited_column_name(self, tmp_path: Path):
+        src = (
+            "from sqlalchemy import ForeignKey, UniqueConstraint\n"
+            "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
+            "class Base(DeclarativeBase):\n    pass\n\n"
+            "class Account(Base):\n"
+            "    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
+            "class AccountMixin:\n"
+            "    account: Mapped[int] = mapped_column('account_id', ForeignKey('account.id'))\n\n"
+            "class Profile(AccountMixin, Base):\n"
+            "    __tablename__ = 'profile'\n"
+            "    __table_args__ = (UniqueConstraint('account_id'),)\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+        )
+        assert _field(_parse(tmp_path, src), "Profile", "account").is_unique
+
+    def test_sqlmodel_positional_default_is_kept(self, tmp_path: Path):
+        src = (
+            "from sqlmodel import Field, SQLModel\n\n"
+            "class Item(SQLModel, table=True):\n"
+            "    id: int = Field(primary_key=True)\n"
+            "    status: str = Field('draft')\n"
+        )
+        assert _field(_parse(tmp_path, src), "Item", "status").default_value == "'draft'"
+
+
+class TestSharedPrimaryKey:
+    """#222: an FK that is the entity's only PK column is a 1:1."""
+
+    SRC = """
+from sqlmodel import Field, SQLModel
+
+
+class User(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+
+class UserProfile(SQLModel, table=True):
+    id: int = Field(primary_key=True, foreign_key="user.id")
+
+
+class OrderLine(SQLModel, table=True):
+    user_id: int = Field(primary_key=True, foreign_key="user.id")
+    line_no: int = Field(primary_key=True)
+    note: str
+"""
+
+    def test_sole_pk_fk_is_one_to_one(self, tmp_path: Path):
+        out = generate_mermaid(_parse(tmp_path, self.SRC))
+        assert 'UserProfile |o--|| User : "id"' in out
+
+    def test_composite_pk_fk_stays_many_to_one(self, tmp_path: Path):
+        out = generate_plantuml(_parse(tmp_path, self.SRC))
+        assert 'OrderLine }o--|| User : "user_id"' in out
+
+    def test_sql_composite_pk_fk_stays_many_to_one(self, tmp_path: Path):
+        pytest.importorskip("sqlglot")
+        (tmp_path / "schema.sql").write_text(
+            'CREATE TABLE "user" (id INTEGER PRIMARY KEY);\n'
+            "CREATE TABLE line (\n"
+            '  user_id INTEGER REFERENCES "user"(id), line_no INTEGER, note TEXT,\n'
+            "  PRIMARY KEY (user_id, line_no));\n"
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.sql"])
+        assert "line }o--|| user" in generate_mermaid(entities)
+
+    def test_sql_shared_primary_key(self, tmp_path: Path):
+        pytest.importorskip("sqlglot")
+        (tmp_path / "schema.sql").write_text(
+            'CREATE TABLE "user" (id INTEGER PRIMARY KEY);\n'
+            'CREATE TABLE profile (id INTEGER PRIMARY KEY REFERENCES "user"(id));\n'
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.sql"])
+        assert "profile |o--|| user" in generate_mermaid(entities)
+
+
+class TestDjangoPrimaryKeyForeignKey:
+    """#224: ForeignKey(primary_key=True) is the table's PK, with no implicit id."""
+
+    SRC = """
+from django.db import models
+
+
+class Account(models.Model):
+    pass
+
+
+class Settings(models.Model):
+    owner = models.ForeignKey(Account, on_delete=models.CASCADE, primary_key=True, null=True)
+"""
+
+    def test_fields(self, tmp_path: Path):
+        entities = _parse(tmp_path, self.SRC)
+        assert [f.name for f in entities["Settings"].fields] == ["owner_id"]
+        owner = _field(entities, "Settings", "owner_id")
+        assert owner.is_primary_key and owner.is_foreign_key
+        assert not owner.is_nullable
+        assert not owner.is_unique
+
+    def test_drawn_one_to_one(self, tmp_path: Path):
+        out = generate_mermaid(_parse(tmp_path, self.SRC))
+        assert 'Settings |o--|| Account : "owner_id"' in out
+        assert "int id PK" not in out.split("Settings {")[1]
+
+    @pytest.mark.parametrize(
+        "decl",
+        [
+            "models.ForeignKey(Account, on_delete=models.CASCADE, primary_key=True)",
+            "models.OneToOneField(Account, on_delete=models.CASCADE, primary_key=True)",
+        ],
+    )
+    def test_forms_and_json(self, tmp_path: Path, decl: str):
+        src = self.SRC.replace(
+            "models.ForeignKey(Account, on_delete=models.CASCADE, primary_key=True, null=True)",
+            decl,
+        )
+        entities = _parse(tmp_path, src)
+        assert entities["Settings"].relationships == []
+        doc = json.loads(generate_json(entities))
+        settings = next(e for e in doc["entities"] if e["name"] == "Settings")
+        assert [(f["name"], f["primary_key"], f["foreign_key"]) for f in settings["fields"]] == [
+            ("owner_id", True, True)
+        ]
+        assert 'Settings |o--|| Account : "owner_id"' in generate_mermaid(entities)
+
+    def test_one_to_one_without_pk_is_unchanged(self, tmp_path: Path):
+        """A plain OneToOneField is still a declared relationship (tracked in #223)."""
+        src = self.SRC.replace(
+            "models.ForeignKey(Account, on_delete=models.CASCADE, primary_key=True, null=True)",
+            "models.OneToOneField(Account, on_delete=models.CASCADE)",
+        )
+        entities = _parse(tmp_path, src)
+        assert [f.name for f in entities["Settings"].fields] == ["id"]
+        assert entities["Settings"].relationships == [("Account", "one_to_one", "owner")]

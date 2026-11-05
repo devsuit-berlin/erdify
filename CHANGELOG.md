@@ -27,6 +27,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ForeignKey`), and a single-column `UniqueConstraint` or
   `Index(..., unique=True)` in `__table_args__`. Previously only SQL DDL was
   checked ([#218](https://github.com/devsuit-berlin/erdify/issues/218)).
+- A `__table_args__` constraint that names the database column now matches a
+  column with an explicit name: `mapped_column("db_name", ...)`,
+  `mapped_column(..., name="db_name")`, or SQLModel's
+  `Field(sa_column=Column("db_name", ...))` /
+  `Field(sa_column_kwargs={"name": "db_name"})`, including one inherited from a
+  mixin. A string constraint no longer matches an attribute whose DB column has
+  a different name. The column name passed to `mapped_column()` is no longer
+  misreported as a default value
+  ([#221](https://github.com/devsuit-berlin/erdify/issues/221)).
+- A foreign key that is its table's only primary-key column (the
+  shared-primary-key 1:1) is now drawn 1:1 (`|o--||`) instead of N:1. A
+  foreign key in a composite primary key stays N:1
+  ([#222](https://github.com/devsuit-berlin/erdify/issues/222)).
+- Django `ForeignKey(..., primary_key=True)` and
+  `OneToOneField(..., primary_key=True)` now make `<name>_id` the primary key,
+  instead of adding a spurious implicit `id` column, and are drawn 1:1
+  ([#224](https://github.com/devsuit-berlin/erdify/issues/224)).
 - erdify now always reads and writes text files as UTF-8, independent of the
   locale: model and `.sql` files, the `-o` output (and its `--check`), and the
   `--inject` Markdown file. Under a C/POSIX locale (as on some CI runners), a
@@ -39,10 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The fixes above change the generated diagram for any schema with a nullable
 foreign key, an `Optional` primary key (or any SQL primary key without an
-explicit `NOT NULL`), or a unique column. `--format json` changes accordingly
+explicit `NOT NULL`), a unique column, a foreign key that is the table's only
+primary key, a Django `ForeignKey` / `OneToOneField(primary_key=True)`, or a
+column with an explicit DB name. `--format json` changes accordingly
 (`nullable` / `default` on primary keys, `unique` on the newly detected
-columns). If you commit the
-diagram and gate CI on `--check` (or the `erdify-check` pre-commit hook), the
+columns, `primary_key` and the removed implicit `id` for Django). If you commit
+the diagram and gate CI on `--check` (or the `erdify-check` pre-commit hook), the
 check fails once after upgrading: regenerate the diagram and commit it. See
 [Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
 

@@ -70,7 +70,7 @@ class _ERGenerator:
         return link_map
 
     @staticmethod
-    def _fk_glyph(field: FieldInfo) -> str:
+    def _fk_glyph(field: FieldInfo, sole_pk: bool = False) -> str:
         """Crow's-foot glyph for a direct FK edge, written ``child ... parent``.
 
         Each end counts that entity per one instance of the other. The child
@@ -82,8 +82,13 @@ class _ERGenerator:
         nullability: exactly one (``||``) when NOT NULL, zero-or-one (``o|``)
         when nullable (#216). A unique FK is thus rendered 1:1 (``|o--||`` /
         ``|o--o|``), a non-unique one N:1 (``}o--||`` / ``}o--o|``).
+
+        ``sole_pk`` marks an FK that is the entity's *only* primary-key column
+        (the shared-primary-key 1:1): the key makes it unique by definition, so
+        it is drawn 1:1 too (#222). In a composite PK the FK alone is not
+        unique and stays N:1.
         """
-        child = "|o" if field.is_unique else "}o"
+        child = "|o" if field.is_unique or sole_pk else "}o"
         parent = "o|" if field.is_nullable else "||"
         return f"{child}--{parent}"
 
@@ -110,6 +115,7 @@ class _ERGenerator:
     ) -> List[str]:
         """Generate direct relationships (foreign keys without link tables)."""
         lines: List[str] = []
+        single_pk = sum(f.is_primary_key for f in entity.fields) == 1
         for field in entity.fields:
             if field.is_foreign_key and field.foreign_table:
                 target_table = field.foreign_table.split(".")[0]
@@ -119,7 +125,7 @@ class _ERGenerator:
                         target_entity = e
                         break
                 if target_entity:
-                    glyph = self._fk_glyph(field)
+                    glyph = self._fk_glyph(field, sole_pk=single_pk and field.is_primary_key)
                     lines.append(f'{entity.name} {glyph} {target_entity.name} : "{field.name}"')
         return lines
 
