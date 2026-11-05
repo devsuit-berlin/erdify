@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ForeignKey`), and a single-column `UniqueConstraint` or
   `Index(..., unique=True)` in `__table_args__`. Previously only SQL DDL was
   checked ([#218](https://github.com/devsuit-berlin/erdify/issues/218)).
+- erdify now always reads and writes text files as UTF-8, independent of the
+  locale: model and `.sql` files, the `-o` output (and its `--check`), and the
+  `--inject` Markdown file. Under a C/POSIX locale (as on some CI runners), a
+  non-ASCII character anywhere in the Markdown file crashed `--inject` or made
+  `--inject --check` report an up-to-date region as stale, and a non-ASCII
+  model file was skipped. `PYTHONUTF8=1` is no longer needed as a workaround
+  ([#219](https://github.com/devsuit-berlin/erdify/issues/219)).
 
 ### Output changes
 

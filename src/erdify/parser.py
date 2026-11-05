@@ -233,7 +233,7 @@ class ASTDatabaseParser:
         # First pass: parse all files and collect class definitions
         for model_file in model_files:
             try:
-                with open(model_file, "r") as f:
+                with open(model_file, encoding="utf-8") as f:  # PEP 3120 default
                     content = f.read()
                 tree = ast.parse(content)
                 self._file_trees[model_file] = tree

@@ -352,7 +352,7 @@ def main() -> int:
         target = output_path.with_suffix(ext) if output_path is not None else None
 
         if args.check and target is not None:
-            existing = target.read_text() if target.exists() else None
+            existing = target.read_text(encoding="utf-8") if target.exists() else None
             if existing == rendered:
                 print(f"{fmt} ERD is up to date: {target}", file=sys.stderr)
             else:
@@ -366,7 +366,7 @@ def main() -> int:
 
         if target is not None:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(rendered)
+            target.write_text(rendered, encoding="utf-8")
             print(f"Generated {fmt} ERD: {target}", file=sys.stderr)
         elif inject_path is None:
             print(rendered)
@@ -383,7 +383,10 @@ def main() -> int:
         )
         region = render_region(rendered, fence=fmt)
         try:
-            with inject_path.open(newline="") as f:
+            # Always UTF-8, never the locale encoding: under a C/POSIX locale a
+            # non-ASCII character anywhere in the file would otherwise crash or
+            # make --check report a fresh region as stale (#219).
+            with inject_path.open(encoding="utf-8", newline="") as f:
                 existing_text = f.read()
         except FileNotFoundError:
             print(f"Error: --inject target not found: {inject_path}", file=sys.stderr)
@@ -401,7 +404,7 @@ def main() -> int:
                     stale = True
             else:
                 new_text = inject(existing_text, region)
-                with inject_path.open("w", newline="") as f:
+                with inject_path.open("w", encoding="utf-8", newline="") as f:
                     f.write(new_text)
                 print(f"Injected {fmt} ERD into {inject_path}", file=sys.stderr)
         except MarkerError as e:
