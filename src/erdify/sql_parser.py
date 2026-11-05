@@ -201,7 +201,8 @@ class SqlSchemaParser:
             name=name,
             type_str=type_str,
             is_primary_key=is_pk,
-            is_nullable=not not_null,
+            # A PRIMARY KEY column is implicitly NOT NULL (#217).
+            is_nullable=not not_null and not is_pk,
             default_value=default,
             is_unique=is_unique,
         )

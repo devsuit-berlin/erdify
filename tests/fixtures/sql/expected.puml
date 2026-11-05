@@ -23,32 +23,32 @@ enum order_status << (E,#FFCC00) >> {
 ' Entities
 
 entity "customer" as customer {
-  primary_key(id) : int?
+  primary_key(id) : int
   column(email) : varchar(255)
   column(name) : varchar(120)?
 }
 
 entity "order" as order {
-  primary_key(id) : int?
+  primary_key(id) : int
   foreign_key(customer_id) : int
   column(status) : order_status? = 'pending'
   column(total) : decimal?
 }
 
 entity "product" as product {
-  primary_key(id) : int?
+  primary_key(id) : int
   column(sku) : varchar(64)
 }
 
 entity "customer_profile" as customer_profile {
-  primary_key(id) : int?
+  primary_key(id) : int
   foreign_key(customer_id) : int UK
   column(bio) : text?
 }
 
 entity "order_item" as order_item << (L, #AAFFAA) link >> {
-  primary_key(order_id) : int?
-  primary_key(product_id) : int?
+  primary_key(order_id) : int
+  primary_key(product_id) : int
 }
 
 ' Relationships

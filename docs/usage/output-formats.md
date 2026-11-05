@@ -82,9 +82,10 @@ left tab is what erdify writes to the `.mmd` file; the right tab is what GitHub
 Notes:
 
 - Relationships use crow's-foot cardinalities identical to PlantUML
-  (`}o--||` N:1, `||--o{` 1:N, `||--||` 1:1, `}o--o{` M:N). A unique
-  single-column foreign key is a 1:1 rendered `|o--||` (NOT NULL FK) or
-  `|o--o|` (nullable FK).
+  (`}o--||` N:1, `||--o{` 1:N, `||--||` 1:1, `}o--o{` M:N). The parent end
+  of a foreign-key edge follows the FK's nullability: a nullable FK is drawn
+  `}o--o|` (the child may have no parent). A unique single-column foreign key
+  is a 1:1 rendered `|o--||` (NOT NULL FK) or `|o--o|` (nullable FK).
 - A unique non-primary-key column is marked `UK` in the entity block,
   alongside `PK`/`FK`.
 - Mermaid has no enum construct, so each used enum is rendered as an entity block
