@@ -648,9 +648,15 @@ class ASTDatabaseParser:
         entity.relationships = list(relationships_dict.values())
 
         # Single-column UniqueConstraint / unique Index in __table_args__ (#218).
-        unique_cols = self._table_args_unique_columns(class_node)
+        # Constraints name the *database* column, which mapped_column("col", ...)
+        # may set apart from the attribute name (#221).
+        # A string names the DB column; a bare reference names the attribute.
+        unique_cols, unique_refs = self._table_args_unique_columns(class_node)
+        db_names = self._db_column_names(class_node, set())
         for f in entity.fields:
-            if f.name in unique_cols and not f.is_primary_key:
+            if f.is_primary_key:
+                continue
+            if db_names.get(f.name, f.name) in unique_cols or f.name in unique_refs:
                 f.is_unique = True
 
         # Django implicitly adds an `id` primary key (BigAutoField since Django 3.2)
@@ -674,15 +680,91 @@ class ASTDatabaseParser:
 
     _is_structural_link_table = staticmethod(is_structural_link_table)
 
+    def _db_column_names(self, class_node: ast.ClassDef, visited: set[str]) -> Dict[str, str]:
+        """Map attribute name -> explicit DB column name for a class and its bases.
+
+        See :meth:`_explicit_column_name` for the recognized forms. A column
+        without an explicit name maps to itself, so a redeclaration without one
+        overrides an inherited name through the same merge order as the fields
+        (later bases and the class body win), including in diamond hierarchies.
+        """
+        if class_node.name in visited:
+            return {}
+        visited.add(class_node.name)
+        names: Dict[str, str] = {}
+        for base in class_node.bases:
+            if isinstance(base, ast.Name) and base.id in self._all_classes:
+                names.update(self._db_column_names(self._all_classes[base.id], visited))
+        for node in class_node.body:
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                db_name = self._explicit_column_name(node.value)
+                names[node.target.id] = db_name if db_name is not None else node.target.id
+        return names
+
     @classmethod
-    def _table_args_unique_columns(cls, class_node: ast.ClassDef) -> set[str]:
+    def _explicit_column_name(cls, value: ast.expr | None) -> str | None:
+        """Return the name a string constraint uses for this column, if explicit.
+
+        Recognizes ``mapped_column("name", ...)`` / ``mapped_column(name="name")``,
+        and SQLModel's ``Field(sa_column=Column("name", ...))`` /
+        ``Field(sa_column_kwargs={"name": "name"})``. SQLAlchemy resolves a
+        constraint's string column through the column *key*, which defaults to
+        the name, so an explicit ``key=`` takes precedence.
+        """
+        if value is None:
+            return None
+        if cls._is_call_to(value, "mapped_column") or cls._is_call_to(value, "Column"):
+            for kw in value.keywords:
+                if (
+                    kw.arg == "key"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    return kw.value.value
+            if (
+                value.args
+                and isinstance(value.args[0], ast.Constant)
+                and isinstance(value.args[0].value, str)
+            ):
+                return value.args[0].value
+            for kw in value.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    return kw.value.value
+            return None
+        if cls._is_call_to(value, "Field"):
+            for kw in value.keywords:
+                if kw.arg == "sa_column":
+                    return cls._explicit_column_name(kw.value)
+                if kw.arg == "sa_column_kwargs" and isinstance(kw.value, ast.Dict):
+                    opts = {
+                        key.value: val.value
+                        for key, val in zip(kw.value.keys, kw.value.values)
+                        if isinstance(key, ast.Constant)
+                        and isinstance(val, ast.Constant)
+                        and isinstance(val.value, str)
+                    }
+                    # As above: an explicit key wins over the name.
+                    found = opts.get("key", opts.get("name"))
+                    if isinstance(found, str):
+                        return found
+        return None
+
+    @classmethod
+    def _table_args_unique_columns(cls, class_node: ast.ClassDef) -> Tuple[set[str], set[str]]:
         """Columns made unique on their own by the class's ``__table_args__``.
 
         Recognizes ``UniqueConstraint("col")`` and ``Index("name", "col",
-        unique=True)`` with exactly one column (a string or a bare reference to
-        a column declared in the class body), in a tuple/list ``__table_args__``
+        unique=True)`` with exactly one column, in a tuple/list ``__table_args__``
         (a trailing options dict is ignored). Composite constraints and partial
         indexes (``*_where=``) do not make a column unique and are skipped.
+
+        Returns ``(db_columns, attribute_refs)``: a string names the *database*
+        column, while a bare reference (``UniqueConstraint(account_id)``) names
+        the attribute declared earlier in the class body.
         """
         value: ast.expr | None = None
         for node in class_node.body:
@@ -695,10 +777,11 @@ class ASTDatabaseParser:
                 and node.target.id == "__table_args__"
             ):
                 value = node.value
-        if not isinstance(value, (ast.Tuple, ast.List)):
-            return set()
-
         columns: set[str] = set()
+        refs: set[str] = set()
+        if not isinstance(value, (ast.Tuple, ast.List)):
+            return columns, refs
+
         for item in value.elts:
             if cls._is_call_to(item, "UniqueConstraint"):
                 cols = item.args
@@ -726,10 +809,8 @@ class ASTDatabaseParser:
                 if isinstance(col, ast.Constant) and isinstance(col.value, str):
                     columns.add(col.value)
                 elif isinstance(col, ast.Name):
-                    # A bare reference to a column declared earlier in the class
-                    # body, e.g. UniqueConstraint(account_id).
-                    columns.add(col.id)
-        return columns
+                    refs.add(col.id)
+        return columns, refs
 
     def _parse_core_association_tables(self) -> None:
         """Synthesize link entities from module-level Core ``Table(...)`` assignments.
@@ -856,10 +937,34 @@ class ASTDatabaseParser:
 
         # Then add/override with current class fields
         class_fields, class_rels = self._extract_class_fields(class_node, model_kind)
+        if model_kind == "django":
+            # A Django attribute can be stored under a different key depending
+            # on its kind (relationship `owner` vs. FK column `owner_id`), so a
+            # redeclaration must drop whatever the bases stored for it.
+            for attr in self._django_declared_names(class_node):
+                relationships_dict.pop(attr, None)
+                fields_dict.pop(attr, None)
+                inherited_fk = fields_dict.get(f"{attr}_id")
+                if inherited_fk is not None and inherited_fk.is_foreign_key:
+                    del fields_dict[f"{attr}_id"]
         fields_dict.update(class_fields)
         relationships_dict.update(class_rels)
 
         return fields_dict, relationships_dict
+
+    def _django_declared_names(self, class_node: ast.ClassDef) -> List[str]:
+        """Attribute names a Django model body declares as a model field."""
+        names: List[str] = []
+        for node in class_node.body:
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Call)
+                and self._django_field_type(node.value) is not None
+            ):
+                names.append(node.targets[0].id)
+        return names
 
     def _extract_class_fields(
         self, class_node: ast.ClassDef, model_kind: str
@@ -934,9 +1039,13 @@ class ASTDatabaseParser:
                 continue
 
             name = target.id
-            if field_type == "ForeignKey":
+            if field_type == "ForeignKey" or (
+                field_type == "OneToOneField" and self._has_true_kw(node.value, "primary_key")
+            ):
                 # A ForeignKey is a real `<name>_id` column in the DB; model it as
                 # such (like SQLAlchemy) so it renders consistently across sources.
+                # A OneToOneField(primary_key=True) is that column *as the PK*
+                # (shared primary key), so Django adds no implicit `id` (#224).
                 fk = self._parse_django_fk_column(name, node.value, class_node.name)
                 if fk:
                     fields[fk.name] = fk
@@ -949,6 +1058,14 @@ class ASTDatabaseParser:
 
         return fields, relationships
 
+    @staticmethod
+    def _has_true_kw(call: ast.Call, name: str) -> bool:
+        """Whether ``call`` passes ``name=True`` as a literal keyword."""
+        return any(
+            kw.arg == name and isinstance(kw.value, ast.Constant) and kw.value.value is True
+            for kw in call.keywords
+        )
+
     def _parse_django_fk_column(
         self, name: str, call: ast.Call, current_class: str
     ) -> FieldInfo | None:
@@ -959,6 +1076,7 @@ class ASTDatabaseParser:
 
         is_nullable = False
         is_unique = False
+        is_primary_key = False
         for keyword in call.keywords:
             if not isinstance(keyword.value, ast.Constant):
                 continue
@@ -966,13 +1084,19 @@ class ASTDatabaseParser:
                 is_nullable = bool(keyword.value.value)
             elif keyword.arg == "unique":
                 is_unique = bool(keyword.value.value)
+            elif keyword.arg == "primary_key":
+                is_primary_key = bool(keyword.value.value)
 
+        # ForeignKey(primary_key=True) makes `<name>_id` the table's primary key,
+        # so Django adds no implicit `id` (#224). A PK is never NULL, and its
+        # uniqueness is tracked by is_primary_key, not is_unique.
         return FieldInfo(
             name=f"{name}_id",
             type_str=self._django_display_type("BigAutoField"),
+            is_primary_key=is_primary_key,
             is_foreign_key=True,
-            is_nullable=is_nullable,
-            is_unique=is_unique,
+            is_nullable=is_nullable and not is_primary_key,
+            is_unique=is_unique and not is_primary_key,
             foreign_table=f"{self._django_target_table(target)}.id",
         )
 
@@ -1137,9 +1261,10 @@ class ASTDatabaseParser:
         is_unique = False
 
         if node.value and isinstance(node.value, ast.Call):
-            if isinstance(node.value.func, ast.Name) and node.value.func.id in (
-                "Field",  # SQLModel
-                "mapped_column",  # SQLAlchemy
+            # Field() (SQLModel) / mapped_column() (SQLAlchemy), bare or qualified
+            # (e.g. orm.mapped_column).
+            if self._is_call_to(node.value, "Field") or self._is_call_to(
+                node.value, "mapped_column"
             ):
                 for keyword in node.value.keywords:
                     if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
@@ -1219,9 +1344,7 @@ class ASTDatabaseParser:
         candidates = list(call.args) + [kw.value for kw in call.keywords]
         for arg in candidates:
             if (
-                isinstance(arg, ast.Call)
-                and isinstance(arg.func, ast.Name)
-                and arg.func.id == "ForeignKey"
+                ASTDatabaseParser._is_call_to(arg, "ForeignKey")  # also sa.ForeignKey
                 and arg.args
                 and isinstance(arg.args[0], ast.Constant)
             ):
@@ -1239,12 +1362,12 @@ class ASTDatabaseParser:
 
         # Field() / mapped_column() with default parameter
         if isinstance(node.value, ast.Call):
-            if isinstance(node.value.func, ast.Name) and node.value.func.id in (
-                "Field",
-                "mapped_column",
-            ):
-                # Check positional args first (Field(default_value, ...))
-                if node.value.args:
+            is_field = self._is_call_to(node.value, "Field")
+            if is_field or self._is_call_to(node.value, "mapped_column"):
+                # Positional default: only SQLModel's Field(default, ...).
+                # mapped_column()'s positional args are the column name, type
+                # and ForeignKey, never a default (#221).
+                if node.value.args and is_field:
                     first_arg = node.value.args[0]
                     if isinstance(first_arg, ast.Constant):
                         return repr(first_arg.value)

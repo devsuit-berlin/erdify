@@ -85,7 +85,9 @@ Notes:
   (`}o--||` N:1, `||--o{` 1:N, `||--||` 1:1, `}o--o{` M:N). The parent end
   of a foreign-key edge follows the FK's nullability: a nullable FK is drawn
   `}o--o|` (the child may have no parent). A unique single-column foreign key
-  is a 1:1 rendered `|o--||` (NOT NULL FK) or `|o--o|` (nullable FK).
+  is a 1:1 rendered `|o--||` (NOT NULL FK) or `|o--o|` (nullable FK), and so
+  is a foreign key that is its table's only primary-key column (shared
+  primary key).
 - A unique non-primary-key column is marked `UK` in the entity block,
   alongside `PK`/`FK`.
 - Mermaid has no enum construct, so each used enum is rendered as an entity block

@@ -81,7 +81,11 @@ class Match(Base):
   columns and no relationship is drawn. (Composite *primary* keys are fine; see
   below.)
 - A single-column `UniqueConstraint("col")` or `Index("ix", "col", unique=True)`
-  marks `col` as unique (`UK`, and 1:1 when it is a foreign key). Composite
+  marks `col` as unique (`UK`, and 1:1 when it is a foreign key). A string
+  names the database column, so it matches an explicit name set with
+  `mapped_column("col", ...)`, `mapped_column(..., name="col")`,
+  `Field(sa_column=Column("col", ...))` or `Field(sa_column_kwargs={"name": "col"})`;
+  a bare reference (`UniqueConstraint(attr)`) names the attribute. Composite
   constraints, partial indexes (`postgresql_where=` / `sqlite_where=`) and
   non-unique `Index` entries are ignored; the index marker comes only from
   per-column `index=`. `__table_args__` is read only when it is assigned

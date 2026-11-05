@@ -32,7 +32,9 @@ class Book(models.Model):
 
 A `ForeignKey(null=True)` is drawn optional on the referenced side (`}o--o|`),
 and a `ForeignKey(unique=True)` is drawn 1:1 (`|o--||`). A `unique=True`
-column is marked `UK`.
+column is marked `UK`. A `ForeignKey(primary_key=True)` or
+`OneToOneField(primary_key=True)` (shared primary key) makes `<name>_id` the
+table's primary key (no implicit `id` is added) and is drawn 1:1 as well.
 
 Relationship targets are resolved by class name, including `"self"` and
 `"app.Model"` string references. A `ManyToManyField(through=LinkModel)` is drawn

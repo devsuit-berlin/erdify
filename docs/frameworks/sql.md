@@ -88,6 +88,10 @@ column-level `col ... UNIQUE` and single-column table-level `UNIQUE (col)`
 (anonymous or named `CONSTRAINT ... UNIQUE (col)`) are recognized; composite
 `UNIQUE (a, b)` is not. A unique non-primary-key column is also flagged with a
 `UK` marker in the entity block ([#97](https://github.com/devsuit-berlin/erdify/issues/97)).
+A foreign key that is also the table's only primary-key column (a shared
+primary key, e.g. `id INTEGER PRIMARY KEY REFERENCES users(id)`) is unique by
+definition and is drawn 1:1 as well; one that is part of a composite primary
+key stays N:1.
 
 ## Deferred / Not Supported
 

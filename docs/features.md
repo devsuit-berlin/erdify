@@ -13,7 +13,7 @@ framework is detected and a worked example, see the
 | Primary Keys | ✅ | `Field(primary_key=True)` |
 | Foreign Keys | ✅ | `Field(foreign_key="table.column")` |
 | Nullable Fields | ✅ | `str \| None`, `Optional[str]`, explicit `nullable=` (overrides the annotation), Django `null=True`; a nullable FK is drawn optional (`}o--o\|`). A primary key is never nullable, so SQLModel's `id: int \| None = Field(default=None, primary_key=True)` renders as a plain PK |
-| Unique Columns | ✅ | `Field(unique=True)`, `mapped_column(unique=True)`, Django `unique=True`, or a single-column `UniqueConstraint` / `Index(..., unique=True)` in `__table_args__`; marked `UK`, and a unique FK is drawn 1:1 (`\|o--\|\|`) |
+| Unique Columns | ✅ | `Field(unique=True)`, `mapped_column(unique=True)`, Django `unique=True`, or a single-column `UniqueConstraint` / `Index(..., unique=True)` in `__table_args__`; marked `UK`, and a unique FK is drawn 1:1 (`\|o--\|\|`). An FK that is its table's only primary-key column (shared primary key, incl. Django `ForeignKey` / `OneToOneField(primary_key=True)`) is drawn 1:1 too |
 | Default Values | ✅ | `Field(default=value)` |
 | Indexes | ✅ | `Field(index=True)` — detected and emitted in `--format json`; not drawn in the PlantUML/Mermaid diagram |
 | Enums | ✅ | Python `Enum` classes |
