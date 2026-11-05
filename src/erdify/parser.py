@@ -709,8 +709,14 @@ class ASTDatabaseParser:
                 ):
                     continue
                 # A partial index (postgresql_where=, sqlite_where=, ...) is only
-                # unique over a subset of rows, so it does not imply a 1:1.
-                if any(kw.arg and kw.arg.endswith("_where") for kw in item.keywords):
+                # unique over a subset of rows, so it does not imply a 1:1. A
+                # literal `*_where=None` is "no predicate", i.e. not partial.
+                if any(
+                    kw.arg
+                    and kw.arg.endswith("_where")
+                    and not (isinstance(kw.value, ast.Constant) and kw.value.value is None)
+                    for kw in item.keywords
+                ):
                     continue
                 cols = item.args[1:]  # first positional arg is the index name
             else:

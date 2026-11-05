@@ -329,6 +329,7 @@ class TestTableArgsForms:
             ("{'schema': 'app'}", False),  # dict-only
             ("(sa.UniqueConstraint(account_id),)", True),  # bare column reference
             ("(sa.Index('ix', account_id, unique=True),)", True),
+            ("(sa.Index('ix', 'account_id', unique=True, postgresql_where=None),)", True),
         ],
     )
     def test_forms(self, tmp_path: Path, args: str, unique: bool):
