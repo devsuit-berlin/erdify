@@ -1,5 +1,6 @@
 """Tests for CLI module."""
 
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -607,3 +608,43 @@ def test_cli_generates_erd_from_sql_file(tmp_path):
     )
     assert out.returncode == 0
     assert "user" in out.stdout
+
+
+@pytest.mark.parametrize("extra", [[], ["--check"]])
+def test_inject_is_utf8_under_ascii_locale(tmp_path, extra):
+    """Non-ASCII Markdown must not depend on the locale encoding (#219)."""
+    _models(tmp_path)
+    md = tmp_path / "README.md"
+    md.write_text("# Docs — schema\n\n<!-- erdify:start -->\n<!-- erdify:end -->\n", "utf-8")
+    env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
+    env["PYTHONCOERCECLOCALE"] = "0"
+    cmd = [sys.executable, "-m", "erdify", str(tmp_path), "--inject", str(md)]
+    # Write once, then (for the --check case) verify the fresh region passes.
+    first = subprocess.run(cmd, capture_output=True, env=env)
+    assert first.returncode == 0, first.stderr.decode("utf-8", "replace")
+    out = subprocess.run(cmd + extra, capture_output=True, env=env)
+    assert out.returncode == 0, out.stderr.decode("utf-8", "replace")
+    text = md.read_text(encoding="utf-8")
+    assert text.startswith("# Docs — schema\n")
+    assert "Widget" in text
+
+
+def test_output_and_model_files_are_utf8_under_ascii_locale(tmp_path):
+    """-o output, --check of it, and non-ASCII model source all use UTF-8 (#219)."""
+    (tmp_path / "models.py").write_text(
+        "from sqlmodel import Field, SQLModel\n\n"
+        "class Café(SQLModel, table=True):  # naïve comment\n"
+        "    id: int = Field(primary_key=True)\n"
+        "    note: str = 'é'\n",
+        "utf-8",
+    )
+    out_file = tmp_path / "erd.mmd"
+    env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
+    env["PYTHONCOERCECLOCALE"] = "0"
+    base = [sys.executable, "-m", "erdify", str(tmp_path), "--format", "mermaid"]
+    base += ["--title", "Schéma", "-o", str(out_file)]
+    first = subprocess.run(base, capture_output=True, env=env)
+    assert first.returncode == 0, first.stderr.decode("utf-8", "replace")
+    assert "Café" in out_file.read_text(encoding="utf-8")
+    check = subprocess.run(base + ["--check"], capture_output=True, env=env)
+    assert check.returncode == 0, check.stderr.decode("utf-8", "replace")

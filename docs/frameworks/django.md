@@ -21,12 +21,18 @@ class Author(models.Model):          # implicit `id` primary key (int)
 class Book(models.Model):
     title = models.CharField(max_length=200)
     author = models.ForeignKey(Author, on_delete=models.CASCADE)   # N:1
+    editor = models.ForeignKey(Author, null=True, on_delete=models.SET_NULL,
+                               related_name="+")                     # N:0..1
     tags = models.ManyToManyField("Tag")                            # M:N
     profile = models.OneToOneField("Profile", on_delete=models.CASCADE)  # 1:1
 
     class Meta:
         db_table = "catalog_book"
 ```
+
+A `ForeignKey(null=True)` is drawn optional on the referenced side (`}o--o|`),
+and a `ForeignKey(unique=True)` is drawn 1:1 (`|o--||`). A `unique=True`
+column is marked `UK`.
 
 Relationship targets are resolved by class name, including `"self"` and
 `"app.Model"` string references. A `ManyToManyField(through=LinkModel)` is drawn

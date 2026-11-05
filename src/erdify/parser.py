@@ -233,7 +233,7 @@ class ASTDatabaseParser:
         # First pass: parse all files and collect class definitions
         for model_file in model_files:
             try:
-                with open(model_file, "r") as f:
+                with open(model_file, encoding="utf-8") as f:  # PEP 3120 default
                     content = f.read()
                 tree = ast.parse(content)
                 self._file_trees[model_file] = tree
@@ -647,6 +647,12 @@ class ASTDatabaseParser:
         entity.fields = list(fields_dict.values())
         entity.relationships = list(relationships_dict.values())
 
+        # Single-column UniqueConstraint / unique Index in __table_args__ (#218).
+        unique_cols = self._table_args_unique_columns(class_node)
+        for f in entity.fields:
+            if f.name in unique_cols and not f.is_primary_key:
+                f.is_unique = True
+
         # Django implicitly adds an `id` primary key (BigAutoField since Django 3.2)
         # when no field declares primary_key=True.
         if source == "django" and not any(f.is_primary_key for f in entity.fields):
@@ -667,6 +673,63 @@ class ASTDatabaseParser:
         self._entities[class_node.name] = entity
 
     _is_structural_link_table = staticmethod(is_structural_link_table)
+
+    @classmethod
+    def _table_args_unique_columns(cls, class_node: ast.ClassDef) -> set[str]:
+        """Columns made unique on their own by the class's ``__table_args__``.
+
+        Recognizes ``UniqueConstraint("col")`` and ``Index("name", "col",
+        unique=True)`` with exactly one column (a string or a bare reference to
+        a column declared in the class body), in a tuple/list ``__table_args__``
+        (a trailing options dict is ignored). Composite constraints and partial
+        indexes (``*_where=``) do not make a column unique and are skipped.
+        """
+        value: ast.expr | None = None
+        for node in class_node.body:
+            if isinstance(node, ast.Assign):
+                if any(isinstance(t, ast.Name) and t.id == "__table_args__" for t in node.targets):
+                    value = node.value
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.target.id == "__table_args__"
+            ):
+                value = node.value
+        if not isinstance(value, (ast.Tuple, ast.List)):
+            return set()
+
+        columns: set[str] = set()
+        for item in value.elts:
+            if cls._is_call_to(item, "UniqueConstraint"):
+                cols = item.args
+            elif cls._is_call_to(item, "Index"):
+                if not any(
+                    kw.arg == "unique" and isinstance(kw.value, ast.Constant) and kw.value.value
+                    for kw in item.keywords
+                ):
+                    continue
+                # A partial index (postgresql_where=, sqlite_where=, ...) is only
+                # unique over a subset of rows, so it does not imply a 1:1. A
+                # literal `*_where=None` is "no predicate", i.e. not partial.
+                if any(
+                    kw.arg
+                    and kw.arg.endswith("_where")
+                    and not (isinstance(kw.value, ast.Constant) and kw.value.value is None)
+                    for kw in item.keywords
+                ):
+                    continue
+                cols = item.args[1:]  # first positional arg is the index name
+            else:
+                continue
+            if len(cols) == 1:
+                col = cols[0]
+                if isinstance(col, ast.Constant) and isinstance(col.value, str):
+                    columns.add(col.value)
+                elif isinstance(col, ast.Name):
+                    # A bare reference to a column declared earlier in the class
+                    # body, e.g. UniqueConstraint(account_id).
+                    columns.add(col.id)
+        return columns
 
     def _parse_core_association_tables(self) -> None:
         """Synthesize link entities from module-level Core ``Table(...)`` assignments.
@@ -895,15 +958,21 @@ class ASTDatabaseParser:
             return None
 
         is_nullable = False
+        is_unique = False
         for keyword in call.keywords:
-            if keyword.arg == "null" and isinstance(keyword.value, ast.Constant):
+            if not isinstance(keyword.value, ast.Constant):
+                continue
+            if keyword.arg == "null":
                 is_nullable = bool(keyword.value.value)
+            elif keyword.arg == "unique":
+                is_unique = bool(keyword.value.value)
 
         return FieldInfo(
             name=f"{name}_id",
             type_str=self._django_display_type("BigAutoField"),
             is_foreign_key=True,
             is_nullable=is_nullable,
+            is_unique=is_unique,
             foreign_table=f"{self._django_target_table(target)}.id",
         )
 
@@ -938,6 +1007,7 @@ class ASTDatabaseParser:
         """Parse a Django column field (``models.CharField(...)``, etc.)."""
         is_primary_key = False
         is_nullable = False
+        is_unique = False
         default_value = None
 
         for keyword in call.keywords:
@@ -945,6 +1015,8 @@ class ASTDatabaseParser:
                 is_primary_key = bool(keyword.value.value)
             elif keyword.arg == "null" and isinstance(keyword.value, ast.Constant):
                 is_nullable = bool(keyword.value.value)
+            elif keyword.arg == "unique" and isinstance(keyword.value, ast.Constant):
+                is_unique = bool(keyword.value.value)
             elif keyword.arg == "default" and isinstance(keyword.value, ast.Constant):
                 default_value = repr(keyword.value.value)
 
@@ -957,8 +1029,9 @@ class ASTDatabaseParser:
             name=name,
             type_str=type_str,
             is_primary_key=is_primary_key,
-            is_nullable=is_nullable,
+            is_nullable=is_nullable and not is_primary_key,
             default_value=default_value,
+            is_unique=is_unique and not is_primary_key,
         )
 
     def _django_choices_enum(self, call: ast.Call) -> str | None:
@@ -1061,6 +1134,7 @@ class ASTDatabaseParser:
         is_foreign_key = False
         foreign_table = None
         index = False
+        is_unique = False
 
         if node.value and isinstance(node.value, ast.Call):
             if isinstance(node.value.func, ast.Name) and node.value.func.id in (
@@ -1075,6 +1149,17 @@ class ASTDatabaseParser:
                         foreign_table = str(keyword.value.value)
                     elif keyword.arg == "index" and isinstance(keyword.value, ast.Constant):
                         index = bool(keyword.value.value)
+                    elif keyword.arg == "unique" and isinstance(keyword.value, ast.Constant):
+                        is_unique = bool(keyword.value.value)
+                    elif (
+                        keyword.arg == "nullable"
+                        and isinstance(keyword.value, ast.Constant)
+                        and isinstance(keyword.value.value, bool)
+                    ):
+                        # An explicit nullable=True/False is what the database gets
+                        # and overrides the annotation; nullable=None means
+                        # "unspecified", so the annotation still decides.
+                        is_nullable = keyword.value.value
 
                 # SQLAlchemy: ForeignKey("table.col") passed to mapped_column()
                 fk_target = self._extract_foreign_key_arg(node.value)
@@ -1094,6 +1179,17 @@ class ASTDatabaseParser:
         # Extract default value
         default_value = self._extract_default_value(node)
 
+        # A primary key is never NULL in the database. SQLModel's idiomatic
+        # `id: int | None = Field(default=None, primary_key=True)` only means
+        # "unset until the database assigns it", so drop the Optional and the
+        # `None` default rather than render the key as nullable (#217). Keyless
+        # sources (Pydantic/dataclass) describe objects, not tables: an inferred
+        # `id: int | None = None` there really is optional, so keep it.
+        if is_primary_key and model_kind in ("sqlmodel", "sqlalchemy"):
+            is_nullable = False
+            if default_value == "None":
+                default_value = None
+
         # Clean up type string: drop the optional wrapper without mangling
         # generic args (e.g. list[str] must keep its closing bracket).
         type_str = type_str.replace(" | None", "").strip()
@@ -1109,6 +1205,8 @@ class ASTDatabaseParser:
             foreign_table=foreign_table,
             index=index,
             default_value=default_value,
+            # is_unique is reserved for non-PK uniqueness (see FieldInfo).
+            is_unique=is_unique and not is_primary_key,
         )
 
     @staticmethod

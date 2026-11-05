@@ -114,7 +114,7 @@ class SqlSchemaParser:
             try:
                 # Read inside the try: an unreadable or non-UTF-8 file is a parse
                 # failure for this file only, like a syntax error.
-                text = f.read_text()
+                text = f.read_text(encoding="utf-8")
                 statements.extend(sqlglot.parse(text, dialect=self.dialect))
             except Exception as err:
                 print(f"Error parsing {f}: {err}", file=sys.stderr)
@@ -201,7 +201,8 @@ class SqlSchemaParser:
             name=name,
             type_str=type_str,
             is_primary_key=is_pk,
-            is_nullable=not not_null,
+            # A PRIMARY KEY column is implicitly NOT NULL (#217).
+            is_nullable=not not_null and not is_pk,
             default_value=default,
             is_unique=is_unique,
         )

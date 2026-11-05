@@ -1,5 +1,5 @@
 ---
-description: "What the AST parser cannot see in Python models — runtime-constructed classes, __table_args__, composite foreign keys, sa_column — and what to do about each."
+description: "What the AST parser cannot see in Python models — runtime-constructed classes, most of __table_args__, composite foreign keys, sa_column — and what to do about each."
 ---
 
 # Python Parsing Limitations
@@ -63,9 +63,9 @@ class Computed(SQLModel, table=True):
 The same applies to a `declared_attr`-computed `__tablename__`. Django's
 `Meta.db_table` *is* read when it is a literal.
 
-## `__table_args__` is not read
+## `__table_args__` is mostly not read
 
-Nothing inside `__table_args__` reaches the diagram:
+Only single-column uniqueness inside `__table_args__` reaches the diagram:
 
 ```python
 class Match(Base):
@@ -80,8 +80,13 @@ class Match(Base):
 - **Composite foreign keys** are missed entirely — the columns appear as plain
   columns and no relationship is drawn. (Composite *primary* keys are fine; see
   below.)
-- `UniqueConstraint` and `Index` do not set the `UK` / index markers. Only
-  per-column `unique=` / `index=` arguments do.
+- A single-column `UniqueConstraint("col")` or `Index("ix", "col", unique=True)`
+  marks `col` as unique (`UK`, and 1:1 when it is a foreign key). Composite
+  constraints, partial indexes (`postgresql_where=` / `sqlite_where=`) and
+  non-unique `Index` entries are ignored; the index marker comes only from
+  per-column `index=`. `__table_args__` is read only when it is assigned
+  directly in the model class: one inherited from a mixin or returned by a
+  `@declared_attr` method is not seen.
 - `schema=` is ignored; entities are not namespaced.
 
 Django's `Meta.unique_together` and `Meta.indexes` are ignored for the same
@@ -140,7 +145,7 @@ names, so it can be wrong in both directions.
 | Runtime-constructed models (`type()`, registries) | Not supported by design (no imports) |
 | Fields added via `setattr` / loops / `if TYPE_CHECKING` | Not supported |
 | Non-literal `__tablename__` / `declared_attr` | Falls back to the class name, silently |
-| `__table_args__` (composite FKs, `UniqueConstraint`, `Index`, `schema=`) | Not read |
+| `__table_args__` (composite FKs, composite `UniqueConstraint`, partial or non-unique `Index`, `schema=`) | Not read; single-column `UniqueConstraint` / unique `Index` is read |
 | Django `Meta.unique_together` / `Meta.indexes` | Not read |
 | Composite foreign keys | Not supported |
 | Foreign keys inside `sa_column=Column(...)` | Not detected |

@@ -80,11 +80,12 @@ class _ERGenerator:
         forces a parent to have a child, so it is never a mandatory ``||``.
         The parent end (right) is how many parents a child has, governed by FK
         nullability: exactly one (``||``) when NOT NULL, zero-or-one (``o|``)
-        when nullable. A unique FK is thus rendered 1:1 (``|o--||`` / ``|o--o|``).
+        when nullable (#216). A unique FK is thus rendered 1:1 (``|o--||`` /
+        ``|o--o|``), a non-unique one N:1 (``}o--||`` / ``}o--o|``).
         """
-        if not field.is_unique:
-            return "}o--||"
-        return "|o--o|" if field.is_nullable else "|o--||"
+        child = "|o" if field.is_unique else "}o"
+        parent = "o|" if field.is_nullable else "||"
+        return f"{child}--{parent}"
 
     def _entity_by_table(self, table_name: str) -> EntityInfo | None:
         """Find an entity by its table name."""

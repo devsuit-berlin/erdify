@@ -286,6 +286,18 @@ def test_non_unique_fk_still_renders_many_to_one():
     assert "child }o--|| parent" in _direct_rel_lines(fk)
 
 
+def test_nullable_non_unique_fk_renders_optional_parent():
+    """A nullable FK means the child may have no parent: parent end is o| (#216)."""
+    fk = FieldInfo(
+        name="parent_id",
+        type_str="int",
+        is_foreign_key=True,
+        foreign_table="parent.id",
+        is_nullable=True,
+    )
+    assert "child }o--o| parent" in _direct_rel_lines(fk)
+
+
 def test_mermaid_unique_column_shows_uk():
     entities = {
         "profile": EntityInfo(

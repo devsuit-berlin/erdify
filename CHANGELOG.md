@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A nullable foreign key is now drawn as optional on the referenced side
+  (`}o--o|` instead of `}o--||`), in PlantUML and Mermaid. An explicit
+  `nullable=` on `Field(...)` / `mapped_column(...)` now takes precedence over
+  the type annotation
+  ([#216](https://github.com/devsuit-berlin/erdify/issues/216)).
+- A primary key is no longer reported as nullable, in Python models and SQL
+  DDL (a `PRIMARY KEY` column is implicitly `NOT NULL`). SQLModel's idiomatic
+  `id: int | None = Field(default=None, primary_key=True)` now renders as a
+  plain `PK`, without `nullable` / `default None` (`int? = None` in PlantUML),
+  and JSON reports `"nullable": false, "default": null` for it
+  ([#217](https://github.com/devsuit-berlin/erdify/issues/217)).
+- A unique foreign key in Python models is now drawn 1:1 (`|o--||`, or `|o--o|`
+  when nullable) instead of N:1, and unique columns get the `UK` marker.
+  Uniqueness is read from `Field(unique=True)` (SQLModel),
+  `mapped_column(unique=True)` (SQLAlchemy), `unique=True` (Django, including
+  `ForeignKey`), and a single-column `UniqueConstraint` or
+  `Index(..., unique=True)` in `__table_args__`. Previously only SQL DDL was
+  checked ([#218](https://github.com/devsuit-berlin/erdify/issues/218)).
+- erdify now always reads and writes text files as UTF-8, independent of the
+  locale: model and `.sql` files, the `-o` output (and its `--check`), and the
+  `--inject` Markdown file. Under a C/POSIX locale (as on some CI runners), a
+  non-ASCII character anywhere in the Markdown file crashed `--inject` or made
+  `--inject --check` report an up-to-date region as stale, and a non-ASCII
+  model file was skipped. `PYTHONUTF8=1` is no longer needed as a workaround
+  ([#219](https://github.com/devsuit-berlin/erdify/issues/219)).
+
+### Output changes
+
+The fixes above change the generated diagram for any schema with a nullable
+foreign key, an `Optional` primary key (or any SQL primary key without an
+explicit `NOT NULL`), or a unique column. `--format json` changes accordingly
+(`nullable` / `default` on primary keys, `unique` on the newly detected
+columns). If you commit the
+diagram and gate CI on `--check` (or the `erdify-check` pre-commit hook), the
+check fails once after upgrading: regenerate the diagram and commit it. See
+[Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
+
 ## [1.1.0] - 2026-10-26
 
 ### Added

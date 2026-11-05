@@ -40,6 +40,7 @@ def test_create_table_columns_types_nullability_default(tmp_path: Path) -> None:
     assert user.source == "sql"
     cols = {f.name: f for f in user.fields}
     assert cols["id"].is_primary_key is True
+    assert cols["id"].is_nullable is False  # PRIMARY KEY implies NOT NULL (#217)
     assert cols["email"].is_nullable is False
     assert cols["nickname"].is_nullable is True  # no NOT NULL -> nullable
     assert cols["is_active"].default_value is not None
@@ -357,7 +358,7 @@ def test_import_erdify_does_not_import_sqlglot():
 # ---------------------------------------------------------------------------
 # Task 10: golden integration fixture + Python↔SQL parity test
 # ---------------------------------------------------------------------------
-from erdify.generator import generate_plantuml  # noqa: E402
+from erdify.generator import generate_mermaid, generate_plantuml  # noqa: E402
 
 FIX = Path(__file__).parent / "fixtures" / "sql"
 
@@ -398,3 +399,32 @@ def test_sql_and_python_render_equivalent_structure(tmp_path: Path) -> None:
         }
 
     assert fk_pairs(sql_entities) == fk_pairs(py_entities) == {("order", "user")}
+
+
+def test_table_level_primary_key_is_not_nullable(tmp_path: Path) -> None:
+    """A table-level PRIMARY KEY (...) also implies NOT NULL (#217)."""
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE a (x INTEGER, y INTEGER, PRIMARY KEY (x, y));
+        """,
+    )
+    assert not any(f.is_nullable for f in entities["a"].fields)
+
+
+def test_pk_that_is_also_fk_keeps_mandatory_parent(tmp_path: Path) -> None:
+    """A PK column is NOT NULL, so its FK edge must not turn optional (#216/#217)."""
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE "order" (id INTEGER PRIMARY KEY);
+        CREATE TABLE order_line (
+            order_id INTEGER REFERENCES "order"(id),
+            line_no INTEGER,
+            note TEXT,
+            PRIMARY KEY (order_id, line_no)
+        );
+        """,
+    )
+    out = generate_mermaid(entities)
+    assert "order_line }o--|| order" in out
