@@ -684,8 +684,9 @@ class ASTDatabaseParser:
         """Map attribute name -> explicit DB column name for a class and its bases.
 
         See :meth:`_explicit_column_name` for the recognized forms. A column
-        without an explicit name is absent from the map, and a subclass that
-        redeclares an attribute without one drops the inherited name.
+        without an explicit name maps to itself, so a redeclaration without one
+        overrides an inherited name through the same merge order as the fields
+        (later bases and the class body win), including in diamond hierarchies.
         """
         if class_node.name in visited:
             return {}
@@ -697,23 +698,29 @@ class ASTDatabaseParser:
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 db_name = self._explicit_column_name(node.value)
-                if db_name is not None:
-                    names[node.target.id] = db_name
-                else:
-                    names.pop(node.target.id, None)
+                names[node.target.id] = db_name if db_name is not None else node.target.id
         return names
 
     @classmethod
     def _explicit_column_name(cls, value: ast.expr | None) -> str | None:
-        """Return a column's explicit DB name, if its declaration sets one.
+        """Return the name a string constraint uses for this column, if explicit.
 
         Recognizes ``mapped_column("name", ...)`` / ``mapped_column(name="name")``,
         and SQLModel's ``Field(sa_column=Column("name", ...))`` /
-        ``Field(sa_column_kwargs={"name": "name"})``.
+        ``Field(sa_column_kwargs={"name": "name"})``. SQLAlchemy resolves a
+        constraint's string column through the column *key*, which defaults to
+        the name, so an explicit ``key=`` takes precedence.
         """
         if value is None:
             return None
         if cls._is_call_to(value, "mapped_column") or cls._is_call_to(value, "Column"):
+            for kw in value.keywords:
+                if (
+                    kw.arg == "key"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    return kw.value.value
             if (
                 value.args
                 and isinstance(value.args[0], ast.Constant)

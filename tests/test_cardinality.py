@@ -418,6 +418,34 @@ class TestExplicitColumnName:
         )
         assert not _field(_parse(tmp_path, src), "Profile", "account").is_unique
 
+    def test_key_takes_precedence(self, tmp_path: Path):
+        """String constraints resolve through the column key (#221)."""
+        src = self.SRC.format(constraint="UniqueConstraint('acct')").replace(
+            "mapped_column('account_id', ForeignKey('account.id'))",
+            "mapped_column('account_id', ForeignKey('account.id'), key='acct')",
+        )
+        assert _field(_parse(tmp_path, src), "Profile", "account").is_unique
+
+    def test_diamond_override_clears_inherited_name(self, tmp_path: Path):
+        src = (
+            "from sqlalchemy import ForeignKey, UniqueConstraint\n"
+            "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
+            "class Base(DeclarativeBase):\n    pass\n\n"
+            "class Account(Base):\n"
+            "    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
+            "class Root:\n"
+            "    account: Mapped[int] = mapped_column('account_id', ForeignKey('account.id'))\n\n"
+            "class Left(Root):\n    pass\n\n"
+            "class Right(Root):\n"
+            "    account: Mapped[int] = mapped_column(ForeignKey('account.id'))\n\n"
+            "class Profile(Left, Right, Base):\n"
+            "    __tablename__ = 'profile'\n"
+            "    __table_args__ = (UniqueConstraint('account'),)\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+        )
+        assert _field(_parse(tmp_path, src), "Profile", "account").is_unique
+
     @pytest.mark.parametrize(
         "decl",
         [
