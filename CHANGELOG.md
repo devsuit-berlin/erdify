@@ -42,7 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#222](https://github.com/devsuit-berlin/erdify/issues/222)).
 - Django `ForeignKey(..., primary_key=True)` and
   `OneToOneField(..., primary_key=True)` now make `<name>_id` the primary key,
-  instead of adding a spurious implicit `id` column, and are drawn 1:1
+  instead of adding a spurious implicit `id` column, and are drawn 1:1. A
+  Django model that redeclares an inherited relationship attribute as a
+  different kind of field (e.g. a `OneToOneField` overridden by a
+  `ForeignKey`) no longer keeps the base's stale edge or column
   ([#224](https://github.com/devsuit-berlin/erdify/issues/224)).
 - erdify now always reads and writes text files as UTF-8, independent of the
   locale: model and `.sql` files, the `-o` output (and its `--check`), and the

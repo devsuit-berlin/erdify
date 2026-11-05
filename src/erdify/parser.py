@@ -934,10 +934,34 @@ class ASTDatabaseParser:
 
         # Then add/override with current class fields
         class_fields, class_rels = self._extract_class_fields(class_node, model_kind)
+        if model_kind == "django":
+            # A Django attribute can be stored under a different key depending
+            # on its kind (relationship `owner` vs. FK column `owner_id`), so a
+            # redeclaration must drop whatever the bases stored for it.
+            for attr in self._django_declared_names(class_node):
+                relationships_dict.pop(attr, None)
+                fields_dict.pop(attr, None)
+                inherited_fk = fields_dict.get(f"{attr}_id")
+                if inherited_fk is not None and inherited_fk.is_foreign_key:
+                    del fields_dict[f"{attr}_id"]
         fields_dict.update(class_fields)
         relationships_dict.update(class_rels)
 
         return fields_dict, relationships_dict
+
+    def _django_declared_names(self, class_node: ast.ClassDef) -> List[str]:
+        """Attribute names a Django model body declares as a model field."""
+        names: List[str] = []
+        for node in class_node.body:
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Call)
+                and self._django_field_type(node.value) is not None
+            ):
+                names.append(node.targets[0].id)
+        return names
 
     def _extract_class_fields(
         self, class_node: ast.ClassDef, model_kind: str

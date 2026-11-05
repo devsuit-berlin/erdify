@@ -605,3 +605,66 @@ class Settings(models.Model):
         entities = _parse(tmp_path, src)
         assert [f.name for f in entities["Settings"].fields] == ["id"]
         assert entities["Settings"].relationships == [("Account", "one_to_one", "owner")]
+
+
+class TestDjangoInheritedOverride:
+    """A subclass redeclaring a relationship attribute drops the inherited one."""
+
+    BASE = """
+from django.db import models
+
+
+class Account(models.Model):
+    pass
+
+
+class Other(models.Model):
+    pass
+
+
+class OwnedBase(models.Model):
+    owner = {base_decl}
+
+    class Meta:
+        abstract = True
+
+
+class Settings(OwnedBase):
+    owner = {sub_decl}
+"""
+
+    @pytest.mark.parametrize(
+        ("base_decl", "sub_decl", "fields", "rels"),
+        [
+            (  # relationship -> PK FK column
+                "models.OneToOneField(Account, on_delete=models.CASCADE)",
+                "models.OneToOneField(Other, on_delete=models.CASCADE, primary_key=True)",
+                ["owner_id"],
+                [],
+            ),
+            (  # relationship -> FK column
+                "models.OneToOneField(Account, on_delete=models.CASCADE)",
+                "models.ForeignKey(Other, on_delete=models.CASCADE)",
+                ["id", "owner_id"],
+                [],
+            ),
+            (  # FK column -> relationship
+                "models.ForeignKey(Account, on_delete=models.CASCADE)",
+                "models.OneToOneField(Other, on_delete=models.CASCADE)",
+                ["id"],
+                [("Other", "one_to_one", "owner")],
+            ),
+        ],
+    )
+    def test_override(self, tmp_path: Path, base_decl, sub_decl, fields, rels):
+        src = self.BASE.format(base_decl=base_decl, sub_decl=sub_decl)
+        entities = _parse(tmp_path, src)
+        settings = entities["Settings"]
+        assert [f.name for f in settings.fields] == fields
+        assert settings.relationships == rels
+        out = generate_mermaid(entities)
+        assert "Settings }o--|| Account" not in out
+        assert "Settings ||--|| Account" not in out
+        if "owner_id" in fields:
+            fk = _field(entities, "Settings", "owner_id")
+            assert fk.foreign_table and fk.foreign_table.startswith("other.")
