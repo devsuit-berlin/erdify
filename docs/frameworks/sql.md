@@ -67,7 +67,7 @@ sql_dialect = "postgres"
 | Foreign keys — inline (`col INT REFERENCES other(id)`) | ✅ | |
 | Foreign keys — table constraint (`FOREIGN KEY … REFERENCES …`) | ✅ | |
 | Foreign keys — `ALTER TABLE … ADD FOREIGN KEY` | ✅ | Two-pass resolution; forward references resolved after all tables are parsed |
-| `NOT NULL` | ✅ | Reflected in the `nullable` field attribute |
+| `NOT NULL` | ✅ | Reflected in the `nullable` field attribute. A primary-key column is always treated as `NOT NULL` (SQL standard), including under `--sql-dialect sqlite`, where a non-`INTEGER` or composite key of a rowid table technically accepts `NULL` (a legacy quirk SQLite documents as a bug) |
 | `DEFAULT` | ✅ | Default expression captured as a string |
 | `CREATE TYPE … AS ENUM` | ✅ | Requires `--sql-dialect postgres`; silently skipped under the generic dialect |
 | `CREATE INDEX` | ✅ (JSON only) | Detected and emitted in `--format json`; not drawn in PlantUML or Mermaid diagrams (consistent with the Indexes note in the [feature matrix](../features.md)) |
