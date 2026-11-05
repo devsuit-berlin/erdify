@@ -740,14 +740,17 @@ class ASTDatabaseParser:
                 if kw.arg == "sa_column":
                     return cls._explicit_column_name(kw.value)
                 if kw.arg == "sa_column_kwargs" and isinstance(kw.value, ast.Dict):
-                    for key, val in zip(kw.value.keys, kw.value.values):
-                        if (
-                            isinstance(key, ast.Constant)
-                            and key.value == "name"
-                            and isinstance(val, ast.Constant)
-                            and isinstance(val.value, str)
-                        ):
-                            return val.value
+                    opts = {
+                        key.value: val.value
+                        for key, val in zip(kw.value.keys, kw.value.values)
+                        if isinstance(key, ast.Constant)
+                        and isinstance(val, ast.Constant)
+                        and isinstance(val.value, str)
+                    }
+                    # As above: an explicit key wins over the name.
+                    found = opts.get("key", opts.get("name"))
+                    if isinstance(found, str):
+                        return found
         return None
 
     @classmethod
@@ -1258,9 +1261,10 @@ class ASTDatabaseParser:
         is_unique = False
 
         if node.value and isinstance(node.value, ast.Call):
-            if isinstance(node.value.func, ast.Name) and node.value.func.id in (
-                "Field",  # SQLModel
-                "mapped_column",  # SQLAlchemy
+            # Field() (SQLModel) / mapped_column() (SQLAlchemy), bare or qualified
+            # (e.g. orm.mapped_column).
+            if self._is_call_to(node.value, "Field") or self._is_call_to(
+                node.value, "mapped_column"
             ):
                 for keyword in node.value.keywords:
                     if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
@@ -1340,9 +1344,7 @@ class ASTDatabaseParser:
         candidates = list(call.args) + [kw.value for kw in call.keywords]
         for arg in candidates:
             if (
-                isinstance(arg, ast.Call)
-                and isinstance(arg.func, ast.Name)
-                and arg.func.id == "ForeignKey"
+                ASTDatabaseParser._is_call_to(arg, "ForeignKey")  # also sa.ForeignKey
                 and arg.args
                 and isinstance(arg.args[0], ast.Constant)
             ):
@@ -1360,14 +1362,12 @@ class ASTDatabaseParser:
 
         # Field() / mapped_column() with default parameter
         if isinstance(node.value, ast.Call):
-            if isinstance(node.value.func, ast.Name) and node.value.func.id in (
-                "Field",
-                "mapped_column",
-            ):
+            is_field = self._is_call_to(node.value, "Field")
+            if is_field or self._is_call_to(node.value, "mapped_column"):
                 # Positional default: only SQLModel's Field(default, ...).
                 # mapped_column()'s positional args are the column name, type
                 # and ForeignKey, never a default (#221).
-                if node.value.args and node.value.func.id == "Field":
+                if node.value.args and is_field:
                     first_arg = node.value.args[0]
                     if isinstance(first_arg, ast.Constant):
                         return repr(first_arg.value)

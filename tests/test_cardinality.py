@@ -391,14 +391,17 @@ class TestExplicitColumnName:
         [
             "mapped_column(ForeignKey('account.id'), name='account_id')",
             "orm.mapped_column('account_id', ForeignKey('account.id'))",
+            "orm.mapped_column('account_id', sa.ForeignKey('account.id'))",
         ],
     )
     def test_other_name_forms(self, tmp_path: Path, decl: str):
         src = self.SRC.format(constraint="UniqueConstraint('account_id')").replace(
             "mapped_column('account_id', ForeignKey('account.id'))", decl
         )
-        src = "from sqlalchemy import orm\n" + src
-        assert _field(_parse(tmp_path, src), "Profile", "account").is_unique
+        src = "import sqlalchemy as sa\nfrom sqlalchemy import orm\n" + src
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Profile", "account").is_unique
+        assert 'Profile |o--|| Account : "account"' in generate_mermaid(entities)
 
     def test_subclass_override_drops_inherited_name(self, tmp_path: Path):
         src = (
@@ -451,6 +454,8 @@ class TestExplicitColumnName:
         [
             "Field(sa_column=Column('acct', ForeignKey('account.id')))",
             "Field(foreign_key='account.id', sa_column_kwargs={'name': 'acct'})",
+            # an explicit key wins over the name
+            "Field(foreign_key='account.id', sa_column_kwargs={'name': 'x', 'key': 'acct'})",
         ],
     )
     def test_sqlmodel_explicit_column_name(self, tmp_path: Path, decl: str):
