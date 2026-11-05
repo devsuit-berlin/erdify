@@ -144,6 +144,22 @@ class Note(Base):
         assert 'Note }o--o| Account : "a_id"' in out
         assert 'Note }o--|| Account : "b_id"' in out
 
+    def test_nullable_none_keeps_annotation(self, tmp_path: Path):
+        """nullable=None is SQLAlchemy's "unspecified": the annotation decides."""
+        src = (
+            SQLALCHEMY_TABLE_ARGS
+            + """
+
+class Memo(Base):
+    __tablename__ = "memo"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    a_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=None)
+"""
+        )
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Memo", "a_id").is_nullable
+        assert 'Memo }o--o| Account : "a_id"' in generate_mermaid(entities)
+
     def test_django_null_fk(self, tmp_path: Path):
         out = generate_mermaid(_parse(tmp_path, DJANGO))
         assert 'Profile }o--o| Account : "referrer_id"' in out
@@ -299,9 +315,9 @@ class TestTableArgsForms:
         "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
         "class Profile(Base):\n"
         "    __tablename__ = 'profile'\n"
-        "    __table_args__ = {args}\n"
         "    id: Mapped[int] = mapped_column(primary_key=True)\n"
         "    account_id: Mapped[int] = mapped_column(ForeignKey('account.id'))\n"
+        "    __table_args__ = {args}\n"
     )
 
     @pytest.mark.parametrize(
@@ -311,6 +327,8 @@ class TestTableArgsForms:
             ("(sa.Index('ix', 'account_id', unique=True),)", True),
             ("(sa.Index('ix', 'account_id', unique=False),)", False),
             ("{'schema': 'app'}", False),  # dict-only
+            ("(sa.UniqueConstraint(account_id),)", True),  # bare column reference
+            ("(sa.Index('ix', account_id, unique=True),)", True),
         ],
     )
     def test_forms(self, tmp_path: Path, args: str, unique: bool):

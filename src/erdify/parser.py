@@ -679,7 +679,8 @@ class ASTDatabaseParser:
         """Columns made unique on their own by the class's ``__table_args__``.
 
         Recognizes ``UniqueConstraint("col")`` and ``Index("name", "col",
-        unique=True)`` with exactly one column, in a tuple/list ``__table_args__``
+        unique=True)`` with exactly one column (a string or a bare reference to
+        a column declared in the class body), in a tuple/list ``__table_args__``
         (a trailing options dict is ignored). Composite constraints and partial
         indexes (``*_where=``) do not make a column unique and are skipped.
         """
@@ -718,6 +719,10 @@ class ASTDatabaseParser:
                 col = cols[0]
                 if isinstance(col, ast.Constant) and isinstance(col.value, str):
                     columns.add(col.value)
+                elif isinstance(col, ast.Name):
+                    # A bare reference to a column declared earlier in the class
+                    # body, e.g. UniqueConstraint(account_id).
+                    columns.add(col.id)
         return columns
 
     def _parse_core_association_tables(self) -> None:
@@ -1140,10 +1145,15 @@ class ASTDatabaseParser:
                         index = bool(keyword.value.value)
                     elif keyword.arg == "unique" and isinstance(keyword.value, ast.Constant):
                         is_unique = bool(keyword.value.value)
-                    elif keyword.arg == "nullable" and isinstance(keyword.value, ast.Constant):
-                        # An explicit nullable= is what the database gets, and it
-                        # overrides the Optional-ness of the annotation.
-                        is_nullable = bool(keyword.value.value)
+                    elif (
+                        keyword.arg == "nullable"
+                        and isinstance(keyword.value, ast.Constant)
+                        and isinstance(keyword.value.value, bool)
+                    ):
+                        # An explicit nullable=True/False is what the database gets
+                        # and overrides the annotation; nullable=None means
+                        # "unspecified", so the annotation still decides.
+                        is_nullable = keyword.value.value
 
                 # SQLAlchemy: ForeignKey("table.col") passed to mapped_column()
                 fk_target = self._extract_foreign_key_arg(node.value)
