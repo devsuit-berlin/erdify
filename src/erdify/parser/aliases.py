@@ -23,7 +23,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Dict, Iterable, List, Mapping, NamedTuple, Set, Tuple
 
-from .annotations import defines_column_alias, expand_aliases
+from .annotations import defines_column_alias, expand_aliases, parse_quoted
 
 #: A name looked up at a line of a file (``None``: the whole module).
 _Lookup = Tuple[Path, str, "int | None"]
@@ -275,15 +275,29 @@ class AliasResolver:
             return self._resolve(target, binding.original, None, stack)
         if binding.kind != "alias" or binding.value is None:
             return None
-        # Names inside the alias resolve where, and when, it is defined (#249).
+        # Names inside the alias resolve where, and when, it is defined (#249),
+        # also inside a quoted base (`Annotated["intpk", ...]`).
         local: Dict[str, ast.expr] = {}
-        for sub in ast.walk(binding.value):
-            if isinstance(sub, ast.Name) and sub.id not in local:
-                inner = self._resolve(file, sub.id, binding.line, stack)
+        for name in self._referenced_names(binding.value):
+            if name not in local:
+                inner = self._resolve(file, name, binding.line, stack)
                 if inner is not None:
-                    local[sub.id] = inner
+                    local[name] = inner
         expanded = expand_aliases(binding.value, local)
         return expanded if defines_column_alias(expanded) else None
+
+    @classmethod
+    def _referenced_names(cls, node: ast.expr) -> List[str]:
+        """Names ``node`` mentions, also inside quoted type expressions."""
+        names: List[str] = []
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Name):
+                names.append(sub.id)
+            elif isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                parsed = parse_quoted(sub)
+                if parsed is not None:
+                    names.extend(cls._referenced_names(parsed))
+        return names
 
     def _find_module(self, file: Path, module: str | None, level: int) -> Path | None:
         """The scanned file an import refers to, ``_AMBIGUOUS``, or None (not scanned)."""
@@ -298,7 +312,8 @@ class AliasResolver:
                 base = base.parent
             if parts:
                 stem = base.joinpath(*parts)
-                candidates = [stem.parent / f"{stem.name}.py", stem / "__init__.py"]
+                # A package wins over a module file of the same name, as in Python.
+                candidates = [stem / "__init__.py", stem.parent / f"{stem.name}.py"]
             else:  # `from . import x`: the package itself
                 candidates = [base / "__init__.py"]
             found = next((c for c in candidates if c in self._trees), None)
@@ -309,6 +324,11 @@ class AliasResolver:
                 m
                 for m in self._suffix_index().get(tuple(parts), [])
                 if self._root_contains(m, len(parts), file)
+            ]
+            packages = {m.parent for m in matches if m.name == "__init__.py"}
+            # `coltypes.py` beside a `coltypes/` package is shadowed by it.
+            matches = [
+                m for m in matches if m.name == "__init__.py" or m.with_suffix("") not in packages
             ]
             found = matches[0] if len(matches) == 1 else (_AMBIGUOUS if matches else None)
         self._modules[key] = found

@@ -991,3 +991,40 @@ class Account(Base):
         entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
         f = _field(entities, "id")
         assert (f.type_str, f.is_primary_key, f.index) == ("UUID", True, False)
+
+
+class TestCopilotPr253Round3:
+    ALIAS = TestPythonScoping.ALIAS
+
+    def test_quoted_alias_base(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+intpk = Annotated[int, mapped_column(primary_key=True)]
+indexedpk = Annotated["intpk", mapped_column(index=True)]
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[indexedpk]
+""",
+        )
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    @pytest.mark.parametrize(
+        "head", ["from .coltypes import intpk\n", "from coltypes import intpk\n"]
+    )
+    def test_package_shadows_same_named_module(self, tmp_path: Path, head: str):
+        (tmp_path / "coltypes").mkdir()
+        (tmp_path / "coltypes" / "__init__.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "coltypes.py").write_text(
+            self.ALIAS.replace("primary_key=True", "index=True"), encoding="utf-8"
+        )
+        (tmp_path / "models.py").write_text(
+            head + HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[intpk]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        f = _field(entities, "id")
+        assert (f.is_primary_key, f.index) == (True, False)
