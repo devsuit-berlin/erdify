@@ -74,6 +74,11 @@ class TestKeylessReferences:
             ("tuple[User, ...]", "many", False),
             ("dict[str, User]", "many", False),
             ("AbstractSet[User]", "many", False),
+            ("MutableSequence[User]", "many", False),
+            ("FrozenSet[User]", "many", False),
+            ("Tuple[User, ...]", "many", False),
+            ("Mapping[str, User]", "many", False),
+            ("MutableMapping[str, User]", "many", False),
             ("Iterable[User]", "many", False),
             ("deque[User]", "many", False),
             ("Union[User, NoneType]", "one", True),
@@ -184,8 +189,9 @@ class TestRelationshipTargets:
             ('Mapped[typing.Optional["Team"]]', "one", True),
             ('Mapped[List["Team"]]', "many", False),
             ('Mapped["models.Team"]', "one", False),
+            ('WriteOnlyMapped["Team"]', "many", False),  # collection-only wrappers
+            ('DynamicMapped["Team"]', "many", False),
             ('WriteOnlyMapped[list["Team"]]', "many", False),
-            ('DynamicMapped["Team"]', "one", False),
             ('Mapped[set["Team"]]', "many", False),
             ('Mapped[dict[str, "Team"]]', "many", False),
         ],
@@ -289,3 +295,30 @@ class TestQualifiedRelationshipCall:
         src = SQLMODEL.replace("= Relationship()", "= sqlmodel.Relationship()")
         member = _parse(tmp_path, src.format(annotation='Optional["Team"]'))["Member"]
         assert member.relationships == [("Team", "one", "team")]
+
+
+class TestJsonOutput:
+    def test_keyless_field_moves_to_relationships(self, tmp_path: Path):
+        import json
+
+        from erdify.generator import generate_json
+
+        doc = json.loads(
+            generate_json(_parse(tmp_path, PYDANTIC.format(annotation="Union[User, None]")))
+        )
+        post = next(e for e in doc["entities"] if e["name"] == "Post")
+        assert [f["name"] for f in post["fields"]] == ["id"]
+        assert post["relationships"] == [
+            {"target": "User", "type": "one", "attribute": "ref", "nullable": True}
+        ]
+
+    def test_unresolvable_relationship_is_not_listed(self, tmp_path: Path):
+        import json
+
+        from erdify.generator import generate_json
+
+        entities = _parse(tmp_path, SQLALCHEMY.format(annotation='Mapped[Union["Team", int]]'))
+        member = next(
+            e for e in json.loads(generate_json(entities))["entities"] if e["name"] == "Member"
+        )
+        assert member["relationships"] == []

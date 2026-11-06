@@ -15,14 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - optional: `Union[User, None]`, `None | User`, `typing.Optional[User]`, and
     `"None"` as a string forward reference;
   - wrappers: Pydantic's `Annotated[User | None, Field(...)]`, and
-    SQLAlchemy's `WriteOnlyMapped[...]` / `DynamicMapped[...]` besides
-    `Mapped[...]`;
+    SQLAlchemy's collection-only `WriteOnlyMapped["X"]` / `DynamicMapped["X"]`
+    (drawn as 1:N);
   - module-qualified classes in `relationship()` / `Relationship()`
     (`Mapped["models.Team"]`), and module-qualified calls
     (`orm.relationship()`, `sqlmodel.Relationship()`);
   - collections: `set`, `frozenset`, `Sequence`, `Iterable`, `deque`,
     `tuple[User, ...]` and a mapping's value type (`dict[str, User]`,
-    SQLAlchemy keyed-dict collections) besides `list`, nested lists included;
+    SQLAlchemy keyed-dict collections) besides `list` (nested lists keep
+    working);
   - `NoneType` as the optional part (`Union[User, NoneType]`).
 
   For Pydantic and dataclass models, such a field was rendered as a column
@@ -44,7 +45,9 @@ of these spellings: a Pydantic / dataclass column with the raw type becomes an
 edge, and a SQLModel / SQLAlchemy relationship gains its edge unless a foreign
 key already draws it. In `--format json`, the Pydantic / dataclass field moves
 from `fields` to `relationships`, a relationship's `target` becomes the class
-name, and a relationship that names no single class is dropped. If you commit
+name, its `type` becomes `many` for `set` / `Sequence` / `tuple[X, ...]` /
+mapping collections and `WriteOnlyMapped` / `DynamicMapped` (previously only
+`list` counted), and a relationship that names no single class is dropped. If you commit
 the diagram and gate CI on `--check` (or the `erdify-check` pre-commit hook),
 the check fails once after upgrading: regenerate the diagram and commit it. See
 [Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).

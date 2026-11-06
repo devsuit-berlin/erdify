@@ -132,9 +132,9 @@ bare = relationship("Coach")                          # ignored
 ```
 
 The annotation must name **exactly one class**, possibly optional (`X | None`,
-`Optional[X]`, `Union[X, None]`), wrapped (`Mapped`, `WriteOnlyMapped`,
-`DynamicMapped`, `Annotated`), or in a collection (`list`, `set`, `Sequence`,
-`Iterable`, `tuple[X, ...]`, a mapping's value). A union of several classes
+`Optional[X]`, `Union[X, None]`), wrapped (`Mapped`, `Annotated`), or in a
+collection (`list`, `set`, `Sequence`, `Iterable`, `tuple[X, ...]`, a mapping's
+value, and SQLAlchemy's collection-only `WriteOnlyMapped` / `DynamicMapped`). A union of several classes
 (`Mapped[Union["Cat", "Dog"]]`) names no single class, so nothing is drawn for
 it. A type alias (`Mapped[ChildList]`) is taken as a class name, so it draws an
 edge only if a model of that name exists. A module-qualified name

@@ -1817,7 +1817,9 @@ class ASTDatabaseParser:
         return (ref.target, "many" if ref.many else "one", attr, ref.nullable and not ref.many)
 
     #: Wrappers whose first argument is the annotated type itself (metadata ignored).
-    _TRANSPARENT_WRAPPERS = frozenset({"Mapped", "WriteOnlyMapped", "DynamicMapped", "Annotated"})
+    _TRANSPARENT_WRAPPERS = frozenset({"Mapped", "Annotated"})
+    #: SQLAlchemy wrappers that only annotate collections: ``WriteOnlyMapped["X"]``.
+    _MANY_WRAPPERS = frozenset({"WriteOnlyMapped", "DynamicMapped"})
     #: Single-argument collections of a model: a "many" reference.
     _MANY_CONTAINERS = frozenset(
         {
@@ -1863,12 +1865,12 @@ class ASTDatabaseParser:
         Walks the annotation's syntax tree, so every spelling of the same type
         resolves alike (#229): ``X | None`` / ``None | X``, ``Optional[X]``,
         ``Union[X, None]``, string forward references (also ``"None"``),
-        ``Mapped`` / ``WriteOnlyMapped`` / ``DynamicMapped`` / ``Annotated``
-        wrappers, ``typing.``-qualified forms, module-qualified classes
-        (``schemas.User``, flagged ``qualified``), and collections: ``list``,
-        ``set``, ``Sequence`` and friends, ``tuple[X, ...]`` and a mapping's
-        value type. Returns None
-        when the annotation does not name exactly one class, such as
+        ``Mapped`` / ``Annotated`` wrappers, ``typing.``-qualified forms,
+        module-qualified classes (``schemas.User``, flagged ``qualified``),
+        and collections: ``list``, ``set``, ``Sequence`` and friends,
+        ``tuple[X, ...]``, a mapping's value type, and the collection-only
+        ``WriteOnlyMapped`` / ``DynamicMapped``. Returns None when the
+        annotation does not name exactly one class, such as
         ``Union[User, int]`` or ``tuple[User, int]``.
         """
         if isinstance(node, ast.Constant):
@@ -1893,6 +1895,8 @@ class ASTDatabaseParser:
             return None
         if name in cls._TRANSPARENT_WRAPPERS:
             return cls._annotation_reference(args[0], many)
+        if name in cls._MANY_WRAPPERS:
+            return cls._annotation_reference(args[0], True)
         if name == "Optional" and len(args) == 1:
             ref = cls._annotation_reference(args[0], many)
             return ref._replace(nullable=True) if ref else None
