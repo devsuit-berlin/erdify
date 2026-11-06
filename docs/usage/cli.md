@@ -176,11 +176,10 @@ defined in a scanned file is picked up too.
       erdify does not resolve. Drawing it would add an entity with no fields.
     ```
 
-    The Django model itself is still drawn as usual. Whether a response schema
-    belongs in an ERD at all — it is a projection of a table, not a table — is
-    an open question in
-    [issue #171](https://github.com/devsuit-berlin/erdify/issues/171); if you
-    have a view, that is the place for it.
+    The Django model itself is still drawn as usual. A response schema is a
+    projection of a table, not a table, so erdify does not draw it; see
+    [issue #171](https://github.com/devsuit-berlin/erdify/issues/171) for the
+    reasoning. If a projection view would help you, say so there.
 
 ## Empty results (`--allow-empty`)
 
