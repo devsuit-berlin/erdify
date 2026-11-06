@@ -130,6 +130,9 @@ class TestColumnNullability:
             ('Annotated[str, Field(description="Optional note")]', "str", False),
             # More spellings of an optional type.
             ("Union[int, NoneType]", "int", True),
+            ("int | type(None)", "int", True),
+            ("Union[int, type(None)]", "int", True),
+            ("int | type(int)", "int | type(int)", False),
             ("Optional[Optional[int]]", "int", True),
             ("typing.Union[int, None]", "int", True),
             ("Union[None]", "None", True),

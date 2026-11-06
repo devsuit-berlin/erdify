@@ -1859,7 +1859,10 @@ class ASTDatabaseParser:
 
     @classmethod
     def _is_none(cls, node: ast.expr) -> bool:
-        """``None`` or ``NoneType`` (``types.NoneType``), also quoted or in ``Annotated``."""
+        """``None``, ``NoneType`` (``types.NoneType``) or ``type(None)``.
+
+        Also when quoted or wrapped in ``Annotated``.
+        """
         if (
             isinstance(node, ast.Subscript)
             and cls._expr_name(node.value) == "Annotated"
@@ -1872,6 +1875,14 @@ class ASTDatabaseParser:
                 return True
             parsed = cls._parse_quoted(node)
             return parsed is not None and cls._is_none(parsed)
+        if isinstance(node, ast.Call):  # type(None)
+            return (
+                cls._expr_name(node.func) == "type"
+                and len(node.args) == 1
+                and not node.keywords
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value is None
+            )
         return cls._expr_name(node) == "NoneType"
 
     @classmethod
