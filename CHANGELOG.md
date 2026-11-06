@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-06
+
 ### Added
 
 - `EntityInfo.inverse_relationships` and an `inverse` key on each JSON
@@ -997,7 +999,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/devsuit-berlin/erdify/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/devsuit-berlin/erdify/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/devsuit-berlin/erdify/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/devsuit-berlin/erdify/compare/v1.1.0...v1.1.1
