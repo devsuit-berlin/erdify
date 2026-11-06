@@ -223,13 +223,14 @@ class _ERGenerator:
         of the same cardinality (``friends`` / ``blocked``, both M:N) stay two
         edges.
         """
+        connected = fk_pairs | link_pairs
         rels = [
             (entity, target, rel_type, attr)
             for entity in self.entities.values()
             for target, rel_type, attr in entity.relationships
             if target in self.entities
             and frozenset((entity.name, target))
-            not in (link_pairs if rel_type == "many_to_many" else fk_pairs | link_pairs)
+            not in (link_pairs if rel_type == "many_to_many" else connected)
         ]
         by_direction: Dict[Tuple[str, str], List[int]] = {}
         for i, (entity, target, _, _) in enumerate(rels):
