@@ -24,6 +24,9 @@ from typing import Dict, Iterable, List, Mapping, NamedTuple, Set, Tuple
 
 from .annotations import defines_column_alias, expand_aliases
 
+#: A name looked up at a line of a file (``None``: the whole module).
+_Lookup = Tuple[Path, str, "int | None"]
+
 #: ``_find_module`` result for an absolute import several scanned files match.
 _AMBIGUOUS = Path("<ambiguous>")
 
@@ -171,43 +174,59 @@ class AliasResolver:
         return scope
 
     def _exports(self, file: Path) -> List[str]:
-        """What ``from <file> import *`` binds: a literal ``__all__``, else public names."""
+        """What ``from <file> import *`` binds: the last literal ``__all__``, else public names."""
+        exports: List[str] | None = None
         for node in self._trees[file].body:
-            if (
-                isinstance(node, ast.Assign)
-                and any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets)
-                and isinstance(node.value, (ast.List, ast.Tuple))
-            ):
-                return [
-                    elt.value
-                    for elt in node.value.elts
-                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
-                ]
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else [node.target]
+                if isinstance(node, ast.AnnAssign)
+                else []
+            )
+            if any(isinstance(t, ast.Name) and t.id == "__all__" for t in targets):
+                value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+                exports = (
+                    [
+                        elt.value
+                        for elt in value.elts
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                    ]
+                    if isinstance(value, (ast.List, ast.Tuple))
+                    else None  # not a literal: unknown, fall back to public names
+                )
+        if exports is not None:
+            return exports
         return [name for name in self._scope(file, None) if not name.startswith("_")]
 
     # -- resolution ----------------------------------------------------------------
 
     def _resolve(
-        self, file: Path, name: str, line: int | None, stack: Tuple[Tuple[Path, str], ...]
+        self, file: Path, name: str, line: int | None, stack: Tuple[_Lookup, ...]
     ) -> ast.expr | None:
-        """The expanded column alias ``name`` refers to at ``line`` of ``file``, or None."""
+        """The expanded column alias ``name`` refers to at ``line`` of ``file``, or None.
+
+        The stack holds ``(file, name, line)``, so ``intpk = Annotated[intpk, ...]``
+        can refer to the earlier ``intpk`` while a real cycle (mutual imports)
+        still stops.
+        """
         key = (file, name, line)
         if key in self._resolved:
             return self._resolved[key]
-        if (file, name) in stack:
+        if key in stack:
             self._cycles += 1  # results computed under this cut-off depend on the stack
             return None
         cycles = self._cycles
         result = None
         binding = self._scope(file, line).get(name)
         if binding is not None:
-            result = self._resolve_binding(file, binding, stack + ((file, name),))
+            result = self._resolve_binding(file, binding, stack + (key,))
         if self._cycles == cycles:
             self._resolved[key] = result
         return result
 
     def _resolve_binding(
-        self, file: Path, binding: _Binding, stack: Tuple[Tuple[Path, str], ...]
+        self, file: Path, binding: _Binding, stack: Tuple[_Lookup, ...]
     ) -> ast.expr | None:
         if binding.kind == "import":
             target = self._find_module(file, binding.module, binding.level)

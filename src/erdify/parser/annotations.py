@@ -152,9 +152,7 @@ def column_type(node: ast.expr) -> Tuple[str, bool]:
     return ast.unparse(node), False
 
 
-def expand_aliases(
-    node: ast.expr, aliases: Mapping[str, ast.expr], stack: Tuple[str, ...] = ()
-) -> ast.expr:
+def expand_aliases(node: ast.expr, aliases: Mapping[str, ast.expr]) -> ast.expr:
     """``node`` with each column type alias replaced by its definition (#241).
 
     ``id: Mapped[intpk]`` with ``intpk = Annotated[int, mapped_column(...)]``
@@ -162,26 +160,25 @@ def expand_aliases(
     (``Mapped["intpk"]``). Only type positions are expanded: ``Annotated``
     metadata, ``Literal`` values and call arguments (``ForeignKey("user.id")``)
     are left alone, and so is a subscripted (generic) alias such as
-    ``Pk[int]``. An alias referring to itself is left as is. ``node`` itself
-    is never modified.
+    ``Pk[int]``. Each value in ``aliases`` must already be resolved where
+    it is defined: it is inserted as is, never expanded again with the
+    names of the place that uses it. ``node`` itself is never modified.
     """
     if not aliases or not _mentions_alias(node, aliases):
         return node
     if isinstance(node, ast.Name):
-        if node.id in aliases and node.id not in stack:
-            return expand_aliases(aliases[node.id], aliases, stack + (node.id,))
-        return node
+        return aliases.get(node.id, node)
     if isinstance(node, ast.Constant):
         parsed = parse_quoted(node)
         if parsed is None:
             return node
-        expanded = expand_aliases(parsed, aliases, stack)
+        expanded = expand_aliases(parsed, aliases)
         return expanded if expanded is not parsed else node
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return ast.BinOp(
-            left=expand_aliases(node.left, aliases, stack),
+            left=expand_aliases(node.left, aliases),
             op=node.op,
-            right=expand_aliases(node.right, aliases, stack),
+            right=expand_aliases(node.right, aliases),
         )
     if isinstance(node, ast.Subscript):
         name, args = subscript_parts(node)
@@ -192,10 +189,8 @@ def expand_aliases(
         ):
             return node
         # Annotated: only the type is a type position, not the metadata.
-        parts: List[ast.expr] = [expand_aliases(args[0], aliases, stack)] + (
-            args[1:]
-            if name == "Annotated"
-            else [expand_aliases(a, aliases, stack) for a in args[1:]]
+        parts: List[ast.expr] = [expand_aliases(args[0], aliases)] + (
+            args[1:] if name == "Annotated" else [expand_aliases(a, aliases) for a in args[1:]]
         )
         slice_: ast.expr = (
             ast.Tuple(elts=parts, ctx=ast.Load()) if isinstance(node.slice, ast.Tuple) else parts[0]

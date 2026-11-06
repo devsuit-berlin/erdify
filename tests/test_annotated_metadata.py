@@ -886,3 +886,57 @@ def test_mutual_imports_do_not_loop(tmp_path: Path):
     )
     entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
     assert _field(entities, "col").type_str == "intpk"
+
+
+class TestCopilotPr253:
+    def test_last_all_assignment_counts(self, tmp_path: Path):
+        """The last (annotated) __all__ exports nothing, so the star import keeps `intpk = int`."""
+        (tmp_path / "coltypes.py").write_text(
+            "from typing import Annotated\nfrom sqlalchemy.orm import mapped_column\n\n"
+            "intpk = Annotated[int, mapped_column(primary_key=True)]\n"
+            "__all__ = ['intpk']\n"
+            "__all__: list[str] = []\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "models.py").write_text(
+            "intpk = int\nfrom .coltypes import *\n"
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n    col: Mapped[intpk]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+        assert _field(entities, "col").type_str == "intpk"
+
+    def test_alias_rebinding_itself_uses_the_earlier_binding(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+intpk = Annotated[int, mapped_column(primary_key=True)]
+intpk = Annotated[intpk, "tag"]
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[intpk]
+""",
+        )
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_resolved_alias_is_not_re_expanded_at_the_use_site(self, tmp_path: Path):
+        (tmp_path / "keys.py").write_text(
+            "from typing import Annotated\nfrom uuid import UUID\n"
+            "from sqlalchemy.orm import mapped_column\n\n"
+            "Key = Annotated[UUID, mapped_column(primary_key=True)]\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "models.py").write_text(
+            "from .keys import Key\n"
+            + HEADER
+            + "\nUUID = Annotated[int, mapped_column(index=True)]\n\n\n"
+            "class Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[Key]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+        f = _field(entities, "id")
+        assert (f.type_str, f.is_primary_key, f.index) == ("UUID", True, False)
