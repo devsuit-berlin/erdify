@@ -46,6 +46,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removes every edge from PlantUML, Mermaid and HTML output, foreign-key edges
   included; previously only `--format json` honored it
   ([#232](https://github.com/devsuit-berlin/erdify/issues/232)).
+- A column's nullability and displayed type are now read from the
+  annotation's syntax tree, like model references since #229
+  ([#236](https://github.com/devsuit-berlin/erdify/issues/236)):
+  - `None` / `Optional` anywhere other than the column's own optional wrapper
+    no longer marks it nullable or is stripped from its type: in a type's
+    *name* (`Mapped[OptionalSettings]`, `NoneableJSON`), a string literal
+    (`Literal["None"]`), `Annotated` metadata (`Field(description="Optional
+    …")`), or a generic argument (`list[int | None]` now stays
+    `list[int | None]`, not nullable; previously `list[int]`, nullable);
+  - `None | X`, `Union[X, None]` and `typing.Optional[X]` now display as `X`
+    (previously the raw spelling), and a union of several types drops only its
+    `None` member (`int | str | None` → `int | str`);
+  - `Annotated[...]`, a qualified `orm.Mapped[...]` and type qualifiers
+    (`Final`, `InitVar`, `Required` / `NotRequired`, `ReadOnly`) are unwrapped
+    like `Mapped[...]`, and quoted names lose their quotes, whether the whole
+    annotation is quoted (`"int | None"`) or a name inside it
+    (`Mapped[Optional["Decimal"]]` → `Decimal`).
+- A SQLAlchemy model is now detected when its columns are annotated with a
+  qualified `orm.Mapped[...]`, or when its own body only declares
+  `WriteOnlyMapped[...]` / `DynamicMapped[...]` relationships (its columns
+  coming from a mixin); previously such a class was skipped ([#236](https://github.com/devsuit-berlin/erdify/issues/236)).
 
 ### Output changes
 
@@ -65,6 +86,15 @@ The #230 fix adds an edge for each further reference to an already-referenced
 model; existing edges are unchanged. With `--no-relationships`, PlantUML,
 Mermaid and HTML output lose all edges, and PlantUML loses its
 `' Relationships` section (#232).
+
+The #236 fix changes the `nullable` / `?` marker and the displayed type of the
+columns listed above (no longer nullable when `None` / `Optional` only appears
+in a name, literal, metadata or generic argument; shorter types for the
+optional spellings, `Annotated`, qualified `Mapped`, type qualifiers and
+quoted names), and adds
+SQLAlchemy models, with their edges, that were previously not detected. In
+`--format json`, the affected columns' `type` and `nullable` change
+accordingly.
 
 ## [1.2.0] - 2026-11-06
 

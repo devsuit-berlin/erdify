@@ -168,7 +168,7 @@ class Order(models.Model):
 | Framework | Detected by | Keys | Relationships |
 | --------- | ----------- | ---- | ------------- |
 | SQLModel | `table=True` | `Field(primary_key=…, foreign_key=…)` | `Relationship()` |
-| SQLAlchemy 2.0 | `__tablename__` + `Mapped[...]` columns | `mapped_column(primary_key=…)`, `ForeignKey(...)` | `relationship()` (lowercase) |
+| SQLAlchemy 2.0 | `__tablename__` + `Mapped[...]` members (also qualified, `orm.Mapped[...]`, and `WriteOnlyMapped` / `DynamicMapped`) | `mapped_column(primary_key=…)`, `ForeignKey(...)` | `relationship()` (lowercase) |
 | Django ORM | `models.Model` subclass | `primary_key=True` or implicit `id`, `ForeignKey`/`OneToOneField` | `ForeignKey` (N:1), `OneToOneField` (1:1), `ManyToManyField` (M:N, incl. `through=`) |
 | Pydantic | `BaseModel` subclass (incl. transitive) | `--infer-keys` only | nested model refs (`user: User`, optional `user: User \| None` / `Optional[User]` / `Union[User, None]`, collections such as `list["Order"]` / `set[...]` / `tuple[X, ...]`, also inside `Annotated[...]`) |
 | Dataclass | `@dataclass` decorator | `--infer-keys` only | nested model refs |
