@@ -24,7 +24,7 @@ import typing
 from typing import Annotated, Optional, Union
 
 from sqlalchemy import orm
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, WriteOnlyMapped, mapped_column
 
 
 class Base(DeclarativeBase):
@@ -85,6 +85,10 @@ class TestColumnNullability:
             # Generic args keep their brackets.
             ("Mapped[list[str] | None]", "list[str]", True),
             ("Mapped[dict[str, int]]", "dict[str, int]", False),
+            # A quoted name inside a wrapper loses its quotes.
+            ('Mapped[Optional["OptionalSettings"]]', "OptionalSettings", True),
+            # The collection-only wrappers are unwrapped for display too.
+            ('WriteOnlyMapped["Unknown"]', "Unknown", False),
         ],
     )
     def test_sqlalchemy(self, tmp_path: Path, annotation: str, type_str: str, nullable: bool):
@@ -107,6 +111,31 @@ class TestColumnNullability:
             ("Union[int, str]", "Union[int, str]", False),
             # A quoted forward reference resolves like the bare type.
             ('"int | None"', "int", True),
+            # An optional member nested in a union still makes it nullable.
+            ("int | Optional[str]", "int | str", True),
+            ("Union[int, Optional[str]]", "Union[int, str]", True),
+            ("Optional[int] | Optional[str]", "int | str", True),
+            # Union members are unwrapped and unquoted like a lone column type.
+            ("Annotated[int, Field(gt=0)] | str | None", "int | str", True),
+            ('Union["int", "str", None]', "Union[int, str]", True),
+            # A None literal admits None; the string "None" does not.
+            ('Literal["a", None]', "Literal['a', None]", True),
+            ("Literal[None]", "Literal[None]", True),
+            # None inside a generic argument is the element's, not the column's.
+            ("list[int | None]", "list[int | None]", False),
+            ("dict[str, Optional[int]]", "dict[str, Optional[int]]", False),
+            # Metadata mentioning "Optional" does not matter.
+            ('Annotated[str, Field(description="Optional note")]', "str", False),
+            # More spellings of an optional type.
+            ("Union[int, NoneType]", "int", True),
+            ("Optional[Optional[int]]", "int", True),
+            ("typing.Union[int, None]", "int", True),
+            ("Union[None]", "None", True),
+            # Degenerate spellings do not crash.
+            ("Union[()]", "Union[()]", False),
+            ("Annotated[()]", "Annotated[()]", False),
+            ("None", "None", True),
+            ('"not an expression ("', "not an expression (", False),
         ],
     )
     def test_pydantic(self, tmp_path: Path, annotation: str, type_str: str, nullable: bool):
@@ -149,26 +178,30 @@ class Account(Base):
 
     @pytest.mark.parametrize("wrapper", ["WriteOnlyMapped", "DynamicMapped"])
     def test_collection_only_mapped(self, tmp_path: Path, wrapper: str):
-        """A class whose only annotated member is a collection relationship."""
+        """Columns come from a mixin; the body only declares a collection relationship."""
         source = f"""
-from sqlalchemy import Column, Integer
-from sqlalchemy.orm import DeclarativeBase, {wrapper}, relationship
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, {wrapper}, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
 
 
-class Item(Base):
+class IdMixin:
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Item(IdMixin, Base):
     __tablename__ = "item"
-    id = Column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("account.id"))
 
 
-class Account(Base):
+class Account(IdMixin, Base):
     __tablename__ = "account"
-    id = Column(Integer, primary_key=True)
     items: {wrapper}["Item"] = relationship()
 """
         entities = _parse(tmp_path, source)
         assert entities["Account"].source == "sqlalchemy"
+        assert [f.name for f in entities["Account"].fields] == ["id"]
         assert ("Item", "many", "items") in entities["Account"].relationships

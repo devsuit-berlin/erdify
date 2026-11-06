@@ -120,6 +120,14 @@ team_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKe
 team_id: Optional[int] = Field(default=None, foreign_key="team.id")
 ```
 
+## Classic `Column()` attributes are not read
+
+Only SQLAlchemy 2.0's annotated style (`id: Mapped[int] = mapped_column(...)`)
+is read. Classic declarative attributes (`id = Column(Integer, ...)`) have no
+annotation, so they are not drawn as columns. A class needs at least one
+`Mapped[...]` (or `WriteOnlyMapped` / `DynamicMapped`) member of its own to be
+detected; one mixing both styles shows only its `Mapped` columns.
+
 ## Relationships need an annotation
 
 The relationship target comes from the **annotation**, not from the call

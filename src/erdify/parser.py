@@ -617,9 +617,6 @@ class ASTDatabaseParser:
                 return True
         return False
 
-    #: SQLAlchemy 2.0 annotation wrappers that mark a mapped attribute.
-    _MAPPED_WRAPPERS = frozenset({"Mapped", "WriteOnlyMapped", "DynamicMapped"})
-
     @classmethod
     def _is_mapped_annotation(cls, annotation: ast.expr) -> bool:
         """``Mapped[...]`` (or ``WriteOnlyMapped`` / ``DynamicMapped``), bare or qualified."""
@@ -1808,6 +1805,8 @@ class ASTDatabaseParser:
     _TRANSPARENT_WRAPPERS = frozenset({"Mapped", "Annotated"})
     #: SQLAlchemy wrappers that only annotate collections: ``WriteOnlyMapped["X"]``.
     _MANY_WRAPPERS = frozenset({"WriteOnlyMapped", "DynamicMapped"})
+    #: SQLAlchemy 2.0 annotation wrappers that mark a mapped attribute.
+    _MAPPED_WRAPPERS = frozenset({"Mapped"}) | _MANY_WRAPPERS
     #: Single-argument collections of a model: a "many" reference.
     _MANY_CONTAINERS = frozenset(
         {
@@ -1839,6 +1838,25 @@ class ASTDatabaseParser:
             return node.attr
         return None
 
+    @staticmethod
+    def _parse_quoted(node: ast.expr) -> ast.expr | None:
+        """The expression inside a quoted annotation (``"User | None"``).
+
+        None when ``node`` is not a string, or the string is not an expression.
+        """
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            return None
+        try:
+            return ast.parse(node.value.strip(), mode="eval").body
+        except (SyntaxError, ValueError):  # ValueError: NUL byte on Python 3.11
+            return None
+
+    @classmethod
+    def _subscript_parts(cls, node: ast.Subscript) -> Tuple[str | None, List[ast.expr]]:
+        """``X[a, b]`` / ``mod.X[a, b]`` -> ``("X", [a, b])``."""
+        args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        return cls._expr_name(node.value), args
+
     @classmethod
     def _is_none(cls, node: ast.expr) -> bool:
         """``None`` or ``NoneType`` (``types.NoneType``), also quoted or in ``Annotated``."""
@@ -1852,13 +1870,8 @@ class ASTDatabaseParser:
         if isinstance(node, ast.Constant):
             if node.value is None:
                 return True
-            if not isinstance(node.value, str):
-                return False
-            try:
-                parsed = ast.parse(node.value.strip(), mode="eval").body
-            except (SyntaxError, ValueError):
-                return False
-            return cls._is_none(parsed)
+            parsed = cls._parse_quoted(node)
+            return parsed is not None and cls._is_none(parsed)
         return cls._expr_name(node) == "NoneType"
 
     @classmethod
@@ -1866,46 +1879,53 @@ class ASTDatabaseParser:
         """A column's displayed type and whether its annotation admits ``None``.
 
         Walks the syntax tree like :meth:`_annotation_reference` (#236): the
-        ``Mapped`` / ``Annotated`` wrappers (bare or qualified) are unwrapped,
+        ``Mapped`` family and ``Annotated`` (bare or qualified) are unwrapped,
         and ``X | None``, ``None | X``, ``Optional[X]`` and ``Union[X, None]``
         all give ``X`` and nullable. A union of several other types keeps them,
-        minus ``None``, in its own spelling. A quoted annotation is read like
-        the unquoted one. Matching on the tree means a class merely *named*
-        ``OptionalSettings`` or ``NoneableJSON`` is not nullable.
+        minus ``None``, in its own spelling; any member that is itself optional
+        makes the column nullable. ``Literal[..., None]`` is nullable too. A
+        quoted annotation is read like the unquoted one. Matching on the tree
+        means a class merely *named* ``OptionalSettings`` or ``NoneableJSON``
+        is not nullable.
         """
+        if cls._is_none(node):
+            return "None", True
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            try:
-                parsed = ast.parse(node.value.strip(), mode="eval").body
-            except (SyntaxError, ValueError):  # ValueError: NUL byte on Python 3.11
-                return node.value, False
-            return cls._column_type(parsed)
+            parsed = cls._parse_quoted(node)
+            return cls._column_type(parsed) if parsed is not None else (node.value, False)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
             return cls._column_union(cls._union_operands(node), " | ".join)
         if isinstance(node, ast.Subscript):
-            name = cls._expr_name(node.value)
-            args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
-            if args and name in ("Mapped", "Annotated"):
+            name, args = cls._subscript_parts(node)
+            if args and name in cls._TRANSPARENT_WRAPPERS | cls._MANY_WRAPPERS:
                 return cls._column_type(args[0])
             if name == "Optional" and len(args) == 1:
                 return cls._column_type(args[0])[0], True
             if name == "Union" and args:
                 prefix = ast.unparse(node.value)
                 return cls._column_union(args, lambda parts: f"{prefix}[{', '.join(parts)}]")
+            if name == "Literal":
+                literal_none = any(isinstance(a, ast.Constant) and a.value is None for a in args)
+                return ast.unparse(node), literal_none
         return ast.unparse(node), False
 
     @classmethod
     def _column_union(
         cls, options: List[ast.expr], spell: Callable[[List[str]], str]
     ) -> Tuple[str, bool]:
-        """A union column type without its ``None`` members; ``spell`` joins the rest."""
+        """A union column type without its ``None`` members; ``spell`` joins the rest.
+
+        Each remaining member is resolved like a column of its own, so wrappers
+        and quotes are dropped and a nested ``Optional`` still counts.
+        """
         rest = [option for option in options if not cls._is_none(option)]
-        nullable = len(rest) < len(options)
-        if not rest:  # a bare `None` annotation
+        if not rest:  # `None | None`
             return "None", True
-        if len(rest) == 1:
-            type_str, inner_nullable = cls._column_type(rest[0])
-            return type_str, nullable or inner_nullable
-        return spell([ast.unparse(option) for option in rest]), nullable
+        members = [cls._column_type(option) for option in rest]
+        nullable = len(rest) < len(options) or any(inner for _, inner in members)
+        if len(members) == 1:
+            return members[0][0], nullable
+        return spell([type_str for type_str, _ in members]), nullable
 
     @classmethod
     def _annotation_reference(cls, node: ast.expr, many: bool = False) -> _AnnotationRef | None:
@@ -1923,13 +1943,8 @@ class ASTDatabaseParser:
         ``Union[User, int]`` or ``tuple[User, int]``.
         """
         if isinstance(node, ast.Constant):
-            if not isinstance(node.value, str):
-                return None
-            try:
-                parsed = ast.parse(node.value.strip(), mode="eval").body
-            except (SyntaxError, ValueError):  # ValueError: NUL byte on Python 3.11
-                return None
-            return cls._annotation_reference(parsed, many)
+            parsed = cls._parse_quoted(node)
+            return cls._annotation_reference(parsed, many) if parsed is not None else None
         if isinstance(node, ast.Name):
             return _AnnotationRef(node.id, many, False, spelled=node.id)
         if isinstance(node, ast.Attribute):
@@ -1938,8 +1953,7 @@ class ASTDatabaseParser:
             return cls._union_reference(cls._union_operands(node), many)
         if not isinstance(node, ast.Subscript):
             return None
-        name = cls._expr_name(node.value)
-        args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        name, args = cls._subscript_parts(node)
         if not args:
             return None
         if name in cls._TRANSPARENT_WRAPPERS:
