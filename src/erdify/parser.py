@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Dict, List, Tuple, TypeGuard
+from typing import Dict, List, Mapping, Tuple, TypeGuard, TypeVar
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 
@@ -36,6 +36,11 @@ DEFAULT_EXCLUDE_DIRS = frozenset(
 
 #: Django relationship field constructs (everything else ending in "Field" is a column).
 DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
+
+_V = TypeVar("_V")
+
+# A class body's (fields, relationships, declared attribute names).
+_ClassMembers = Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]], List[str]]
 
 #: Conservative Django field -> Python type map for readable, source-consistent
 #: output. Ambiguous/lossy fields (JSONField, FileField, ImageField, custom or
@@ -640,7 +645,7 @@ class ASTDatabaseParser:
         relationships_dict: Dict[str, Tuple[str, str, str]] = {}
 
         # Recursively collect fields from all ancestors
-        base_fields, base_rels = self._collect_fields_recursive(class_node, set(), source)
+        base_fields, base_rels = self._collect_fields(class_node, source)
         fields_dict.update(base_fields)
         relationships_dict.update(base_rels)
 
@@ -652,7 +657,7 @@ class ASTDatabaseParser:
         # may set apart from the attribute name (#221).
         # A string names the DB column; a bare reference names the attribute.
         unique_cols, unique_refs = self._table_args_unique_columns(class_node)
-        db_names = self._db_column_names(class_node, set())
+        db_names = self._db_column_names(class_node)
         for f in entity.fields:
             if f.is_primary_key:
                 continue
@@ -680,25 +685,20 @@ class ASTDatabaseParser:
 
     _is_structural_link_table = staticmethod(is_structural_link_table)
 
-    def _db_column_names(self, class_node: ast.ClassDef, visited: set[str]) -> Dict[str, str]:
+    def _db_column_names(self, class_node: ast.ClassDef) -> Dict[str, str]:
         """Map attribute name -> explicit DB column name for a class and its bases.
 
         See :meth:`_explicit_column_name` for the recognized forms. A column
         without an explicit name maps to itself, so a redeclaration without one
-        overrides an inherited name through the same merge order as the fields
-        (later bases and the class body win), including in diamond hierarchies.
+        overrides an inherited name. Bases resolve in the same order as the
+        fields (:meth:`_merge_order`), so the name matches the winning column.
         """
-        if class_node.name in visited:
-            return {}
-        visited.add(class_node.name)
         names: Dict[str, str] = {}
-        for base in class_node.bases:
-            if isinstance(base, ast.Name) and base.id in self._all_classes:
-                names.update(self._db_column_names(self._all_classes[base.id], visited))
-        for node in class_node.body:
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                db_name = self._explicit_column_name(node.value)
-                names[node.target.id] = db_name if db_name is not None else node.target.id
+        for class_name in self._merge_order(class_node):
+            for node in self._all_classes[class_name].body:
+                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    db_name = self._explicit_column_name(node.value)
+                    names[node.target.id] = db_name if db_name is not None else node.target.id
         return names
 
     @classmethod
@@ -912,45 +912,135 @@ class ASTDatabaseParser:
             isinstance(func, ast.Attribute) and func.attr == func_name
         )
 
-    def _collect_fields_recursive(
-        self, class_node: ast.ClassDef, visited: set[str], model_kind: str
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
-        """Recursively collect fields from a class and all its ancestors."""
-        fields_dict: Dict[str, FieldInfo] = {}
-        relationships_dict: Dict[str, Tuple[str, str, str]] = {}
+    def _local_bases(self, class_node: ast.ClassDef) -> List[str]:
+        """Names of the direct bases that are classes parsed from the input."""
+        return [
+            base.id
+            for base in class_node.bases
+            if isinstance(base, ast.Name) and base.id in self._all_classes
+        ]
 
-        # Avoid infinite recursion
+    def _dfs_order(self, class_node: ast.ClassDef, visited: set[str]) -> List[str]:
+        """Classes in depth-first post-order: bases (left to right), then the class.
+
+        Each class appears once. This is the order fields are listed in.
+        """
         if class_node.name in visited:
-            return fields_dict, relationships_dict
+            return []
         visited.add(class_node.name)
+        order: List[str] = []
+        for base in self._local_bases(class_node):
+            order.extend(self._dfs_order(self._all_classes[base], visited))
+        order.append(class_node.name)
+        return order
 
-        # First, process all base classes recursively
-        for base in class_node.bases:
-            if isinstance(base, ast.Name):
-                base_name = base.id
-                if base_name in self._all_classes:
-                    base_fields, base_rels = self._collect_fields_recursive(
-                        self._all_classes[base_name], visited, model_kind
-                    )
-                    fields_dict.update(base_fields)
-                    relationships_dict.update(base_rels)
+    def _mro(self, name: str, stack: Tuple[str, ...] = ()) -> List[str] | None:
+        """C3 linearization of a parsed class, like Python's ``__mro__``.
 
-        # Then add/override with current class fields
-        class_fields, class_rels = self._extract_class_fields(class_node, model_kind)
+        Bases outside the parsed files are ignored. Returns None when Python
+        would reject the hierarchy (no consistent order) or it is cyclic, e.g.
+        ``class User(User)`` extending a namesake.
+        """
+        if name in stack:
+            return None
+        bases = self._local_bases(self._all_classes[name])
+        seqs: List[List[str]] = []
+        for base in bases:
+            base_mro = self._mro(base, stack + (name,))
+            if base_mro is None:
+                return None
+            seqs.append(base_mro)
+        seqs.append(list(bases))
+
+        result = [name]
+        seqs = [seq for seq in seqs if seq]
+        while seqs:
+            for seq in seqs:
+                head = seq[0]
+                if not any(head in other[1:] for other in seqs):
+                    break
+            else:
+                return None
+            result.append(head)
+            seqs = [[c for c in seq if c != head] for seq in seqs]
+            seqs = [seq for seq in seqs if seq]
+        return result
+
+    def _merge_order(self, class_node: ast.ClassDef) -> List[str]:
+        """Classes to merge members from, where a later class overrides an earlier one.
+
+        This is the reversed MRO, so the class body wins over its bases and an
+        earlier base wins over a later one, as in Python (#228). Without a valid
+        MRO it falls back to :meth:`_dfs_order`.
+        """
+        mro = self._mro(class_node.name)
+        if mro is None:
+            return self._dfs_order(class_node, set())
+        return mro[::-1]
+
+    def _collect_fields(
+        self, class_node: ast.ClassDef, model_kind: str
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
+        """Collect the fields and relationships of a class and all its ancestors.
+
+        Which declaration of an attribute wins follows the MRO
+        (:meth:`_merge_order`). The order they are listed in stays the
+        depth-first declaration order (:meth:`_dfs_order`), so resolving by MRO
+        does not reorder the output.
+        """
+        dfs_order = self._dfs_order(class_node, set())
+        members = {
+            name: self._class_members(self._all_classes[name], model_kind) for name in dfs_order
+        }
+        order_fields, order_rels = self._merge_members(dfs_order, members, model_kind)
+        fields, rels = self._merge_members(self._merge_order(class_node), members, model_kind)
+        return self._reorder(fields, order_fields), self._reorder(rels, order_rels)
+
+    @staticmethod
+    def _reorder(values: Dict[str, _V], order: Mapping[str, object]) -> Dict[str, _V]:
+        """Return ``values`` with keys in ``order``'s key order, extra keys last."""
+        result = {key: values[key] for key in order if key in values}
+        result.update((key, value) for key, value in values.items() if key not in result)
+        return result
+
+    def _class_members(self, class_node: ast.ClassDef, model_kind: str) -> _ClassMembers:
+        """A single class body's fields, relationships, and declared attribute names."""
+        fields, rels = self._extract_class_fields(class_node, model_kind)
         if model_kind == "django":
-            # A Django attribute can be stored under a different key depending
-            # on its kind (relationship `owner` vs. FK column `owner_id`), so a
-            # redeclaration must drop whatever the bases stored for it.
-            for attr in self._django_declared_names(class_node):
-                relationships_dict.pop(attr, None)
-                fields_dict.pop(attr, None)
-                inherited_fk = fields_dict.get(f"{attr}_id")
-                if inherited_fk is not None and inherited_fk.is_foreign_key:
-                    del fields_dict[f"{attr}_id"]
-        fields_dict.update(class_fields)
-        relationships_dict.update(class_rels)
+            declared = self._django_declared_names(class_node)
+        else:
+            declared = [*fields, *rels]
+        return fields, rels, declared
 
-        return fields_dict, relationships_dict
+    @staticmethod
+    def _merge_members(
+        order: List[str], members: Dict[str, _ClassMembers], model_kind: str
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
+        """Merge class members in ``order``; a later class overrides an earlier one.
+
+        A redeclared attribute replaces whatever an earlier class stored for it,
+        even under another key or kind: a Django relationship ``owner`` vs. its
+        FK column ``owner_id`` (#224), or a column vs. a model reference.
+        """
+        fields: Dict[str, FieldInfo] = {}
+        rels: Dict[str, Tuple[str, str, str]] = {}
+        for class_name in order:
+            class_fields, class_rels, declared = members[class_name]
+            for attr in declared:
+                if model_kind == "django":
+                    rels.pop(attr, None)
+                    fields.pop(attr, None)
+                    inherited_fk = fields.get(f"{attr}_id")
+                    if inherited_fk is not None and inherited_fk.is_foreign_key:
+                        del fields[f"{attr}_id"]
+                # Same key and kind: update() below replaces it in place.
+                elif attr in class_fields:
+                    rels.pop(attr, None)
+                else:
+                    fields.pop(attr, None)
+            fields.update(class_fields)
+            rels.update(class_rels)
+        return fields, rels
 
     def _django_declared_names(self, class_node: ast.ClassDef) -> List[str]:
         """Attribute names a Django model body declares as a model field."""
