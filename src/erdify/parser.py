@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass, replace
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Dict, List, Mapping, Tuple, TypeGuard, TypeVar
+from typing import Dict, List, Mapping, NamedTuple, Tuple, TypeGuard, TypeVar
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 
@@ -38,6 +38,19 @@ DEFAULT_EXCLUDE_DIRS = frozenset(
 DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
 
 _V = TypeVar("_V")
+
+
+class _AnnotationRef(NamedTuple):
+    """A single model an annotation refers to (see ``_annotation_reference``)."""
+
+    target: str
+    many: bool
+    nullable: bool
+    #: Named through a module (``schemas.User``); only trusted in relationship().
+    qualified: bool = False
+    #: The name as written (``a.User``); tells same-named classes apart in a union.
+    spelled: str = ""
+
 
 # A relationship while parsing: (target, type, attribute, nullable). The
 # public EntityInfo.relationships keeps (target, type, attribute); the flag
@@ -925,10 +938,7 @@ class ASTDatabaseParser:
         """Check whether an expression is a call to ``func_name`` (Name or attribute)."""
         if not isinstance(value, ast.Call):
             return False
-        func = value.func
-        return (isinstance(func, ast.Name) and func.id == func_name) or (
-            isinstance(func, ast.Attribute) and func.attr == func_name
-        )
+        return ASTDatabaseParser._expr_name(value.func) == func_name
 
     def _local_bases(self, class_node: ast.ClassDef) -> List[str]:
         """Names of the direct bases that are classes parsed from the input."""
@@ -1179,7 +1189,16 @@ class ASTDatabaseParser:
         if model_kind == "django":
             declared = self._django_declared_names(class_node)
         else:
-            declared = [*fields, *rels]
+            # Every annotated attribute shadows an inherited one, also when it
+            # yields neither a field nor a relationship (e.g. a relationship()
+            # whose annotation names no single class, or link_model=).
+            declared = [
+                node.target.id
+                for node in class_node.body
+                if isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and not node.target.id.startswith("_")
+            ]
         return fields, rels, declared
 
     @staticmethod
@@ -1202,8 +1221,11 @@ class ASTDatabaseParser:
                 # Same key and kind: update() below replaces it in place.
                 elif attr in class_fields:
                     rels.pop(attr, None)
+                elif attr in class_rels:
+                    fields.pop(attr, None)
                 else:
                     fields.pop(attr, None)
+                    rels.pop(attr, None)
             fields.update(class_fields)
             rels.update(class_rels)
         return fields, rels
@@ -1256,13 +1278,12 @@ class ASTDatabaseParser:
                     continue
 
                 # Check for an explicit relationship call (SQLModel/SQLAlchemy)
-                is_relationship = False
-                if node.value and isinstance(node.value, ast.Call):
-                    if isinstance(node.value.func, ast.Name) and node.value.func.id in (
-                        "Relationship",  # SQLModel
-                        "relationship",  # SQLAlchemy
-                    ):
-                        is_relationship = True
+                # SQLModel Relationship() / SQLAlchemy relationship(), also
+                # module-qualified (orm.relationship, sqlmodel.Relationship).
+                is_relationship = node.value is not None and (
+                    self._is_call_to(node.value, "Relationship")
+                    or self._is_call_to(node.value, "relationship")
+                )
 
                 if is_relationship:
                     rel = self._parse_relationship(node)
@@ -1600,11 +1621,7 @@ class ASTDatabaseParser:
             if value == "self":
                 return current_class
             return value.split(".")[-1]
-        if isinstance(node, ast.Name):
-            return node.id
-        if isinstance(node, ast.Attribute):
-            return node.attr
-        return None
+        return ASTDatabaseParser._expr_name(node)
 
     def _parse_field(self, node: ast.AnnAssign, model_kind: str) -> FieldInfo | None:
         """Parse a field from an annotated assignment."""
@@ -1771,14 +1788,10 @@ class ASTDatabaseParser:
         ):
             return None
 
-        field_name = node.target.id
-        type_str = self._unwrap_mapped(ast.unparse(node.annotation))
-
-        rel_type = "many" if ("list[" in type_str or "List[" in type_str) else "one"
-        target = self._clean_target(type_str)
-        nullable = rel_type == "one" and self._is_optional_annotation(node.annotation)
-
-        return (target, rel_type, field_name, nullable)
+        ref = self._annotation_reference(node.annotation)
+        if ref is None:  # names no single class (e.g. Mapped[A | B]): nothing to draw
+            return None
+        return self._as_rel(ref, node.target.id)
 
     def _parse_model_reference(self, node: ast.AnnAssign) -> _Rel | None:
         """Treat a field typed as another known model as a relationship.
@@ -1790,64 +1803,160 @@ class ASTDatabaseParser:
         if not isinstance(node.target, ast.Name):
             return None
 
-        type_str = self._unwrap_mapped(ast.unparse(node.annotation))
-        rel_type = "many" if ("list[" in type_str or "List[" in type_str) else "one"
-        target = self._clean_target(type_str)
-
-        target_class = self._all_classes.get(target)
+        ref = self._annotation_reference(node.annotation)
+        # A qualified name (`other_service.User`) may be an external class that
+        # merely shares a model's name; only an explicit relationship() trusts it.
+        if ref is None or ref.qualified:
+            return None
+        target_class = self._all_classes.get(ref.target)
         if target_class is not None and self._classify_source(target_class) is not None:
-            # `user: User | None` is an optional reference (#223).
-            nullable = rel_type == "one" and self._is_optional_annotation(node.annotation)
-            return (target, rel_type, node.target.id, nullable)
+            return self._as_rel(ref, node.target.id)
+        return None
+
+    @staticmethod
+    def _as_rel(ref: _AnnotationRef, attr: str) -> _Rel:
+        """A relationship tuple; only a ``one`` reference can be optional (#223)."""
+        return (ref.target, "many" if ref.many else "one", attr, ref.nullable and not ref.many)
+
+    #: Wrappers whose first argument is the annotated type itself (metadata ignored).
+    _TRANSPARENT_WRAPPERS = frozenset({"Mapped", "Annotated"})
+    #: SQLAlchemy wrappers that only annotate collections: ``WriteOnlyMapped["X"]``.
+    _MANY_WRAPPERS = frozenset({"WriteOnlyMapped", "DynamicMapped"})
+    #: Single-argument collections of a model: a "many" reference.
+    _MANY_CONTAINERS = frozenset(
+        {
+            "list",
+            "List",
+            "set",
+            "Set",
+            "frozenset",
+            "FrozenSet",
+            "AbstractSet",
+            "MutableSet",
+            "Sequence",
+            "MutableSequence",
+            "Collection",
+            "Iterable",
+            "deque",
+            "Deque",
+        }
+    )
+    #: Mappings whose *value* is the model (e.g. SQLAlchemy keyed-dict collections).
+    _MANY_MAPPINGS = frozenset({"dict", "Dict", "Mapping", "MutableMapping"})
+
+    @staticmethod
+    def _expr_name(node: ast.expr) -> str | None:
+        """The last name of ``X`` or ``mod.X``; None for anything else."""
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return node.attr
         return None
 
     @classmethod
-    def _is_optional_annotation(cls, node: ast.expr) -> bool:
-        """Whether an annotation admits ``None`` at its top level.
-
-        Recognizes ``X | None`` (either side), ``Optional[X]``,
-        ``Union[..., None]``, the same inside ``Mapped[...]``, and string
-        (forward-reference) annotations. A name that merely contains
-        "Optional" or "None" (``OptionalSettings``) is not optional.
-        """
+    def _is_none(cls, node: ast.expr) -> bool:
+        """``None`` or ``NoneType`` (``types.NoneType``), also quoted or in ``Annotated``."""
+        if (
+            isinstance(node, ast.Subscript)
+            and cls._expr_name(node.value) == "Annotated"
+            and isinstance(node.slice, ast.Tuple)
+            and node.slice.elts
+        ):
+            return cls._is_none(node.slice.elts[0])
         if isinstance(node, ast.Constant):
             if node.value is None:
                 return True
-            if isinstance(node.value, str):
-                try:
-                    parsed = ast.parse(node.value, mode="eval").body
-                except SyntaxError:
-                    return False
-                return cls._is_optional_annotation(parsed)
-            return False
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-            return cls._is_optional_annotation(node.left) or cls._is_optional_annotation(node.right)
-        if isinstance(node, ast.Subscript):
-            func = node.value
-            name = (
-                func.id
-                if isinstance(func, ast.Name)
-                else func.attr
-                if isinstance(func, ast.Attribute)
-                else None
-            )
-            if name == "Optional":
-                return True
-            if name == "Mapped":
-                return cls._is_optional_annotation(node.slice)
-            if name == "Union":
-                args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
-                return any(cls._is_optional_annotation(arg) for arg in args)
-        return False
+            if not isinstance(node.value, str):
+                return False
+            try:
+                parsed = ast.parse(node.value.strip(), mode="eval").body
+            except (SyntaxError, ValueError):
+                return False
+            return cls._is_none(parsed)
+        return cls._expr_name(node) == "NoneType"
 
-    @staticmethod
-    def _clean_target(type_str: str) -> str:
-        """Reduce a (possibly wrapped) annotation to a bare target class name."""
-        cleaned = type_str
-        for token in ("Mapped[", "list[", "List[", "Optional["):
-            cleaned = cleaned.replace(token, "")
-        cleaned = cleaned.replace("]", "").replace(" | None", "").replace("None", "")
-        return cleaned.replace('"', "").replace("'", "").strip()
+    @classmethod
+    def _annotation_reference(cls, node: ast.expr, many: bool = False) -> _AnnotationRef | None:
+        """The single class an annotation refers to, with cardinality and optionality.
+
+        Walks the annotation's syntax tree, so every spelling of the same type
+        resolves alike (#229): ``X | None`` / ``None | X``, ``Optional[X]``,
+        ``Union[X, None]``, string forward references (also ``"None"``),
+        ``Mapped`` / ``Annotated`` wrappers, ``typing.``-qualified forms,
+        module-qualified classes (``schemas.User``, flagged ``qualified``),
+        and collections: ``list``, ``set``, ``Sequence`` and friends,
+        ``tuple[X, ...]``, a mapping's value type, and the collection-only
+        ``WriteOnlyMapped`` / ``DynamicMapped``. Returns None when the
+        annotation does not name exactly one class, such as
+        ``Union[User, int]`` or ``tuple[User, int]``.
+        """
+        if isinstance(node, ast.Constant):
+            if not isinstance(node.value, str):
+                return None
+            try:
+                parsed = ast.parse(node.value.strip(), mode="eval").body
+            except (SyntaxError, ValueError):  # ValueError: NUL byte on Python 3.11
+                return None
+            return cls._annotation_reference(parsed, many)
+        if isinstance(node, ast.Name):
+            return _AnnotationRef(node.id, many, False, spelled=node.id)
+        if isinstance(node, ast.Attribute):
+            return _AnnotationRef(node.attr, many, False, qualified=True, spelled=ast.unparse(node))
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            return cls._union_reference(cls._union_operands(node), many)
+        if not isinstance(node, ast.Subscript):
+            return None
+        name = cls._expr_name(node.value)
+        args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        if not args:
+            return None
+        if name in cls._TRANSPARENT_WRAPPERS:
+            return cls._annotation_reference(args[0], many)
+        if name in cls._MANY_WRAPPERS:
+            return cls._annotation_reference(args[0], True)
+        if name == "Optional" and len(args) == 1:
+            ref = cls._annotation_reference(args[0], many)
+            return ref._replace(nullable=True) if ref else None
+        if name == "Union":
+            return cls._union_reference(args, many)
+        if name in cls._MANY_CONTAINERS and len(args) == 1:
+            return cls._annotation_reference(args[0], True)
+        if name in ("tuple", "Tuple") and len(args) == 2:
+            ellipsis = args[1]
+            if isinstance(ellipsis, ast.Constant) and ellipsis.value is Ellipsis:
+                return cls._annotation_reference(args[0], True)
+        if name in cls._MANY_MAPPINGS and len(args) == 2:
+            return cls._annotation_reference(args[1], True)
+        return None
+
+    @classmethod
+    def _union_operands(cls, node: ast.expr) -> List[ast.expr]:
+        """Flatten ``A | B | C`` into its operands."""
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            return [*cls._union_operands(node.left), *cls._union_operands(node.right)]
+        return [node]
+
+    @classmethod
+    def _union_reference(cls, options: List[ast.expr], many: bool) -> _AnnotationRef | None:
+        """Resolve a union whose members all name the same class, plus optional ``None``.
+
+        Members are compared after resolving, so repeated or nested spellings
+        of one type (``Union[User, User, None]``, ``Union[User, Optional[User]]``)
+        resolve like ``Optional[User]``. Members naming different classes, or
+        the same class once as one and once as many, name no single class.
+        """
+        rest = [option for option in options if not cls._is_none(option)]
+        refs = [cls._annotation_reference(option, many) for option in rest]
+        if not refs or any(ref is None for ref in refs):
+            return None
+        resolved = [ref for ref in refs if ref is not None]
+        first = resolved[0]
+        # Compare the full spelling: `a.User` and `b.User` are different classes.
+        if any((ref.spelled, ref.many) != (first.spelled, first.many) for ref in resolved):
+            return None
+        nullable = len(rest) < len(options) or any(ref.nullable for ref in resolved)
+        qualified = any(ref.qualified for ref in resolved)
+        return first._replace(nullable=nullable, qualified=qualified)
 
     def _to_snake_case(self, name: str) -> str:
         """Convert CamelCase to snake_case."""

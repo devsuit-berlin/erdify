@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Model references are now read from the annotation's syntax tree instead of
+  its text, so these spellings are recognized
+  ([#229](https://github.com/devsuit-berlin/erdify/issues/229)):
+  - optional: `Union[User, None]`, `None | User`, `typing.Optional[User]`, and
+    `"None"` as a string forward reference;
+  - wrappers: Pydantic's `Annotated[User | None, Field(...)]`, and
+    SQLAlchemy's collection-only `WriteOnlyMapped["X"]` / `DynamicMapped["X"]`
+    (drawn as 1:N);
+  - module-qualified classes in `relationship()` / `Relationship()`
+    (`Mapped["models.Team"]`), and module-qualified calls
+    (`orm.relationship()`, `sqlmodel.Relationship()`);
+  - collections: `set`, `frozenset`, `Sequence`, `Iterable`, `deque`,
+    `tuple[User, ...]` and a mapping's value type (`dict[str, User]`,
+    SQLAlchemy keyed-dict collections) besides `list` (nested lists keep
+    working);
+  - `NoneType` as the optional part (`Union[User, NoneType]`).
+
+  For Pydantic and dataclass models, such a field was rendered as a column
+  with its raw type (e.g. `Union_User_None` in Mermaid) and no edge; it is now
+  a relationship. For SQLModel `Relationship()` and SQLAlchemy
+  `relationship()`, the relationship's target was garbled (e.g.
+  `Union[Team,`), so no edge was drawn; it now names the class. A
+  `relationship()` whose annotation names no single class (e.g.
+  `Mapped[Union["A", "B"]]`) is no longer listed with a garbled target, and
+  still replaces a relationship of the same name inherited from a base. A
+  module-qualified name on a plain Pydantic / dataclass field
+  (`ext: other_service.User`) stays a column, since it may be an external
+  class that merely shares a model's name.
+
+### Output changes
+
+The fix above changes the generated diagram where a model reference uses one
+of these spellings: a Pydantic / dataclass column with the raw type becomes an
+edge, and a SQLModel / SQLAlchemy relationship gains its edge unless a foreign
+key already draws it. In `--format json`, the Pydantic / dataclass field moves
+from `fields` to `relationships`, a relationship's `target` becomes the class
+name, its `type` becomes `many` for `set` / `Sequence` / `tuple[X, ...]` /
+mapping collections and `WriteOnlyMapped` / `DynamicMapped` (previously only
+`list` counted), and a relationship that names no single class is dropped. If you commit
+the diagram and gate CI on `--check` (or the `erdify-check` pre-commit hook),
+the check fails once after upgrading: regenerate the diagram and commit it. See
+[Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
+
 ## [1.2.0] - 2026-11-06
 
 ### Added
