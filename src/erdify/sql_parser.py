@@ -6,7 +6,8 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
-from .parser import DEFAULT_EXCLUDE_DIRS, ModelParseError, _match_include
+from .parser import ModelParseError
+from .parser.discovery import DEFAULT_EXCLUDE_DIRS, _match_include
 
 
 def discover_sql_files(

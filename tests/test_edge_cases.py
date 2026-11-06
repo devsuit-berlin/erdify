@@ -12,6 +12,8 @@ from erdify import parse_models_directory, generate_plantuml
 from erdify.config import EntityInfo, FieldInfo
 from erdify.generator import PlantUMLGenerator
 from erdify.parser import ASTDatabaseParser
+from erdify.parser.dialects import ParseContext
+from erdify.parser.dialects.keyless import PydanticDialect
 
 
 class TestMainModule:
@@ -283,11 +285,11 @@ class TestTypeStringCleanup:
     def test_generic_brackets_preserved(
         self, annotation: str, expected_type: str, expected_nullable: bool
     ):
-        parser = ASTDatabaseParser.__new__(ASTDatabaseParser)
-        parser.infer_keys = False
+        dialect = PydanticDialect(ParseContext())
 
         node = ast.parse(f"x: {annotation}").body[0]
-        field = parser._parse_field(node, "pydantic")
+        assert isinstance(node, ast.AnnAssign)
+        field = dialect._parse_field(node)
 
         assert field is not None
         assert field.type_str == expected_type

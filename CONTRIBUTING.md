@@ -99,7 +99,19 @@ erdify/
 │   ├── generator.py     # PlantUML / Mermaid / JSON / HTML generation
 │   ├── inject.py        # Markdown embedding (--inject)
 │   ├── pyproject.py     # [tool.erdify] config loading
-│   ├── parser.py        # AST parsing logic (all frameworks) + parse_models_directory
+│   ├── parser/          # AST parsing of Python models
+│   │   ├── core.py          # ASTDatabaseParser + parse_models_directory / scan_report
+│   │   ├── discovery.py     # File discovery (include globs, exclude paths)
+│   │   ├── annotations.py   # Reading type annotations from the syntax tree
+│   │   ├── inheritance.py   # MRO, merge order, member merging (all frameworks)
+│   │   ├── common.py        # Shared types and small helpers
+│   │   └── dialects/        # One Dialect class per framework (detection + class bodies)
+│   │       ├── __init__.py      # DIALECTS registry (classification order) + MODEL_SOURCES
+│   │       ├── base.py          # Dialect interface, its hooks, ParseContext
+│   │       ├── annotated.py     # Shared reader for annotated class bodies
+│   │       ├── sqlalchemy.py    # SQLModel, SQLAlchemy ORM, Core association tables
+│   │       ├── keyless.py       # Pydantic, dataclass
+│   │       └── django.py        # Django ORM
 │   └── sql_parser.py    # SQL DDL frontend (optional, erdify[sql] / sqlglot)
 ├── tests/
 │   ├── fixtures/        # Test model files (one dir per scenario/framework)
