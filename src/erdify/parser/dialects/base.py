@@ -2,7 +2,7 @@
 
 import ast
 from dataclasses import dataclass, field
-from typing import ClassVar, Dict, Iterable, List, Set, Tuple
+from typing import Callable, ClassVar, Dict, Iterable, List, Mapping, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import is_call_to
@@ -21,8 +21,9 @@ class ParseContext:
         base_classes: Extra base-class names treated as Pydantic models.
         dialects: One instance of every dialect, in ``MODEL_SOURCES`` order;
             created on first use.
-        aliases: Module-level ``Annotated`` type aliases by name
-            (``intpk = Annotated[int, mapped_column(primary_key=True)]``, #241).
+        aliases_for: Column type aliases visible where a class is defined
+            (``intpk = Annotated[int, mapped_column(primary_key=True)]``,
+            #241, #249, #250).
     """
 
     classes: ClassIndex = field(default_factory=lambda: ClassIndex({}))
@@ -30,7 +31,7 @@ class ParseContext:
     django_raw_types: bool = False
     base_classes: Set[str] = field(default_factory=set)
     dialects: List["Dialect"] = field(default_factory=list)
-    aliases: Dict[str, ast.expr] = field(default_factory=dict)
+    aliases_for: Callable[[ast.ClassDef], Mapping[str, ast.expr]] = lambda _class_node: {}
 
     def all_dialects(self) -> List["Dialect"]:
         """Every dialect, in classification order, bound to this context."""
