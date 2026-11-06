@@ -163,9 +163,10 @@ and then an attribute named after the class (`Post.user` for `User`).
   `Post.author`) therefore show as one edge.
 - The kept edge shows the first model's cardinality only; the folded side's
   optionality is not merged in.
-- A self-reference has no other model, so only an exact inverse is folded:
-  `Node.parent` and `Node.children` are one edge, while `Employee.manager` and
-  `Employee.mentor` stay two.
+- A self-reference has no other model, so only an N:1 / 1:N inverse is
+  folded: `Node.parent` and `Node.children` are one edge, while
+  `Employee.manager` and `Employee.mentor`, or two `ManyToManyField("self")`
+  fields, stay two.
 
 A foreign-key column already draws the edge between two models, so their
 declared relationships are not drawn again.

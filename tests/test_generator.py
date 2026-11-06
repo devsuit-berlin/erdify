@@ -644,3 +644,14 @@ class TestDistinctReferencesToSameModel:
             'Comment }o--|| Post : "post_id"',
             'User ||--o{ Post : "posts"',
         ]
+
+    @pytest.mark.parametrize("kind", ["many_to_many", "one_to_one"])
+    def test_self_reference_symmetric_kind_stays_two_edges(self, kind: str):
+        """``ManyToManyField("self")`` twice: independent, not each other's inverse."""
+        entities = {
+            "User": _entity("User", ("User", kind, "friends"), ("User", kind, "blocked")),
+        }
+        assert [e.split(" : ")[1] for e in _edges(generate_mermaid(entities))] == [
+            '"friends"',
+            '"blocked"',
+        ]

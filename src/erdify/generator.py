@@ -211,8 +211,9 @@ class _ERGenerator:
         (``many`` for ``one`` and vice versa), preferring an attribute named
         after the class it points at (``Post.user`` for ``User``), else the
         first one left. A self-reference has no "other side", so there only an
-        exact inverse (``parent`` / ``children``) is absorbed; two references
-        of the same cardinality stay two edges.
+        N:1 / 1:N inverse (``parent`` / ``children``) is absorbed; two references
+        of the same cardinality (``friends`` / ``blocked``, both M:N) stay two
+        edges.
         """
         rels = [
             (entity, target, rel_type, attr)
@@ -230,6 +231,8 @@ class _ERGenerator:
                 continue
             if first_side.setdefault(frozenset((entity.name, target)), entity.name) != entity.name:
                 continue  # the other side's leftovers: drawn as they are
+            if target == entity.name and self._INVERSE_KIND[rel_type] == rel_type:
+                continue  # two M:N / 1:1 self-references are two relationships
             inverse = [
                 j
                 for j in by_direction.get((target, entity.name), ())
