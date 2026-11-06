@@ -85,6 +85,10 @@ class TestKeylessReferences:
             ("User | types.NoneType", "one", True),
             ('Union[User, "types.NoneType"]', "one", True),
             ('Union[User, "NoneType"]', "one", True),
+            ("Union[User, User, None]", "one", True),  # repeated member
+            ("Union[User, Optional[User]]", "one", True),  # nested optional
+            ("User | User", "one", False),
+            ("Union[list[User], List[User]]", "many", False),
             ("Annotated[User, None]", "one", False),  # metadata None is not optional
             ("typing.Annotated[User | None, 1]", "one", True),
             ('" User "', "one", False),  # whitespace around a forward reference
@@ -118,6 +122,8 @@ class TestKeylessReferences:
             'Union[User, "a\\x00b"]',  # same, as a union member
             'Union[User, "1 +"]',  # unparsable union member
             "Union[User, 1]",  # non-string constant member
+            "Union[User, list[User]]",  # one and many of the same class
+            "Union[None, None]",  # no class at all
             '"User |"',  # unparsable forward reference
             '"get()[User]"',  # subscript of a call
         ],

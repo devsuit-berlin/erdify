@@ -1929,14 +1929,24 @@ class ASTDatabaseParser:
 
     @classmethod
     def _union_reference(cls, options: List[ast.expr], many: bool) -> _AnnotationRef | None:
-        """Resolve a union of exactly one type plus optional ``None``."""
+        """Resolve a union whose members all name the same class, plus optional ``None``.
+
+        Members are compared after resolving, so repeated or nested spellings
+        of one type (``Union[User, User, None]``, ``Union[User, Optional[User]]``)
+        resolve like ``Optional[User]``. Members naming different classes, or
+        the same class once as one and once as many, name no single class.
+        """
         rest = [option for option in options if not cls._is_none(option)]
-        if len(rest) != 1:
+        refs = [cls._annotation_reference(option, many) for option in rest]
+        if not refs or any(ref is None for ref in refs):
             return None
-        ref = cls._annotation_reference(rest[0], many)
-        if ref is None:
+        resolved = [ref for ref in refs if ref is not None]
+        first = resolved[0]
+        if any((ref.target, ref.many) != (first.target, first.many) for ref in resolved):
             return None
-        return ref._replace(nullable=True) if len(rest) < len(options) else ref
+        nullable = len(rest) < len(options) or any(ref.nullable for ref in resolved)
+        qualified = any(ref.qualified for ref in resolved)
+        return first._replace(nullable=nullable, qualified=qualified)
 
     def _to_snake_case(self, name: str) -> str:
         """Convert CamelCase to snake_case."""
