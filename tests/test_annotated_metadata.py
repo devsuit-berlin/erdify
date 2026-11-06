@@ -1,5 +1,6 @@
 """Column settings inside ``Annotated[...]`` metadata, also through type aliases (#241)."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -506,3 +507,176 @@ class Account(Base):
     )
     token = _field(entities, "token")
     assert (token.type_str, token.index) == ("UUID", False)
+
+
+class TestModuleScope:
+    """Aliases resolve like Python names: per module, through imports (#249, #250)."""
+
+    TYPES = (
+        "from typing import Annotated\n"
+        "from sqlalchemy.orm import mapped_column\n\n"
+        "UUID = Annotated[int, mapped_column(index=True)]\n"
+        "intpk = Annotated[int, mapped_column(primary_key=True)]\n"
+        "taggedpk = Annotated[intpk, 'tag']\n"
+    )
+
+    def _two_files(self, tmp_path: Path, models_head: str, body: str) -> dict[str, EntityInfo]:
+        (tmp_path / "types.py").write_text(self.TYPES, encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            models_head + HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n" + body,
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+        return entities
+
+    def test_unrelated_import_in_another_module_is_not_the_alias(self, tmp_path: Path):
+        """#250: types.py's alias `UUID` does not apply where `UUID` is imported from uuid."""
+        entities = self._two_files(
+            tmp_path,
+            "from uuid import UUID\n",
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n    token: Mapped[UUID]\n",
+        )
+        token = _field(entities, "token")
+        assert (token.type_str, token.index) == ("UUID", False)
+
+    @pytest.mark.parametrize(
+        "head",
+        ["from .types import intpk\n", "from types import intpk\n", "from .types import *\n"],
+    )
+    def test_import_from_the_defining_module(self, tmp_path: Path, head: str):
+        entities = self._two_files(tmp_path, head, "    id: Mapped[intpk]\n")
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_renamed_import(self, tmp_path: Path):
+        entities = self._two_files(
+            tmp_path, "from .types import intpk as Key\n", "    id: Mapped[Key]\n"
+        )
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_derived_alias(self, tmp_path: Path):
+        """#249: `taggedpk = Annotated[intpk, "tag"]` carries intpk's primary key."""
+        entities = self._two_files(
+            tmp_path, "from .types import taggedpk\n", "    id: Mapped[taggedpk]\n"
+        )
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_derived_alias_in_the_same_module(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+intpk = Annotated[int, mapped_column(primary_key=True)]
+taggedpk = Annotated[intpk, "tag"]
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[taggedpk]
+""",
+        )
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_last_binding_wins(self, tmp_path: Path):
+        """A rebinding later in the module counts, an earlier one does not."""
+        entities = _parse(
+            tmp_path,
+            """
+intpk = int
+intpk = Annotated[int, mapped_column(primary_key=True)]
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[intpk]
+""",
+        )
+        assert _field(entities, "id").is_primary_key
+
+    def test_mutually_recursive_aliases_do_not_loop(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+a = Annotated[b, mapped_column(index=True)]
+b = Annotated[a, mapped_column(index=True)]
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    col: Mapped[a]
+""",
+        )
+        assert _field(entities, "col").index
+
+
+class TestModuleScopeEdges:
+    ALIAS = (
+        "from typing import Annotated\n"
+        "from sqlalchemy.orm import mapped_column\n\n"
+        "intpk = Annotated[int, mapped_column(primary_key=True)]\n"
+    )
+
+    def _model(self, head: str) -> str:
+        return (
+            head
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[intpk]\n"
+        )
+
+    def _parse_tree(self, tmp_path: Path) -> dict[str, EntityInfo]:
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        return entities
+
+    def test_two_level_relative_import(self, tmp_path: Path):
+        (tmp_path / "pkg" / "sub").mkdir(parents=True)
+        (tmp_path / "pkg" / "types.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "sub" / "models.py").write_text(
+            self._model("from ..types import intpk\n"), encoding="utf-8"
+        )
+        assert _field(self._parse_tree(tmp_path), "id").is_primary_key
+
+    def test_unresolvable_relative_import_is_not_an_alias(self, tmp_path: Path):
+        (tmp_path / "types.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            self._model("from .missing import intpk\n"), encoding="utf-8"
+        )
+        assert _field(self._parse_tree(tmp_path), "id").type_str == "intpk"
+
+    def test_star_import_picks_its_module_among_conflicting_ones(self, tmp_path: Path):
+        (tmp_path / "types.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "other.py").write_text(
+            self.ALIAS.replace("primary_key=True", "index=True"), encoding="utf-8"
+        )
+        (tmp_path / "models.py").write_text(self._model("from .types import *\n"), encoding="utf-8")
+        f = _field(self._parse_tree(tmp_path), "id")
+        assert (f.is_primary_key, f.index) == (True, False)
+
+    def test_aliases_in_several_model_modules(self, tmp_path: Path):
+        (tmp_path / "types.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "a.py").write_text(self._model(""), encoding="utf-8")
+        (tmp_path / "b.py").write_text(
+            self._model("").replace("Account", "Other").replace("'account'", "'other'"),
+            encoding="utf-8",
+        )
+        entities = self._parse_tree(tmp_path)
+        assert entities["Account"].fields[0].is_primary_key
+        assert entities["Other"].fields[0].is_primary_key
+
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="`type X = ...` needs Python 3.12")
+    def test_pep695_type_statement_rebinds_the_name(self, tmp_path: Path):
+        (tmp_path / "models.py").write_text(
+            self._model(
+                self.ALIAS + "type intpk = Annotated[int, mapped_column(primary_key=True)]\n"
+            ),
+            encoding="utf-8",
+        )
+        assert _field(self._parse_tree(tmp_path), "id").type_str == "intpk"
+
+
+def test_resolver_without_a_file_uses_unique_aliases():
+    import ast as _ast
+
+    from erdify.parser.aliases import AliasResolver
+
+    tree = _ast.parse("intpk = Annotated[int, mapped_column(primary_key=True)]\n")
+    resolver = AliasResolver({Path("types.py"): tree}, classes=[])
+    assert set(resolver.aliases_for(None)) == {"intpk"}

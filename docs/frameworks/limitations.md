@@ -145,20 +145,29 @@ collection (`list`, `set`, `Sequence`, `Iterable`, `tuple[X, ...]`, a mapping's
 value, and SQLAlchemy's collection-only `WriteOnlyMapped` / `DynamicMapped`). A union of several classes
 (`Mapped[Union["Cat", "Dog"]]`) names no single class, so nothing is drawn for
 it. A type alias for a relationship (`Mapped[ChildList]`) is taken as a class
-name, so it draws an edge only if a model of that name exists. Only
-column type aliases are resolved: a module-level `Annotated[...]` alias whose
-metadata holds a `mapped_column(...)`
+name, so it draws an edge only if a model of that name exists.
+
+Column type aliases are resolved like Python names, per module: a
+module-level `Annotated[...]` alias whose metadata holds a `mapped_column(...)`
 (`intpk = Annotated[int, mapped_column(primary_key=True)]`, also
-`X: TypeAlias = ...`), from any scanned file. Other `Annotated` aliases (e.g.
-Pydantic's `PositiveInt`) keep their name as the type, a model class of the
-same name wins, and a name defined differently in two places (or rebound to
-something else, including by an import or a chained assignment) is ambiguous
-and ignored. Aliases are matched by name across the scanned files: a model
-module that imports an unrelated object under an alias's name still gets the
-alias. Only SQLAlchemy models read this metadata; SQLModel, Pydantic and
-dataclass fields keep the alias name and get no settings from it. A PEP 695 `type X = ...` alias is
-not read, since SQLAlchemy does not take a `mapped_column()` from it, and
-neither is a subscripted one (`Pk[int]`). A module-qualified name
+`X: TypeAlias = ...`, or built on another alias: `Annotated[intpk, ...]`).
+
+- In the module using it, the name's last module-level binding counts. An
+  import (`from .types import intpk`, absolute, renamed or `*`) is followed
+  into the scanned file it names; an import from elsewhere (`from uuid import
+  UUID`) or any other binding means the name is not an alias there.
+- A name the module does not bind at all (e.g. imported under
+  `TYPE_CHECKING`) uses the alias of that name if exactly one scanned module
+  defines it.
+- A model class of the same name wins. Other `Annotated` aliases (e.g.
+  Pydantic's `PositiveInt`) keep their name as the type. A PEP 695
+  `type X = ...` alias is not read, since SQLAlchemy does not take a
+  `mapped_column()` from it, and neither is a subscripted one (`Pk[int]`).
+- Only SQLAlchemy models read this metadata; SQLModel, Pydantic and dataclass
+  fields keep the alias name and get no settings from it.
+- The defining module must be scanned: with the default `--include models.py`,
+  aliases in `types.py` are only found with `--include '**/*.py'` (or a
+  pattern that matches the file). A module-qualified name
 (`schemas.User`) resolves by its last part inside `relationship()` /
 `Relationship()`; on a plain Pydantic / dataclass field it stays a column,
 because it may be an external class that shares a model's name.

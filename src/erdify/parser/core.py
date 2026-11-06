@@ -5,10 +5,10 @@ import sys
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from ..config import EntityInfo, EnumInfo, is_structural_link_table
-from .annotations import defines_column_alias
+from .aliases import AliasResolver
 from .common import is_enum_class, to_snake_case
 from .dialects import ParseContext
 from .discovery import discover_model_files
@@ -111,6 +111,8 @@ class ASTDatabaseParser:
         self._enums: Dict[str, EnumInfo] = {}
         self._all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
         self._file_trees: Dict[Path, ast.Module] = {}
+        #: The file each class in ``_all_classes`` was read from.
+        self._class_files: Dict[str, Path] = {}
         #: Classes and dialects (with their caches); renewed for each parse run.
         self._ctx = self._new_context()
 
@@ -139,6 +141,7 @@ class ASTDatabaseParser:
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
                         self._all_classes[node.name] = node
+                        self._class_files[node.name] = model_file
             except Exception as e:
                 print(f"Error parsing {model_file}: {e}", file=sys.stderr)
                 self._parse_errors.append((model_file, str(e)))
@@ -243,85 +246,18 @@ class ASTDatabaseParser:
             infer_keys=self.infer_keys,
             django_raw_types=self.django_raw_types,
             base_classes=self.base_classes,
-            aliases=self._annotated_aliases(),
+            aliases_for=self._alias_lookup(),
         )
 
-    def _annotated_aliases(self) -> Dict[str, ast.expr]:
-        """Module-level column type aliases of every scanned file, by name (#241).
+    def _alias_lookup(self) -> "Callable[[str], Dict[str, ast.expr]]":
+        """Class name -> the column type aliases usable in its module (#250)."""
+        resolver = AliasResolver(self._file_trees, self._all_classes)
+        class_files = self._class_files
 
-        ``X = Annotated[..., mapped_column(...)]`` and ``X: TypeAlias = ...``.
-        A class of the same name wins. A name defined differently in two
-        places, or also bound to something else at module level (another
-        assignment, a chained or unpacking one, or an import under that name
-        other than of the alias itself, or any import of that name in the
-        module defining the alias), is ambiguous and not used. A PEP 695
-        ``type X = ...`` alias is not read: SQLAlchemy does not take a
-        ``mapped_column()`` from it.
-        """
-        found: Dict[str, ast.expr] = {}
-        ambiguous: set[str] = set()
-        for tree in self._file_trees.values():
-            # An import of the alias's own name in the module defining it
-            # replaces it (`UUID = Annotated[...]` then `from uuid import UUID`).
-            defined = {
-                target.id
-                for node in tree.body
-                if isinstance(node, (ast.Assign, ast.AnnAssign))
-                for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
-                if isinstance(target, ast.Name)
-            }
-            imported = {
-                alias.asname or alias.name.split(".")[0]
-                for node in tree.body
-                if isinstance(node, (ast.Import, ast.ImportFrom))
-                for alias in node.names
-            }
-            ambiguous.update(defined & imported)
-            for node in tree.body:
-                ambiguous.update(self._other_module_bindings(node))
-                name, value = None, None
-                if (
-                    isinstance(node, ast.Assign)
-                    and len(node.targets) == 1
-                    and isinstance(node.targets[0], ast.Name)
-                ):
-                    name, value = node.targets[0].id, node.value
-                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                    name, value = node.target.id, node.value
-                if name is None or name in self._all_classes:
-                    continue
-                if value is None or not defines_column_alias(value):
-                    ambiguous.add(name)  # also bound to something else
-                    continue
-                if name in found and ast.dump(found[name]) != ast.dump(value):
-                    ambiguous.add(name)
-                found[name] = value
-        return {name: value for name, value in found.items() if name not in ambiguous}
+        def aliases_for(class_name: str) -> Dict[str, ast.expr]:
+            return resolver.aliases_for(class_files.get(class_name))
 
-    @staticmethod
-    def _other_module_bindings(node: ast.stmt) -> List[str]:
-        """Names a module-level statement binds other than as a plain ``X = ...``.
-
-        Chained (``a = b = ...``) and unpacking (``a, b = ...``) assignments,
-        and imports under a different name (``import UUID as intpk``). An
-        import of the alias itself (``from .types import intpk``) keeps it.
-        """
-        if isinstance(node, ast.Assign) and not (
-            len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
-        ):
-            return [
-                sub.id
-                for target in node.targets
-                for sub in ast.walk(target)
-                if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store)
-            ]
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            return [
-                alias.asname
-                for alias in node.names
-                if alias.asname is not None and alias.asname != alias.name.split(".")[-1]
-            ]
-        return []
+        return aliases_for
 
     def _classify_source(self, class_node: ast.ClassDef) -> str | None:
         """Classify which model framework a class belongs to (:meth:`ParseContext.classify`).

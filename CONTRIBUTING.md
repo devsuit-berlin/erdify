@@ -102,6 +102,7 @@ erdify/
 │   ├── parser/          # AST parsing of Python models
 │   │   ├── core.py          # ASTDatabaseParser + parse_models_directory / scan_report
 │   │   ├── discovery.py     # File discovery (include globs, exclude paths)
+│   │   ├── aliases.py       # Column type aliases, resolved per module
 │   │   ├── annotations.py   # Reading type annotations from the syntax tree
 │   │   ├── inheritance.py   # MRO, merge order, member merging (all frameworks)
 │   │   ├── common.py        # Shared types and small helpers

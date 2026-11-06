@@ -41,7 +41,7 @@ class AnnotatedDialect(Dialect):
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 field_name = node.target.id
                 if self.reads_annotated_columns:
-                    node = self._with_aliases_expanded(node)
+                    node = self._with_aliases_expanded(node, class_node.name)
 
                 # Skip special attributes
                 if field_name.startswith("_"):
@@ -85,9 +85,9 @@ class AnnotatedDialect(Dialect):
             kw.arg in ("default", "default_factory", "insert_default") for kw in value.keywords
         )
 
-    def _with_aliases_expanded(self, node: ast.AnnAssign) -> ast.AnnAssign:
-        """``node`` with column type aliases in its annotation expanded (#241)."""
-        annotation = expand_aliases(node.annotation, self.ctx.aliases)
+    def _with_aliases_expanded(self, node: ast.AnnAssign, class_name: str) -> ast.AnnAssign:
+        """``node`` with column type aliases expanded, as seen from its class's module."""
+        annotation = expand_aliases(node.annotation, self.ctx.aliases_for(class_name))
         if annotation is node.annotation:
             return node
         expanded = ast.AnnAssign(
