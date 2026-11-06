@@ -324,7 +324,7 @@ class TestJsonOutput:
         post = next(e for e in doc["entities"] if e["name"] == "Post")
         assert [f["name"] for f in post["fields"]] == ["id"]
         assert post["relationships"] == [
-            {"target": "User", "type": "one", "attribute": "ref", "nullable": True}
+            {"target": "User", "type": "one", "attribute": "ref", "nullable": True, "inverse": None}
         ]
 
     def test_unresolvable_relationship_is_not_listed(self, tmp_path: Path):

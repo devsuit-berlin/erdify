@@ -121,7 +121,8 @@ point for downstream tools that want erdify's model without re-parsing source.
          "default": null}
       ],
       "relationships": [
-        {"target": "User", "type": "one", "attribute": "user", "nullable": false}
+        {"target": "User", "type": "one", "attribute": "user", "nullable": false,
+         "inverse": null}
       ]
     }
   ],
@@ -173,6 +174,7 @@ Relationship:
 | `type` | string | One of `one`, `many`, `one_to_one`, `many_to_many`. Django `ForeignKey` / `OneToOneField` are foreign-key columns, not relationships, so the parsers no longer emit `one_to_one`; it remains valid for a hand-built `EntityInfo`. |
 | `attribute` | string | Attribute name on this entity. |
 | `nullable` | boolean | Always present. `true` when a `one` relationship's annotation admits `None` (`user: User \| None`, `Optional[User]`, `Mapped[Optional["User"]]`); `false` otherwise, including every `many` / `many_to_many` relationship. |
+| `inverse` | string or null | The other side's attribute, when the source names it (SQLAlchemy / SQLModel `back_populates=`); `null` otherwise. Added in 1.4.0. |
 
 Enum:
 

@@ -31,7 +31,7 @@ def test_default_context_resolves_model_references():
     dialect = PydanticDialect(ParseContext(classes=ClassIndex(classes)))
     fields, rels = dialect.class_fields(classes["Post"], "Post")
     assert fields == {}
-    assert rels == {"user": ("User", "one", "user", False)}
+    assert rels == {"user": ("User", "one", "user", False, None)}
 
 
 def test_django_table_args_uniqueness_kept(tmp_path: Path):

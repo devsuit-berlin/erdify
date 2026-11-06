@@ -1,7 +1,7 @@
 """Data classes for erdify."""
 
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 
 @dataclass
@@ -67,6 +67,10 @@ class EntityInfo:
             reference is optional (e.g. ``user: User | None``); drawn as
             zero-or-one on the target side. Foreign-key columns carry their own
             ``FieldInfo.is_nullable`` instead.
+        inverse_relationships: Relationship attribute -> the attribute of the
+            other side's relationship it pairs with, when the source names it
+            (SQLAlchemy / SQLModel ``back_populates=``). Both sides are then
+            drawn as one edge.
     """
 
     name: str
@@ -79,6 +83,7 @@ class EntityInfo:
     base_classes: List[str] = field(default_factory=list)
     source: str = "sqlmodel"
     nullable_relationships: List[str] = field(default_factory=list)
+    inverse_relationships: Dict[str, str] = field(default_factory=dict)
 
 
 def is_structural_link_table(fields: List[FieldInfo]) -> bool:

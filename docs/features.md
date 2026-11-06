@@ -17,7 +17,7 @@ framework is detected and a worked example, see the
 | Default Values | ✅ | `Field(default=value)` |
 | Indexes | ✅ | `Field(index=True)` — detected and emitted in `--format json`; not drawn in the PlantUML/Mermaid diagram |
 | Enums | ✅ | Python `Enum` classes |
-| Relationships | ✅ | `Relationship()` |
+| Relationships | ✅ | `Relationship()` / `relationship()`, model references, Django relation fields; a relationship declared on both models is one edge, paired exactly by `back_populates=` |
 | Inheritance | ✅ | Mixin classes supported; a redeclared attribute resolves like Python's MRO. Django multi-table inheritance is drawn as a `<parent>_ptr_id` 1:1 link; proxy models are not drawn |
 | Link Tables | ✅ | Many-to-many detection (structural) |
 | Custom Table Names | ✅ | `__tablename__` attribute |

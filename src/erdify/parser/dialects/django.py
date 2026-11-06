@@ -728,7 +728,7 @@ class DjangoDialect(Dialect):
             return None
         if any(keyword.arg == "through" for keyword in call.keywords):
             return None
-        return (target, "many_to_many", name, False)
+        return _Rel(target, "many_to_many", name, False)
 
     def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
         """Resolve a relationship field's target from its first positional or ``to=`` arg.

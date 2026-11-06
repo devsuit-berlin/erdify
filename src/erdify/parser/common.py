@@ -2,16 +2,28 @@
 
 import ast
 import re
-from typing import Dict, List, Tuple, TypeVar
+from typing import Dict, List, NamedTuple, Tuple, TypeVar
 
 from ..config import FieldInfo
 
 _V = TypeVar("_V")
 
-# A relationship while parsing: (target, type, attribute, nullable). The
-# public EntityInfo.relationships keeps (target, type, attribute); the flag
-# goes to EntityInfo.nullable_relationships.
-_Rel = Tuple[str, str, str, bool]
+
+class _Rel(NamedTuple):
+    """A relationship while parsing.
+
+    The public ``EntityInfo.relationships`` keeps ``(target, kind, attr)``;
+    ``nullable`` goes to ``EntityInfo.nullable_relationships`` and
+    ``inverse`` to ``EntityInfo.inverse_relationships``.
+    """
+
+    target: str
+    kind: str
+    attr: str
+    nullable: bool
+    #: The other side's attribute, when named explicitly (``back_populates=``).
+    inverse: str | None = None
+
 
 # A class body's (fields, relationships, declared attribute names).
 _ClassMembers = Tuple[Dict[str, FieldInfo], Dict[str, _Rel], List[str]]

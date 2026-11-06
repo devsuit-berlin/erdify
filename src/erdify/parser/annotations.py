@@ -267,4 +267,4 @@ def is_mapped_annotation(annotation: ast.expr) -> bool:
 
 def as_rel(ref: _AnnotationRef, attr: str) -> _Rel:
     """A relationship tuple; only a ``one`` reference can be optional (#223)."""
-    return (ref.target, "many" if ref.many else "one", attr, ref.nullable and not ref.many)
+    return _Rel(ref.target, "many" if ref.many else "one", attr, ref.nullable and not ref.many)
