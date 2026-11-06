@@ -541,7 +541,7 @@ class TestModuleScope:
 
     @pytest.mark.parametrize(
         "head",
-        ["from .types import intpk\n", "from types import intpk\n", "from .types import *\n"],
+        ["from .types import intpk\n", "from .types import *\n"],
     )
     def test_import_from_the_defining_module(self, tmp_path: Path, head: str):
         entities = self._two_files(tmp_path, head, "    id: Mapped[intpk]\n")
@@ -680,3 +680,209 @@ def test_resolver_without_a_file_uses_unique_aliases():
     tree = _ast.parse("intpk = Annotated[int, mapped_column(primary_key=True)]\n")
     resolver = AliasResolver({Path("types.py"): tree}, classes=[])
     assert set(resolver.aliases_for(None)) == {"intpk"}
+
+
+class TestPythonScoping:
+    """Review fixes: Python's own name semantics (#249, #250)."""
+
+    ALIAS = (
+        "from typing import Annotated\n"
+        "from sqlalchemy.orm import mapped_column\n\n"
+        "intpk = Annotated[int, mapped_column(primary_key=True)]\n"
+    )
+
+    def _model(self, head: str, body: str = "    id: Mapped[intpk]\n", tail: str = "") -> str:
+        return (
+            head + HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n" + body + tail
+        )
+
+    def _parse_tree(self, root: Path) -> dict[str, EntityInfo]:
+        entities, _ = parse_models_directory(root, include_patterns=["**/*.py"])
+        return entities
+
+    def test_relative_input_path_with_package_import(self, tmp_path: Path, monkeypatch):
+        """`erdify .` on a module with `from . import db` must not crash."""
+        (tmp_path / "models.py").write_text(
+            self._model("from . import db\n" + self.ALIAS), encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        entities, _ = parse_models_directory(Path("."))
+        assert _field(entities, "id").is_primary_key
+
+    def test_absolute_import_of_a_scanned_module(self, tmp_path: Path):
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            self._model("from coltypes import intpk\n"), encoding="utf-8"
+        )
+        assert _field(self._parse_tree(tmp_path), "id").is_primary_key
+
+    def test_ambiguous_absolute_import_prefers_its_own_package(self, tmp_path: Path):
+        for svc, flag in (("svc1", "primary_key=True"), ("svc2", "index=True")):
+            (tmp_path / svc / "app" / "users").mkdir(parents=True)
+            (tmp_path / svc / "app" / "coltypes.py").write_text(
+                self.ALIAS.replace("primary_key=True", flag), encoding="utf-8"
+            )
+        (tmp_path / "svc1" / "app" / "users" / "models.py").write_text(
+            self._model("from app.coltypes import intpk\n"), encoding="utf-8"
+        )
+        f = _field(self._parse_tree(tmp_path), "id")
+        assert (f.is_primary_key, f.index) == (True, False)
+
+    def test_still_ambiguous_import_falls_back_by_name(self, tmp_path: Path):
+        for svc in ("svc1", "svc2"):
+            (tmp_path / svc).mkdir()
+            (tmp_path / svc / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            self._model("from coltypes import intpk\n"), encoding="utf-8"
+        )
+        assert _field(self._parse_tree(tmp_path), "id").is_primary_key
+
+    def test_star_import_of_a_non_alias_blocks_the_fallback(self, tmp_path: Path):
+        (tmp_path / "coltypes.py").write_text(self.ALIAS.replace("intpk", "UUID"), encoding="utf-8")
+        (tmp_path / "common.py").write_text("from uuid import UUID\n", encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            self._model(
+                "from .common import *\n",
+                "    id: Mapped[int] = mapped_column(primary_key=True)\n    token: Mapped[UUID]\n",
+            ),
+            encoding="utf-8",
+        )
+        token = _field(self._parse_tree(tmp_path), "token")
+        assert (token.type_str, token.is_primary_key) == ("UUID", False)
+
+    def test_later_star_import_wins(self, tmp_path: Path):
+        (tmp_path / "base_types.py").write_text(
+            self.ALIAS.replace("primary_key=True", "index=True"), encoding="utf-8"
+        )
+        (tmp_path / "overrides.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            self._model("from .base_types import *\nfrom .overrides import *\n"),
+            encoding="utf-8",
+        )
+        f = _field(self._parse_tree(tmp_path), "id")
+        assert (f.is_primary_key, f.index) == (True, False)
+
+    def test_star_import_after_a_local_binding_overrides_it(self, tmp_path: Path):
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            self._model("intpk = int\nfrom .coltypes import *\n"), encoding="utf-8"
+        )
+        assert _field(self._parse_tree(tmp_path), "id").is_primary_key
+
+    def test_transitive_star_import_and_all(self, tmp_path: Path):
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "pkg" / "columns.py").write_text(
+            self.ALIAS + "_hidden = Annotated[int, mapped_column(index=True)]\n", encoding="utf-8"
+        )
+        (tmp_path / "pkg" / "__init__.py").write_text(
+            "from .columns import *\n__all__ = ['intpk']\n", encoding="utf-8"
+        )
+        (tmp_path / "models.py").write_text(
+            self._model(
+                "from .pkg import *\n", "    id: Mapped[intpk]\n    other: Mapped[_hidden]\n"
+            ),
+            encoding="utf-8",
+        )
+        entities = self._parse_tree(tmp_path)
+        assert _field(entities, "id").is_primary_key
+        # `_hidden` is private to columns.py; only the by-name fallback finds it.
+        assert _field(entities, "other").index
+
+    def test_plain_re_export_is_an_alias(self, tmp_path: Path):
+        (tmp_path / "coltypes.py").write_text(self.ALIAS + "UserId = intpk\n", encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            self._model("from .coltypes import UserId\n", "    id: Mapped[UserId]\n"),
+            encoding="utf-8",
+        )
+        assert _flags(_field(self._parse_tree(tmp_path), "id")) == ("int", True, False, False, None)
+
+    def test_rebinding_after_the_class_does_not_apply(self, tmp_path: Path):
+        (tmp_path / "models.py").write_text(
+            self._model(self.ALIAS, tail="\n\nintpk = int\n"), encoding="utf-8"
+        )
+        assert _field(self._parse_tree(tmp_path), "id").is_primary_key
+
+    def test_class_in_an_unrelated_module_does_not_block_an_alias(self, tmp_path: Path):
+        (tmp_path / "billing.py").write_text(
+            HEADER + "\nclass Money(Base):\n    __tablename__ = 'money'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "coltypes.py").write_text(
+            self.ALIAS.replace(
+                "intpk = Annotated[int, mapped_column(primary_key=True)]",
+                "Money = Annotated[int, mapped_column(nullable=False)]",
+            ),
+            encoding="utf-8",
+        )
+        (tmp_path / "shop.py").write_text(
+            self._model(
+                "from .coltypes import Money\n",
+                "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+                "    total: Mapped[Money | None]\n",
+            ),
+            encoding="utf-8",
+        )
+        assert _field(self._parse_tree(tmp_path), "total").is_nullable is False
+
+    def test_mixin_in_another_module_uses_its_own_aliases(self, tmp_path: Path):
+        (tmp_path / "mixins.py").write_text(
+            self.ALIAS + "from sqlalchemy.orm import Mapped\n\n\n"
+            "class KeyMixin:\n    id: Mapped[intpk]\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "models.py").write_text(
+            "from .mixins import KeyMixin\n"
+            + HEADER.replace("class User(Base):", "class Unused(Base):")
+            + "\nintpk = int\n\n\n"
+            "class Account(KeyMixin, Base):\n    __tablename__ = 'account'\n"
+            "    name: Mapped[str] = mapped_column()\n",
+            encoding="utf-8",
+        )
+        assert _field(self._parse_tree(tmp_path), "id").is_primary_key
+
+
+def test_star_import_from_an_unscanned_module_binds_nothing(tmp_path: Path):
+    entities = _parse(
+        tmp_path,
+        """
+from os.path import *
+intpk = Annotated[int, mapped_column(primary_key=True)]
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[intpk]
+""",
+    )
+    assert _field(entities, "id").is_primary_key
+
+
+def test_shared_alias_resolved_once_for_many_classes(tmp_path: Path):
+    body = "".join(
+        f"\n\nclass M{i}(Base):\n    __tablename__ = 'm{i}'\n    id: Mapped[taggedpk]\n"
+        for i in range(20)
+    )
+    entities = _parse(
+        tmp_path,
+        """
+intpk = Annotated[int, mapped_column(primary_key=True)]
+taggedpk = Annotated[intpk, "tag"]
+"""
+        + body,
+    )
+    assert all(entities[f"M{i}"].fields[0].is_primary_key for i in range(20))
+
+
+def test_mutual_imports_do_not_loop(tmp_path: Path):
+    (tmp_path / "a.py").write_text("from .b import intpk\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("from .a import intpk\n", encoding="utf-8")
+    (tmp_path / "models.py").write_text(
+        "from .a import intpk\n"
+        + HEADER
+        + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+        "    id: Mapped[int] = mapped_column(primary_key=True)\n    col: Mapped[intpk]\n",
+        encoding="utf-8",
+    )
+    entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+    assert _field(entities, "col").type_str == "intpk"

@@ -21,9 +21,9 @@ class ParseContext:
         base_classes: Extra base-class names treated as Pydantic models.
         dialects: One instance of every dialect, in ``MODEL_SOURCES`` order;
             created on first use.
-        aliases_for: Column type aliases usable in the module that defines a
-            class, by class name (``intpk = Annotated[int,
-            mapped_column(primary_key=True)]``, #241, #250).
+        aliases_for: Column type aliases visible where a class is defined
+            (``intpk = Annotated[int, mapped_column(primary_key=True)]``,
+            #241, #249, #250).
     """
 
     classes: ClassIndex = field(default_factory=lambda: ClassIndex({}))
@@ -31,7 +31,7 @@ class ParseContext:
     django_raw_types: bool = False
     base_classes: Set[str] = field(default_factory=set)
     dialects: List["Dialect"] = field(default_factory=list)
-    aliases_for: Callable[[str], Mapping[str, ast.expr]] = lambda _class_name: {}
+    aliases_for: Callable[[ast.ClassDef], Mapping[str, ast.expr]] = lambda _class_node: {}
 
     def all_dialects(self) -> List["Dialect"]:
         """Every dialect, in classification order, bound to this context."""

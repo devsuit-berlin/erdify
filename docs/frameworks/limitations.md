@@ -128,6 +128,37 @@ annotation, so they are not drawn as columns. A class needs at least one
 `Mapped[...]` (or `WriteOnlyMapped` / `DynamicMapped`) member of its own to be
 detected; one mixing both styles shows only its `Mapped` columns.
 
+## Column type aliases
+
+SQLAlchemy column type aliases are resolved like Python resolves the name when
+the class body runs: a module-level `Annotated[...]` alias whose metadata
+holds a `mapped_column(...)` (`intpk = Annotated[int,
+mapped_column(primary_key=True)]`, also `X: TypeAlias = ...`, a re-export
+`UserId = intpk`, or one built on another alias: `Annotated[intpk, ...]`).
+
+- In the model's module, the name's last module-level binding **before the
+  class** counts; a rebinding after it does not.
+- An import is followed into the scanned file it names: relative, absolute
+  (when several scanned files match, the one in the importing file's package
+  wins), renamed, or `*` (in order, honouring `__all__`, and through further
+  star imports). An import from elsewhere (`from uuid import UUID`), a
+  function, a class or any other binding means the name is not an alias there.
+- A name the module does not bind at all (e.g. imported under
+  `TYPE_CHECKING`) uses the alias of that name if it is defined identically
+  wherever it is defined and is not a model class's name. So does an absolute
+  import that stays ambiguous.
+- Only module-level statements count, not ones inside `if` / `try` blocks. A
+  module-qualified alias (`Mapped[coltypes.intpk]`) is not expanded.
+- Other `Annotated` aliases (e.g. Pydantic's `PositiveInt`) keep their name as
+  the type. A PEP 695 `type X = ...` alias is not read, since SQLAlchemy does
+  not take a `mapped_column()` from it, and neither is a subscripted one
+  (`Pk[int]`).
+- Only SQLAlchemy models read this metadata; SQLModel, Pydantic and dataclass
+  fields keep the alias name and get no settings from it.
+- The defining module must be scanned: with the default `--include models.py`,
+  aliases in `coltypes.py` are only found with `--include '**/*.py'` (or a
+  pattern that matches the file).
+
 ## Relationships need an annotation
 
 The relationship target comes from the **annotation**, not from the call
@@ -146,29 +177,7 @@ value, and SQLAlchemy's collection-only `WriteOnlyMapped` / `DynamicMapped`). A 
 (`Mapped[Union["Cat", "Dog"]]`) names no single class, so nothing is drawn for
 it. A type alias for a relationship (`Mapped[ChildList]`) is taken as a class
 name, so it draws an edge only if a model of that name exists.
-
-Column type aliases are resolved like Python names, per module: a
-module-level `Annotated[...]` alias whose metadata holds a `mapped_column(...)`
-(`intpk = Annotated[int, mapped_column(primary_key=True)]`, also
-`X: TypeAlias = ...`, or built on another alias: `Annotated[intpk, ...]`).
-
-- In the module using it, the name's last module-level binding counts. An
-  import (`from .types import intpk`, absolute, renamed or `*`) is followed
-  into the scanned file it names; an import from elsewhere (`from uuid import
-  UUID`) or any other binding means the name is not an alias there.
-- A name the module does not bind at all (e.g. imported under
-  `TYPE_CHECKING`) uses the alias of that name if exactly one scanned module
-  defines it.
-- A model class of the same name wins. Other `Annotated` aliases (e.g.
-  Pydantic's `PositiveInt`) keep their name as the type. A PEP 695
-  `type X = ...` alias is not read, since SQLAlchemy does not take a
-  `mapped_column()` from it, and neither is a subscripted one (`Pk[int]`).
-- Only SQLAlchemy models read this metadata; SQLModel, Pydantic and dataclass
-  fields keep the alias name and get no settings from it.
-- The defining module must be scanned: with the default `--include models.py`,
-  aliases in `types.py` are only found with `--include '**/*.py'` (or a
-  pattern that matches the file). A module-qualified name
-(`schemas.User`) resolves by its last part inside `relationship()` /
+A module-qualified name (`schemas.User`) resolves by its last part inside `relationship()` /
 `Relationship()`; on a plain Pydantic / dataclass field it stays a column,
 because it may be an external class that shares a model's name.
 

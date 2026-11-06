@@ -2,27 +2,42 @@
 
 SQLAlchemy's ``intpk = Annotated[int, mapped_column(primary_key=True)]``
 lets ``id: Mapped[intpk]`` declare a primary key. Which object ``intpk``
-names depends on the module it is used in, so it is resolved there: the
-module's last module-level binding of the name wins, an import is followed
-into the scanned file it names, and an alias built on another one
-(``Annotated[intpk, ...]``) resolves that one in its own module.
+names depends on the module and on where the class is defined in it, so it
+is resolved like Python resolves the name when the class body runs:
+
+- the module's last module-level binding of the name *before the class*
+  counts: an alias (``X = Annotated[...]``, ``X = other_alias``), an import,
+  a star import, or anything else (a function, a class, ``X = int``);
+- an import is followed into the scanned file it names; a star import
+  provides the names that module exports (``__all__``, else its public names);
+- an alias built on another one (``Annotated[intpk, ...]``) resolves that one
+  where the alias is defined;
+- a name the module does not bind at all (e.g. imported under
+  ``TYPE_CHECKING``) falls back to an alias of that name defined identically
+  wherever it is defined, unless a model class has that name.
 """
 
 import ast
 from pathlib import Path
-from typing import Dict, Iterable, List, NamedTuple, Set, Tuple
+from types import MappingProxyType
+from typing import Dict, Iterable, List, Mapping, NamedTuple, Set, Tuple
 
 from .annotations import defines_column_alias, expand_aliases
 
+#: ``_find_module`` result for an absolute import several scanned files match.
+_AMBIGUOUS = Path("<ambiguous>")
+
 
 class _Binding(NamedTuple):
-    """A module-level binding of one name: the last one in the module counts."""
+    """One module-level binding of a name."""
 
-    #: ``"alias"`` (``X = Annotated[...]``), ``"import"`` or ``"other"``.
+    #: ``"alias"`` (a possible alias value), ``"import"`` or ``"other"``.
     kind: str
-    #: The alias value (``"alias"``), or ``None``.
+    #: Line of the statement; a class only sees bindings before its own line.
+    line: int
+    #: The assigned value (``"alias"``).
     value: ast.expr | None = None
-    #: The imported module, as written (``"import"``; ``None`` for ``from . import``).
+    #: The imported module as written, ``None`` for ``from . import x`` (``"import"``).
     module: str | None = None
     #: Leading dots of a relative import (``"import"``).
     level: int = 0
@@ -35,170 +50,252 @@ class AliasResolver:
 
     Args:
         trees: Each scanned file's syntax tree.
-        classes: Names of the parsed classes; a class shadows a same-named alias.
+        classes: Names of the parsed model classes; the by-name fallback never
+            turns one into an alias.
     """
 
-    def __init__(self, trees: Dict[Path, ast.Module], classes: Iterable[str]):
+    def __init__(self, trees: Mapping[Path, ast.Module], classes: Iterable[str]):
         self._trees = trees
         self._classes = set(classes)
-        self._scopes: Dict[Path, Dict[str, _Binding]] = {}
-        self._stars: Dict[Path, List[Tuple[str | None, int]]] = {}
-        self._cache: Dict[Path, Dict[str, ast.expr]] = {}
+        self._events: Dict[Path, List[Tuple[str, _Binding]]] = {}
+        self._scopes: Dict[Tuple[Path, int | None], Dict[str, _Binding]] = {}
+        self._scoping: Set[Path] = set()
+        self._modules: Dict[Tuple[Path, str | None, int], Path | None] = {}
+        self._resolved: Dict[Tuple[Path, str, int | None], ast.expr | None] = {}
+        #: Cycle cut-offs so far; a result computed across one is not cached.
+        self._cycles = 0
+        self._views: Dict[Tuple[Path, int | None], Mapping[str, ast.expr]] = {}
         self._fallback: Dict[str, ast.expr] | None = None
+        self._suffixes: Dict[Tuple[str, ...], List[Path]] | None = None
 
-    def aliases_for(self, file: Path | None) -> Dict[str, ast.expr]:
-        """Alias name -> fully expanded ``Annotated[...]`` usable in ``file``.
-
-        Besides the names ``file`` binds or star-imports, a name it does not
-        bind at all falls back to the alias of that name if exactly one
-        scanned module defines it (the import may be invisible, e.g. under
-        ``TYPE_CHECKING``).
-        """
+    def aliases_for(self, file: Path | None, line: int | None = None) -> Mapping[str, ast.expr]:
+        """Alias name -> fully expanded ``Annotated[...]``, as seen at ``line`` of ``file``."""
         if file is None or file not in self._trees:
-            return dict(self._fallback_aliases())
-        cached = self._cache.get(file)
-        if cached is not None:
-            return cached
+            return MappingProxyType(dict(self._fallback_aliases()))
+        key = (file, line)
+        view = self._views.get(key)
+        if view is not None:
+            return view
+        scope = self._scope(file, line)
         result: Dict[str, ast.expr] = {}
-        bound = set(self._scope(file))
-        for name in bound:
-            value = self._resolve(file, name, ())
-            if value is not None:
-                result[name] = value
+        for name, binding in scope.items():
+            if binding.kind != "other":
+                value = self._resolve(file, name, line, ())
+                if value is not None:
+                    result[name] = value
         for name, value in self._fallback_aliases().items():
-            if name in bound or name in result:
-                continue
-            via_star = self._resolve_star(file, name, ())
-            result[name] = via_star if via_star is not None else value
-        for module, level in self._stars.get(file, ()):  # star-imported aliases
-            target = self._find_module(file, module, level)
-            if target is not None:
-                for name in self._scope(target):
-                    if name not in bound and name not in result:
-                        value = self._resolve(target, name, ())
-                        if value is not None:
-                            result[name] = value
-        self._cache[file] = result
-        return result
+            if name not in scope:  # bound names, also via `*`, never fall back
+                result[name] = value
+        view = MappingProxyType(result)
+        self._views[key] = view
+        return view
 
-    # -- scope -----------------------------------------------------------------
+    # -- module scope ----------------------------------------------------------
 
-    def _scope(self, file: Path) -> Dict[str, _Binding]:
-        """The module's last binding of each name bound at module level."""
-        scope = self._scopes.get(file)
-        if scope is not None:
-            return scope
-        scope = {}
-        stars: List[Tuple[str | None, int]] = []
+    def _module_events(self, file: Path) -> List[Tuple[str, _Binding]]:
+        """``(name, binding)`` per module-level binding, in statement order.
+
+        A star import is recorded as name ``"*"`` and expanded by ``_scope``.
+        """
+        events = self._events.get(file)
+        if events is not None:
+            return events
+        events = []
         for node in self._trees[file].body:
+            line = node.lineno
             if isinstance(node, ast.Assign):
                 if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-                    scope[node.targets[0].id] = self._assigned(node.value)
+                    events.append((node.targets[0].id, self._assigned(node.value, line)))
                 else:  # chained or unpacking: whatever it binds is not an alias
-                    for target in node.targets:
-                        for sub in ast.walk(target):
-                            if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
-                                scope[sub.id] = _Binding("other")
+                    events.extend(
+                        (sub.id, _Binding("other", line))
+                        for target in node.targets
+                        for sub in ast.walk(target)
+                        if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store)
+                    )
             elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                scope[node.target.id] = self._assigned(node.value)
+                if node.value is not None:  # a bare `x: int` binds nothing
+                    events.append((node.target.id, self._assigned(node.value, line)))
             elif isinstance(node, ast.ImportFrom):
                 for alias in node.names:
-                    if alias.name == "*":
-                        stars.append((node.module, node.level))
-                    else:
-                        scope[alias.asname or alias.name] = _Binding(
-                            "import", module=node.module, level=node.level, original=alias.name
-                        )
+                    binding = _Binding(
+                        "import", line, module=node.module, level=node.level, original=alias.name
+                    )
+                    events.append(
+                        ("*" if alias.name == "*" else alias.asname or alias.name, binding)
+                    )
             elif isinstance(node, ast.Import):
                 for alias in node.names:
-                    scope[alias.asname or alias.name.split(".")[0]] = _Binding("other")
+                    name = alias.asname or alias.name.split(".")[0]
+                    events.append((name, _Binding("other", line)))
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                scope[node.name] = _Binding("other")
+                events.append((node.name, _Binding("other", line)))
             elif type(node).__name__ == "TypeAlias":
                 # PEP 695 `type X = ...`: SQLAlchemy takes no mapped_column() from it.
                 alias_name = getattr(node, "name", None)
                 if isinstance(alias_name, ast.Name):
-                    scope[alias_name.id] = _Binding("other")
-        self._scopes[file] = scope
-        self._stars[file] = stars
-        return scope
+                    events.append((alias_name.id, _Binding("other", line)))
+        self._events[file] = events
+        return events
 
     @staticmethod
-    def _assigned(value: ast.expr | None) -> _Binding:
-        if isinstance(value, ast.Subscript):
-            return _Binding("alias", value=value)
-        return _Binding("other")
+    def _assigned(value: ast.expr, line: int) -> _Binding:
+        """``X = Annotated[...]`` or ``X = other_alias`` may be an alias; anything else is not."""
+        if isinstance(value, (ast.Subscript, ast.Name)):
+            return _Binding("alias", line, value=value)
+        return _Binding("other", line)
 
-    # -- resolution --------------------------------------------------------------
+    def _scope(self, file: Path, line: int | None) -> Dict[str, _Binding]:
+        """Each name's last module-level binding before ``line`` (all of them if None)."""
+        key = (file, line)
+        cached = self._scopes.get(key)
+        if cached is not None:
+            return cached
+        scope: Dict[str, _Binding] = {}
+        self._scoping.add(file)
+        try:
+            for name, binding in self._module_events(file):
+                if line is not None and binding.line >= line:
+                    break
+                if name != "*":
+                    scope[name] = binding
+                    continue
+                target = self._find_module(file, binding.module, binding.level)
+                if target is None or target is _AMBIGUOUS or target in self._scoping:
+                    continue
+                for exported in self._exports(target):
+                    scope[exported] = binding._replace(original=exported)
+        finally:
+            self._scoping.discard(file)
+        self._scopes[key] = scope
+        return scope
+
+    def _exports(self, file: Path) -> List[str]:
+        """What ``from <file> import *`` binds: a literal ``__all__``, else public names."""
+        for node in self._trees[file].body:
+            if (
+                isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets)
+                and isinstance(node.value, (ast.List, ast.Tuple))
+            ):
+                return [
+                    elt.value
+                    for elt in node.value.elts
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                ]
+        return [name for name in self._scope(file, None) if not name.startswith("_")]
+
+    # -- resolution ----------------------------------------------------------------
 
     def _resolve(
-        self, file: Path, name: str, stack: Tuple[Tuple[Path, str], ...]
+        self, file: Path, name: str, line: int | None, stack: Tuple[Tuple[Path, str], ...]
     ) -> ast.expr | None:
-        """The expanded column alias ``name`` refers to in ``file``, or None."""
-        if name in self._classes or (file, name) in stack:
+        """The expanded column alias ``name`` refers to at ``line`` of ``file``, or None."""
+        key = (file, name, line)
+        if key in self._resolved:
+            return self._resolved[key]
+        if (file, name) in stack:
+            self._cycles += 1  # results computed under this cut-off depend on the stack
             return None
-        binding = self._scope(file).get(name)
-        if binding is None:
-            return self._resolve_star(file, name, stack)
-        stack = stack + ((file, name),)
+        cycles = self._cycles
+        result = None
+        binding = self._scope(file, line).get(name)
+        if binding is not None:
+            result = self._resolve_binding(file, binding, stack + ((file, name),))
+        if self._cycles == cycles:
+            self._resolved[key] = result
+        return result
+
+    def _resolve_binding(
+        self, file: Path, binding: _Binding, stack: Tuple[Tuple[Path, str], ...]
+    ) -> ast.expr | None:
         if binding.kind == "import":
             target = self._find_module(file, binding.module, binding.level)
-            return self._resolve(target, binding.original, stack) if target else None
+            if target is _AMBIGUOUS:  # several scanned modules match: by name
+                return self._fallback_aliases().get(binding.original)
+            if target is None:  # not a scanned module (stdlib, third party)
+                return None
+            return self._resolve(target, binding.original, None, stack)
         if binding.kind != "alias" or binding.value is None:
             return None
-        # An alias built on other aliases resolves them in its own module (#249).
+        # Names inside the alias resolve where, and when, it is defined (#249).
         local: Dict[str, ast.expr] = {}
         for sub in ast.walk(binding.value):
             if isinstance(sub, ast.Name) and sub.id not in local:
-                inner = self._resolve(file, sub.id, stack)
+                inner = self._resolve(file, sub.id, binding.line, stack)
                 if inner is not None:
                     local[sub.id] = inner
         expanded = expand_aliases(binding.value, local)
         return expanded if defines_column_alias(expanded) else None
 
-    def _resolve_star(
-        self, file: Path, name: str, stack: Tuple[Tuple[Path, str], ...]
-    ) -> ast.expr | None:
-        self._scope(file)
-        for module, level in self._stars.get(file, ()):
-            target = self._find_module(file, module, level)
-            if target is not None and name in self._scope(target):
-                return self._resolve(target, name, stack)
-        return None
-
     def _find_module(self, file: Path, module: str | None, level: int) -> Path | None:
-        """The scanned file an import refers to, if any."""
+        """The scanned file an import refers to, ``_AMBIGUOUS``, or None (not scanned)."""
+        key = (file, module, level)
+        if key in self._modules:
+            return self._modules[key]
         parts = module.split(".") if module else []
+        found: Path | None = None
         if level:
             base = file.parent
             for _ in range(level - 1):
                 base = base.parent
-            stem = base.joinpath(*parts) if parts else base
-            for candidate in (stem.with_suffix(".py"), stem / "__init__.py"):
-                if candidate in self._trees:
-                    return candidate
-            return None
-        matches = [
-            path
-            for path in self._trees
-            if path.with_suffix("").parts[-len(parts) :] == tuple(parts)
-            or (path.name == "__init__.py" and path.parent.parts[-len(parts) :] == tuple(parts))
-        ]
-        return matches[0] if len(matches) == 1 else None
+            if parts:
+                stem = base.joinpath(*parts)
+                candidates = [stem.parent / f"{stem.name}.py", stem / "__init__.py"]
+            else:  # `from . import x`: the package itself
+                candidates = [base / "__init__.py"]
+            found = next((c for c in candidates if c in self._trees), None)
+        elif parts:
+            matches = self._suffix_index().get(tuple(parts), [])
+            if len(matches) > 1:
+                # Prefer the module whose package root contains the importing file.
+                matches = [m for m in matches if self._root_contains(m, len(parts), file)]
+            found = matches[0] if len(matches) == 1 else (_AMBIGUOUS if matches else None)
+            if found is None and self._suffix_index().get(tuple(parts)):
+                found = _AMBIGUOUS
+        self._modules[key] = found
+        return found
+
+    def _suffix_index(self) -> Dict[Tuple[str, ...], List[Path]]:
+        """Dotted-module suffix -> scanned files, e.g. ``("app", "models")``."""
+        if self._suffixes is None:
+            index: Dict[Tuple[str, ...], List[Path]] = {}
+            for path in self._trees:
+                dotted = (
+                    path.parent.parts if path.name == "__init__.py" else path.with_suffix("").parts
+                )
+                for size in range(1, len(dotted) + 1):
+                    index.setdefault(tuple(dotted[-size:]), []).append(path)
+            self._suffixes = index
+        return self._suffixes
+
+    @staticmethod
+    def _root_contains(module_file: Path, depth: int, importer: Path) -> bool:
+        """Whether ``importer`` lies under the root ``module_file`` is imported from."""
+        dotted = (
+            module_file.parent.parts
+            if module_file.name == "__init__.py"
+            else module_file.with_suffix("").parts
+        )
+        root = dotted[: len(dotted) - depth]
+        return importer.parts[: len(root)] == root
 
     def _fallback_aliases(self) -> Dict[str, ast.expr]:
-        """Aliases defined (not imported) in exactly one scanned module, by name."""
+        """Aliases by name, for names a module does not bind (defined identically everywhere)."""
         if self._fallback is not None:
             return self._fallback
+        self._fallback = {}  # guards re-entry from an ambiguous import while computing
         found: Dict[str, List[ast.expr]] = {}
         for file in self._trees:
-            for name, binding in self._scope(file).items():
-                if binding.kind == "alias":
-                    value = self._resolve(file, name, ())
+            for name, binding in self._scope(file, None).items():
+                if binding.kind == "alias" and name not in self._classes:
+                    value = self._resolve(file, name, None, ())
                     if value is not None:
                         found.setdefault(name, []).append(value)
-        unique: Set[str] = {
-            name for name, values in found.items() if len({ast.dump(v) for v in values}) == 1
+        self._fallback = {
+            name: values[0]
+            for name, values in found.items()
+            if len({ast.dump(v) for v in values}) == 1
         }
-        self._fallback = {name: found[name][0] for name in unique}
+        self._resolved.clear()  # may hold results computed without the fallback
         return self._fallback

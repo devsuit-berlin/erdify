@@ -10,10 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Column type aliases (#241) are resolved per module, like Python names: the
-  name's last module-level binding counts, and an import is followed into the
-  scanned file it names. A model module importing an unrelated object under an
-  alias's name (`from uuid import UUID` while `types.py` defines a `UUID`
-  alias) no longer gets the alias
+  name's last module-level binding before the class counts, and an import
+  (relative, absolute, renamed or `*`) is followed into the scanned file it
+  names. A model module importing an unrelated object under an alias's name
+  (`from uuid import UUID` while `coltypes.py` defines a `UUID` alias) no
+  longer gets the alias, and a re-export (`UserId = intpk`) counts as one
   ([#250](https://github.com/devsuit-berlin/erdify/issues/250)).
 - An alias built on another one (`taggedpk = Annotated[intpk, "tag"]`) now
   carries its column settings, as `typing` flattens it

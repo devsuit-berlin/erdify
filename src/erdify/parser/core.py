@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Mapping, Tuple
 
 from ..config import EntityInfo, EnumInfo, is_structural_link_table
 from .aliases import AliasResolver
@@ -111,8 +111,8 @@ class ASTDatabaseParser:
         self._enums: Dict[str, EnumInfo] = {}
         self._all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
         self._file_trees: Dict[Path, ast.Module] = {}
-        #: The file each class in ``_all_classes`` was read from.
-        self._class_files: Dict[str, Path] = {}
+        #: The file each class definition (by ``id`` of its node) was read from.
+        self._class_files: Dict[int, Path] = {}
         #: Classes and dialects (with their caches); renewed for each parse run.
         self._ctx = self._new_context()
 
@@ -141,7 +141,7 @@ class ASTDatabaseParser:
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
                         self._all_classes[node.name] = node
-                        self._class_files[node.name] = model_file
+                        self._class_files[id(node)] = model_file
             except Exception as e:
                 print(f"Error parsing {model_file}: {e}", file=sys.stderr)
                 self._parse_errors.append((model_file, str(e)))
@@ -249,13 +249,13 @@ class ASTDatabaseParser:
             aliases_for=self._alias_lookup(),
         )
 
-    def _alias_lookup(self) -> "Callable[[str], Dict[str, ast.expr]]":
-        """Class name -> the column type aliases usable in its module (#250)."""
+    def _alias_lookup(self) -> "Callable[[ast.ClassDef], Mapping[str, ast.expr]]":
+        """Class -> the column type aliases visible where it is defined (#249, #250)."""
         resolver = AliasResolver(self._file_trees, self._all_classes)
         class_files = self._class_files
 
-        def aliases_for(class_name: str) -> Dict[str, ast.expr]:
-            return resolver.aliases_for(class_files.get(class_name))
+        def aliases_for(class_node: ast.ClassDef) -> Mapping[str, ast.expr]:
+            return resolver.aliases_for(class_files.get(id(class_node)), class_node.lineno)
 
         return aliases_for
 
