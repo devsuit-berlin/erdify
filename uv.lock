@@ -498,7 +498,7 @@ wheels = [
 
 [[package]]
 name = "erdify"
-version = "1.4.0"
+version = "1.4.1"
 source = { editable = "." }
 
 [package.optional-dependencies]
