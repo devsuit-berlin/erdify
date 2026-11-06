@@ -9,24 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A model reference is now recognized in every common spelling of its
-  annotation: `Union[User, None]`, `None | User`, module-qualified
-  `typing.Optional[User]` / `typing.Union[...]` / `typing.List[...]`, string
-  forward references such as `"None | User"`, and Pydantic's
-  `Annotated[User | None, Field(...)]`, also inside SQLAlchemy `Mapped[...]`.
-  Previously these were rendered as a column with a garbled type (e.g.
-  `Union_User_None`) and no edge was drawn. The target is now read from the
-  annotation's syntax tree instead of its text
-  ([#229](https://github.com/devsuit-berlin/erdify/issues/229)).
+- Model references are now read from the annotation's syntax tree instead of
+  its text, so these spellings are recognized
+  ([#229](https://github.com/devsuit-berlin/erdify/issues/229)):
+  - optional: `Union[User, None]`, `None | User`, `typing.Optional[User]`, and
+    `"None"` as a string forward reference;
+  - wrappers: Pydantic's `Annotated[User | None, Field(...)]`, and
+    SQLAlchemy's `WriteOnlyMapped[...]` / `DynamicMapped[...]` besides
+    `Mapped[...]`;
+  - module-qualified classes: `schemas.User`, `"models.Team"`;
+  - collections: `set`, `frozenset`, `Sequence`, `tuple[User, ...]` and a
+    mapping's value type (`dict[str, User]`, SQLAlchemy keyed-dict
+    collections) besides `list`, nested lists included.
+
+  For Pydantic and dataclass models, such a field was rendered as a column
+  with its raw type (e.g. `Union_User_None` in Mermaid) and no edge; it is now
+  a relationship. For SQLModel `Relationship()` and SQLAlchemy
+  `relationship()`, the relationship's target was garbled (e.g.
+  `Union[Team,`), so no edge was drawn; it now names the class. A
+  `relationship()` whose annotation names no single class (e.g.
+  `Mapped[Union["A", "B"]]`) is no longer listed with a garbled target.
 
 ### Output changes
 
-The fix above changes the generated diagram for any model with a reference
-spelled one of these ways: the garbled column disappears and an edge appears.
-`--format json` changes accordingly (the field moves to `relationships`). If you
-commit the diagram and gate CI on `--check` (or the `erdify-check` pre-commit
-hook), the check fails once after upgrading: regenerate the diagram and commit
-it. See [Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
+The fix above changes the generated diagram where a model reference uses one
+of these spellings: a Pydantic / dataclass column with the raw type becomes an
+edge, and a SQLModel / SQLAlchemy relationship gains its edge unless a foreign
+key already draws it. In `--format json`, the Pydantic / dataclass field moves
+from `fields` to `relationships`, a relationship's `target` becomes the class
+name, and a relationship that names no single class is dropped. If you commit
+the diagram and gate CI on `--check` (or the `erdify-check` pre-commit hook),
+the check fails once after upgrading: regenerate the diagram and commit it. See
+[Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
 
 ## [1.2.0] - 2026-11-06
 

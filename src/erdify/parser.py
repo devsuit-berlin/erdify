@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass, replace
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Dict, List, Mapping, Tuple, TypeGuard, TypeVar
+from typing import Dict, List, Mapping, NamedTuple, Tuple, TypeGuard, TypeVar
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 
@@ -38,6 +38,15 @@ DEFAULT_EXCLUDE_DIRS = frozenset(
 DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
 
 _V = TypeVar("_V")
+
+
+class _AnnotationRef(NamedTuple):
+    """A single model an annotation refers to (see ``_annotation_reference``)."""
+
+    target: str
+    many: bool
+    nullable: bool
+
 
 # A relationship while parsing: (target, type, attribute, nullable). The
 # public EntityInfo.relationships keeps (target, type, attribute); the flag
@@ -1771,17 +1780,10 @@ class ASTDatabaseParser:
         ):
             return None
 
-        field_name = node.target.id
-        resolved = self._annotation_target(node.annotation)
-        if resolved is not None:
-            target, rel_type = resolved
-        else:  # not a single-model annotation: keep the historical best effort
-            type_str = self._unwrap_mapped(ast.unparse(node.annotation))
-            rel_type = "many" if ("list[" in type_str or "List[" in type_str) else "one"
-            target = self._clean_target(type_str)
-        nullable = rel_type == "one" and self._is_optional_annotation(node.annotation)
-
-        return (target, rel_type, field_name, nullable)
+        ref = self._annotation_reference(node.annotation)
+        if ref is None:  # names no single class (e.g. Mapped[A | B]): nothing to draw
+            return None
+        return self._as_rel(ref, node.target.id)
 
     def _parse_model_reference(self, node: ast.AnnAssign) -> _Rel | None:
         """Treat a field typed as another known model as a relationship.
@@ -1793,60 +1795,90 @@ class ASTDatabaseParser:
         if not isinstance(node.target, ast.Name):
             return None
 
-        resolved = self._annotation_target(node.annotation)
-        if resolved is None:
+        ref = self._annotation_reference(node.annotation)
+        if ref is None:
             return None
-        target, rel_type = resolved
-
-        target_class = self._all_classes.get(target)
+        target_class = self._all_classes.get(ref.target)
         if target_class is not None and self._classify_source(target_class) is not None:
-            # `user: User | None` is an optional reference (#223).
-            nullable = rel_type == "one" and self._is_optional_annotation(node.annotation)
-            return (target, rel_type, node.target.id, nullable)
+            return self._as_rel(ref, node.target.id)
         return None
 
-    #: Subscript wrappers whose (first) argument is the annotated type itself.
-    _TRANSPARENT_WRAPPERS = frozenset({"Mapped", "Optional", "Annotated"})
-    #: Containers that make a reference "many".
-    _MANY_CONTAINERS = frozenset({"list", "List"})
+    @staticmethod
+    def _as_rel(ref: _AnnotationRef, attr: str) -> _Rel:
+        """A relationship tuple; only a ``one`` reference can be optional (#223)."""
+        return (ref.target, "many" if ref.many else "one", attr, ref.nullable and not ref.many)
+
+    #: Wrappers whose first argument is the annotated type itself (metadata ignored).
+    _TRANSPARENT_WRAPPERS = frozenset({"Mapped", "WriteOnlyMapped", "DynamicMapped", "Annotated"})
+    #: Single-argument collections of a model: a "many" reference.
+    _MANY_CONTAINERS = frozenset(
+        {"list", "List", "set", "Set", "frozenset", "FrozenSet", "Sequence", "MutableSequence"}
+    )
+    #: Mappings whose *value* is the model (e.g. SQLAlchemy keyed-dict collections).
+    _MANY_MAPPINGS = frozenset({"dict", "Dict", "Mapping", "MutableMapping"})
+
+    @staticmethod
+    def _expr_name(node: ast.expr) -> str | None:
+        """The last name of ``X`` or ``mod.X``; None for anything else."""
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return node.attr
+        return None
+
+    @staticmethod
+    def _is_none(node: ast.expr) -> bool:
+        """``None``, also as the string forward reference ``"None"``."""
+        return isinstance(node, ast.Constant) and node.value in (None, "None")
 
     @classmethod
-    def _annotation_target(cls, node: ast.expr, many: bool = False) -> Tuple[str, str] | None:
-        """``(class name, "one" | "many")`` if an annotation names exactly one class.
+    def _annotation_reference(cls, node: ast.expr, many: bool = False) -> _AnnotationRef | None:
+        """The single class an annotation refers to, with cardinality and optionality.
 
-        Walks the annotation AST through ``Mapped[...]``, ``Optional[...]``,
-        ``Annotated[X, ...]``, ``Union[X, None]`` / ``X | None`` (``None`` on
-        either side), one ``list[...]`` / ``List[...]`` level, string forward
-        references, and ``typing.``-qualified forms (#229). Anything else, such
-        as ``Union[User, int]`` or ``dict[str, User]``, returns None.
+        Walks the annotation's syntax tree, so every spelling of the same type
+        resolves alike (#229): ``X | None`` / ``None | X``, ``Optional[X]``,
+        ``Union[X, None]``, string forward references (also ``"None"``),
+        ``Mapped`` / ``WriteOnlyMapped`` / ``DynamicMapped`` / ``Annotated``
+        wrappers, ``typing.``-qualified forms, module-qualified classes
+        (``schemas.User``), and collections: ``list`` / ``set`` / ``Sequence``
+        and friends, ``tuple[X, ...]`` and a mapping's value type. Returns None
+        when the annotation does not name exactly one class, such as
+        ``Union[User, int]`` or ``tuple[User, int]``.
         """
         if isinstance(node, ast.Constant):
             if not isinstance(node.value, str):
                 return None
             try:
-                parsed = ast.parse(node.value, mode="eval").body
-            except SyntaxError:
+                parsed = ast.parse(node.value.strip(), mode="eval").body
+            except (SyntaxError, ValueError):  # ValueError: NUL byte on Python 3.11
                 return None
-            return cls._annotation_target(parsed, many)
-        if isinstance(node, ast.Name):
-            return node.id, "many" if many else "one"
+            return cls._annotation_reference(parsed, many)
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            name = cls._expr_name(node)
+            return _AnnotationRef(name, many, False) if name else None
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-            return cls._single_non_none(cls._union_operands(node), many)
-        if isinstance(node, ast.Subscript):
-            func = node.value
-            if isinstance(func, ast.Name):
-                name = func.id
-            elif isinstance(func, ast.Attribute):
-                name = func.attr
-            else:
-                return None
-            args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
-            if name in cls._TRANSPARENT_WRAPPERS and args:
-                return cls._annotation_target(args[0], many)
-            if name == "Union":
-                return cls._single_non_none(args, many)
-            if name in cls._MANY_CONTAINERS and not many and len(args) == 1:
-                return cls._annotation_target(args[0], True)
+            return cls._union_reference(cls._union_operands(node), many)
+        if not isinstance(node, ast.Subscript):
+            return None
+        name = cls._expr_name(node.value)
+        args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        if not args:
+            return None
+        if name in cls._TRANSPARENT_WRAPPERS:
+            return cls._annotation_reference(args[0], many)
+        if name == "Optional" and len(args) == 1:
+            ref = cls._annotation_reference(args[0], many)
+            return ref._replace(nullable=True) if ref else None
+        if name == "Union":
+            return cls._union_reference(args, many)
+        if name in cls._MANY_CONTAINERS and len(args) == 1:
+            return cls._annotation_reference(args[0], True)
+        if name in ("tuple", "Tuple") and len(args) == 2:
+            ellipsis = args[1]
+            if isinstance(ellipsis, ast.Constant) and ellipsis.value is Ellipsis:
+                return cls._annotation_reference(args[0], True)
+        if name in cls._MANY_MAPPINGS and len(args) == 2:
+            return cls._annotation_reference(args[1], True)
         return None
 
     @classmethod
@@ -1857,63 +1889,15 @@ class ASTDatabaseParser:
         return [node]
 
     @classmethod
-    def _single_non_none(cls, options: List[ast.expr], many: bool) -> Tuple[str, str] | None:
-        """Resolve a union that is exactly one type plus optional ``None``."""
-        rest = [o for o in options if not (isinstance(o, ast.Constant) and o.value is None)]
+    def _union_reference(cls, options: List[ast.expr], many: bool) -> _AnnotationRef | None:
+        """Resolve a union of exactly one type plus optional ``None``."""
+        rest = [option for option in options if not cls._is_none(option)]
         if len(rest) != 1:
             return None
-        return cls._annotation_target(rest[0], many)
-
-    @classmethod
-    def _is_optional_annotation(cls, node: ast.expr) -> bool:
-        """Whether an annotation admits ``None`` at its top level.
-
-        Recognizes ``X | None`` (either side), ``Optional[X]``,
-        ``Union[..., None]``, the same inside ``Mapped[...]`` or as the first
-        argument of ``Annotated[...]``, and string
-        (forward-reference) annotations. A name that merely contains
-        "Optional" or "None" (``OptionalSettings``) is not optional.
-        """
-        if isinstance(node, ast.Constant):
-            if node.value is None:
-                return True
-            if isinstance(node.value, str):
-                try:
-                    parsed = ast.parse(node.value, mode="eval").body
-                except SyntaxError:
-                    return False
-                return cls._is_optional_annotation(parsed)
-            return False
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-            return cls._is_optional_annotation(node.left) or cls._is_optional_annotation(node.right)
-        if isinstance(node, ast.Subscript):
-            func = node.value
-            name = (
-                func.id
-                if isinstance(func, ast.Name)
-                else func.attr
-                if isinstance(func, ast.Attribute)
-                else None
-            )
-            if name == "Optional":
-                return True
-            if name == "Mapped":
-                return cls._is_optional_annotation(node.slice)
-            if name == "Annotated" and isinstance(node.slice, ast.Tuple) and node.slice.elts:
-                return cls._is_optional_annotation(node.slice.elts[0])
-            if name == "Union":
-                args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
-                return any(cls._is_optional_annotation(arg) for arg in args)
-        return False
-
-    @staticmethod
-    def _clean_target(type_str: str) -> str:
-        """Reduce a (possibly wrapped) annotation to a bare target class name."""
-        cleaned = type_str
-        for token in ("Mapped[", "list[", "List[", "Optional["):
-            cleaned = cleaned.replace(token, "")
-        cleaned = cleaned.replace("]", "").replace(" | None", "").replace("None", "")
-        return cleaned.replace('"', "").replace("'", "").strip()
+        ref = cls._annotation_reference(rest[0], many)
+        if ref is None:
+            return None
+        return ref._replace(nullable=True) if len(rest) < len(options) else ref
 
     def _to_snake_case(self, name: str) -> str:
         """Convert CamelCase to snake_case."""
