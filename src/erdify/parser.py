@@ -48,6 +48,8 @@ class _AnnotationRef(NamedTuple):
     nullable: bool
     #: Named through a module (``schemas.User``); only trusted in relationship().
     qualified: bool = False
+    #: The name as written (``a.User``); tells same-named classes apart in a union.
+    spelled: str = ""
 
 
 # A relationship while parsing: (target, type, attribute, nullable). The
@@ -1853,7 +1855,14 @@ class ASTDatabaseParser:
 
     @classmethod
     def _is_none(cls, node: ast.expr) -> bool:
-        """``None`` or ``NoneType`` (``types.NoneType``), also as a string forward reference."""
+        """``None`` or ``NoneType`` (``types.NoneType``), also quoted or in ``Annotated``."""
+        if (
+            isinstance(node, ast.Subscript)
+            and cls._expr_name(node.value) == "Annotated"
+            and isinstance(node.slice, ast.Tuple)
+            and node.slice.elts
+        ):
+            return cls._is_none(node.slice.elts[0])
         if isinstance(node, ast.Constant):
             if node.value is None:
                 return True
@@ -1890,9 +1899,9 @@ class ASTDatabaseParser:
                 return None
             return cls._annotation_reference(parsed, many)
         if isinstance(node, ast.Name):
-            return _AnnotationRef(node.id, many, False)
+            return _AnnotationRef(node.id, many, False, spelled=node.id)
         if isinstance(node, ast.Attribute):
-            return _AnnotationRef(node.attr, many, False, qualified=True)
+            return _AnnotationRef(node.attr, many, False, qualified=True, spelled=ast.unparse(node))
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
             return cls._union_reference(cls._union_operands(node), many)
         if not isinstance(node, ast.Subscript):
@@ -1942,7 +1951,8 @@ class ASTDatabaseParser:
             return None
         resolved = [ref for ref in refs if ref is not None]
         first = resolved[0]
-        if any((ref.target, ref.many) != (first.target, first.many) for ref in resolved):
+        # Compare the full spelling: `a.User` and `b.User` are different classes.
+        if any((ref.spelled, ref.many) != (first.spelled, first.many) for ref in resolved):
             return None
         nullable = len(rest) < len(options) or any(ref.nullable for ref in resolved)
         qualified = any(ref.qualified for ref in resolved)

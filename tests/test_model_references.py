@@ -89,6 +89,8 @@ class TestKeylessReferences:
             ("Union[User, Optional[User]]", "one", True),  # nested optional
             ("User | User", "one", False),
             ("Union[list[User], List[User]]", "many", False),
+            ('Union[User, Annotated[None, "empty"]]', "one", True),
+            ('User | Annotated[None, "empty"]', "one", True),
             ("Annotated[User, None]", "one", False),  # metadata None is not optional
             ("typing.Annotated[User | None, 1]", "one", True),
             ('" User "', "one", False),  # whitespace around a forward reference
@@ -124,6 +126,7 @@ class TestKeylessReferences:
             "Union[User, 1]",  # non-string constant member
             "Union[User, list[User]]",  # one and many of the same class
             "Union[None, None]",  # no class at all
+            "Annotated[None, 1]",  # only None
             '"User |"',  # unparsable forward reference
             '"get()[User]"',  # subscript of a call
         ],
@@ -205,6 +208,7 @@ class TestRelationshipTargets:
             ('WriteOnlyMapped[list["Team"]]', "many", False),
             ('Mapped[set["Team"]]', "many", False),
             ('Mapped[dict[str, "Team"]]', "many", False),
+            ('Mapped[Union["models.Team", "models.Team"]]', "one", False),
         ],
     )
     def test_target(self, tmp_path: Path, annotation: str, rel_type: str, nullable: bool):
@@ -333,3 +337,19 @@ class TestJsonOutput:
             e for e in json.loads(generate_json(entities))["entities"] if e["name"] == "Member"
         )
         assert member["relationships"] == []
+
+
+class TestQualifiedUnionMembers:
+    @pytest.mark.parametrize(
+        "annotation", ['Mapped[Union["a.Team", "b.Team"]]', 'Mapped["a.Team | b.Team"]']
+    )
+    def test_same_name_in_different_modules_is_ambiguous(self, tmp_path: Path, annotation: str):
+        """``a.Team`` and ``b.Team`` are different classes: no single target, no edge."""
+        entities = _parse(tmp_path, SQLALCHEMY.format(annotation=annotation))
+        assert entities["Member"].relationships == []
+        edges = [line for line in generate_mermaid(entities).splitlines() if "--" in line]
+        assert not any("Member" in line and "Team" in line for line in edges)
+
+    def test_bare_and_qualified_name_are_different_spellings(self, tmp_path: Path):
+        entities = _parse(tmp_path, SQLALCHEMY.format(annotation='Mapped[Union["Team", "x.Team"]]'))
+        assert entities["Member"].relationships == []
