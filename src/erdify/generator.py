@@ -185,6 +185,8 @@ class _ERGenerator:
                 line = f'{entity.name} ||--|| {target.name} : "{attr}"'
             elif rel_type == "many_to_many":
                 line = f'{entity.name} }}o--o{{ {target.name} : "{attr}"'
+            elif attr in entity.nullable_relationships:  # optional "one" (#223)
+                line = f'{entity.name} }}o--o| {target.name} : "{attr}"'
             else:  # "one"
                 line = f'{entity.name} }}o--|| {target.name} : "{attr}"'
             results.append((line, frozenset((entity.name, target.name))))
@@ -509,7 +511,8 @@ def generate_json(
 
     Shape: ``{schema_version, title, entities: [{name, table_name, source, is_link_table,
     fields: [{name, type, primary_key, foreign_key, nullable, foreign_table,
-    index, unique, default}], relationships: [{target, type, attribute}]}], enums:
+    index, unique, default}], relationships: [{target, type, attribute, nullable}]}],
+    enums:
     [{name, values}]}``. Downstream tools can consume this without re-parsing.
     ``schema_version`` is :data:`JSON_SCHEMA_VERSION`; consumers should ignore
     keys they do not know. The full schema is documented in
@@ -551,7 +554,12 @@ def generate_json(
                 ],
                 "relationships": (
                     [
-                        {"target": target, "type": rel_type, "attribute": attr}
+                        {
+                            "target": target,
+                            "type": rel_type,
+                            "attribute": attr,
+                            "nullable": rel_type == "one" and attr in entity.nullable_relationships,
+                        }
                         for target, rel_type, attr in entity.relationships
                     ]
                     if include_relationships

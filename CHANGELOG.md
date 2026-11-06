@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `EntityInfo.nullable_relationships` lists the attributes of `"one"`
+  relationships whose reference is optional, and each JSON relationship has a
+  `nullable` key. `EntityInfo.relationships` keeps its `(target, type,
+  attribute)` shape
+  ([#223](https://github.com/devsuit-berlin/erdify/issues/223)).
+
+### Fixed
+
+- A Django `OneToOneField` is now modeled as the unique `<name>_id` foreign-key
+  column it creates, like `ForeignKey`, and follows `null=`: it is drawn
+  `|o--||`, or `|o--o|` with `null=True`, instead of always `||--||`. It now
+  renders the same as the equivalent `ForeignKey(unique=True)`. A model
+  reference typed as optional (`user: User | None`, `Optional[User]`,
+  `Mapped[Optional["User"]]`) is drawn `}o--o|` instead of `}o--||` when no
+  foreign-key column draws that edge, as for Pydantic and dataclass models
+  ([#223](https://github.com/devsuit-berlin/erdify/issues/223)).
+- A Django `ForeignKey` / `OneToOneField` column now references the target's
+  actual primary key (including one inherited from an abstract base) or its
+  `to_field=` column, and takes that column's type. Previously `foreign_table`
+  always named `<table>.id`, a column that may not exist. A relation to
+  `"self"` declared in an abstract base or a plain mixin now points at each
+  concrete model that uses it, as in Django, instead of a non-existent table,
+  so its edge is drawn
+  ([#226](https://github.com/devsuit-berlin/erdify/issues/226)).
+- Inherited fields and relationships now resolve like Python's MRO: when two
+  bases declare the same attribute, the first base wins (previously the last),
+  and in a diamond hierarchy a sibling base's redeclaration replaces the one
+  from the shared root instead of leaving a stale edge or column. Field order
+  is unchanged. A class body that redeclares an inherited column as a model
+  reference (or the reverse) now replaces it instead of keeping both. A Django
+  `name = None`, which removes a field inherited from an abstract base, now
+  removes it from the diagram too
+  ([#228](https://github.com/devsuit-berlin/erdify/issues/228)).
+
+### Output changes
+
+The fixes above change the generated diagram for:
+
+- any Django model with a `OneToOneField`: an `<name>_id FK,UK` column
+  replaces the relationship, and the edge label becomes `<name>_id`. A
+  `ForeignKey` plus a `OneToOneField` to the same model draw two edges instead
+  of one;
+- any Django foreign key to a model whose primary key is not the implicit `id`,
+  or with `to_field=`: the FK column takes the referenced column's type (e.g.
+  `UUID` instead of `int`), and any Django model inheriting a relation to
+  `"self"` from an abstract base or a plain mixin: its self-edge is now drawn;
+- any Pydantic / dataclass model with an optional model reference;
+- any model whose bases declare the same attribute differently, or whose body
+  redeclares an inherited attribute as another kind, and any Django model with
+  `name = None`.
+
+`--format json` changes accordingly: `OneToOneField` moves from
+`relationships` to `fields`, `foreign_table` names the referenced column for
+Django foreign keys to a non-`id` key, and relationships gain `nullable`. These
+are content changes, not shape changes, so `schema_version` stays `1`; the
+[JSON compatibility](https://erdify.devsuit.io/usage/output-formats/#compatibility)
+rules now say so explicitly. If you commit the diagram and gate CI on `--check`
+(or the `erdify-check` pre-commit hook), the check fails once after upgrading:
+regenerate the diagram and commit it. See
+[Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
+
 ## [1.1.1] - 2026-11-05
 
 ### Fixed

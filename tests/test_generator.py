@@ -379,3 +379,42 @@ def test_plantuml_pk_and_unique_omits_uk():
     out = generate_plantuml(entities)
     assert "primary_key(id) : varchar" in out
     assert "UK" not in out
+
+
+def test_declared_relationship_glyphs():
+    """Hand-built IR: every declared relationship type, incl. an optional "one" (#223)."""
+    entities = {
+        "A": EntityInfo(
+            name="A",
+            table_name="a",
+            relationships=[
+                ("B", "one_to_one", "b"),
+                ("C", "one", "c"),
+                ("D", "one", "d"),
+                ("E", "many", "es"),
+            ],
+            nullable_relationships=["d"],
+        ),
+        **{n: EntityInfo(name=n, table_name=n.lower()) for n in "BCDE"},
+    }
+    out = generate_mermaid(entities)
+    assert 'A ||--|| B : "b"' in out
+    assert 'A }o--|| C : "c"' in out
+    assert 'A }o--o| D : "d"' in out
+    assert 'A ||--o{ E : "es"' in out
+
+
+def test_json_nullable_only_for_one():
+    """A hand-built flag on a non-"one" relationship is ignored, as in the diagram."""
+    entities = {
+        "A": EntityInfo(
+            name="A",
+            table_name="a",
+            relationships=[("B", "one", "b"), ("B", "one_to_one", "c"), ("B", "many", "ds")],
+            nullable_relationships=["b", "c", "ds"],
+        ),
+        "B": EntityInfo(name="B", table_name="b"),
+    }
+    doc = json.loads(generate_json(entities))
+    rels = doc["entities"][0]["relationships"]
+    assert {r["attribute"]: r["nullable"] for r in rels} == {"b": True, "c": False, "ds": False}

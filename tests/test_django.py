@@ -110,9 +110,10 @@ class TestDjangoForeignKey:
 
 class TestDjangoOneToOne:
     def test_one_to_one_renders_with_one_to_one_cardinality(self, django_models_dir: Path):
+        """A OneToOneField is a unique ``<name>_id`` FK column, drawn 1:1 (#223)."""
         entities, enums = parse_models_directory(django_models_dir)
         output = PlantUMLGenerator(entities, enums).generate()
-        assert 'Profile ||--|| Author : "author"' in output
+        assert 'Profile |o--|| Author : "author_id"' in output
 
 
 class TestDjangoManyToMany:

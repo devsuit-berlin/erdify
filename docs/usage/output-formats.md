@@ -88,6 +88,10 @@ Notes:
   is a 1:1 rendered `|o--||` (NOT NULL FK) or `|o--o|` (nullable FK), and so
   is a foreign key that is its table's only primary-key column (shared
   primary key).
+- A model reference without a foreign key (Pydantic / dataclass, or a
+  `relationship()` whose pair no FK column connects) typed as optional
+  (`user: User | None`, `Optional[User]`) is drawn `}o--o|`, a required one
+  (`user: User`) `}o--||`.
 - A unique non-primary-key column is marked `UK` in the entity block,
   alongside `PK`/`FK`.
 - Mermaid has no enum construct, so each used enum is rendered as an entity block
@@ -115,7 +119,9 @@ point for downstream tools that want erdify's model without re-parsing source.
          "nullable": false, "foreign_table": null, "index": false, "unique": false,
          "default": null}
       ],
-      "relationships": [{"target": "User", "type": "one", "attribute": "user"}]
+      "relationships": [
+        {"target": "User", "type": "one", "attribute": "user", "nullable": false}
+      ]
     }
   ],
   "enums": [{"name": "Status", "values": ["DRAFT", "PUBLISHED"]}]
@@ -163,8 +169,9 @@ Relationship:
 | Key | Type | Description |
 |---|---|---|
 | `target` | string | Name of the related entity. |
-| `type` | string | One of `one`, `many`, `one_to_one`, `many_to_many`. |
+| `type` | string | One of `one`, `many`, `one_to_one`, `many_to_many`. Django `ForeignKey` / `OneToOneField` are foreign-key columns, not relationships, so the parsers no longer emit `one_to_one`; it remains valid for a hand-built `EntityInfo`. |
 | `attribute` | string | Attribute name on this entity. |
+| `nullable` | boolean | Always present. `true` when a `one` relationship's annotation admits `None` (`user: User \| None`, `Optional[User]`, `Mapped[Optional["User"]]`); `false` otherwise, including every `many` / `many_to_many` relationship. |
 
 Enum:
 
@@ -181,6 +188,11 @@ Enum:
   `schema_version` and ships only in a major erdify release.
 - Check `schema_version` before reading the document if your tool must fail
   loudly on an incompatible shape.
+- These rules cover the document's *shape*. Its *content* follows what the
+  parser recognizes: a bug fix may change values or move an item between
+  `fields` and `relationships` (e.g. a Django `OneToOneField` became a
+  `<name>_id` field in 1.2.0). Such changes are listed under **Output changes**
+  in the changelog and do not bump `schema_version`.
 
 ## HTML
 

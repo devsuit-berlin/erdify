@@ -4,10 +4,10 @@ import ast
 import os
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Dict, List, Tuple, TypeGuard
+from typing import Dict, List, Mapping, Tuple, TypeGuard, TypeVar
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 
@@ -36,6 +36,16 @@ DEFAULT_EXCLUDE_DIRS = frozenset(
 
 #: Django relationship field constructs (everything else ending in "Field" is a column).
 DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
+
+_V = TypeVar("_V")
+
+# A relationship while parsing: (target, type, attribute, nullable). The
+# public EntityInfo.relationships keeps (target, type, attribute); the flag
+# goes to EntityInfo.nullable_relationships.
+_Rel = Tuple[str, str, str, bool]
+
+# A class body's (fields, relationships, declared attribute names).
+_ClassMembers = Tuple[Dict[str, FieldInfo], Dict[str, _Rel], List[str]]
 
 #: Conservative Django field -> Python type map for readable, source-consistent
 #: output. Ambiguous/lossy fields (JSONField, FileField, ImageField, custom or
@@ -215,6 +225,9 @@ class ASTDatabaseParser:
         self._entities: Dict[str, EntityInfo] = {}
         self._enums: Dict[str, EnumInfo] = {}
         self._all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
+        self._mro_cache: Dict[str, List[str] | None] = {}
+        self._target_column_cache: Dict[Tuple[str, str | None], Tuple[str, str]] = {}
+        self._dataclass_cache: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]] = {}
         self._file_trees: Dict[Path, ast.Module] = {}
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
@@ -250,6 +263,9 @@ class ASTDatabaseParser:
             raise ModelParseError(self._parse_errors)
 
         # Second pass: process enum and model classes
+        self._mro_cache = {}
+        self._target_column_cache = {}
+        self._dataclass_cache = {}
         for class_node in self._all_classes.values():
             if self._is_enum_class(class_node):
                 self._parse_enum_class(class_node)
@@ -381,6 +397,10 @@ class ASTDatabaseParser:
         for entity in self._entities.values():
             entity.relationships = [
                 rel for rel in entity.relationships if rel[0] not in excluded_names
+            ]
+            kept = {attr for _, _, attr in entity.relationships}
+            entity.nullable_relationships = [
+                attr for attr in entity.nullable_relationships if attr in kept
             ]
 
     #: Enum base class names recognized by erdify (stdlib Enum + Django choices).
@@ -637,22 +657,25 @@ class ASTDatabaseParser:
 
         # Collect fields from this class and all base classes (recursively)
         fields_dict: Dict[str, FieldInfo] = {}
-        relationships_dict: Dict[str, Tuple[str, str, str]] = {}
+        relationships_dict: Dict[str, _Rel] = {}
 
         # Recursively collect fields from all ancestors
-        base_fields, base_rels = self._collect_fields_recursive(class_node, set(), source)
+        base_fields, base_rels = self._collect_fields(class_node, source)
         fields_dict.update(base_fields)
         relationships_dict.update(base_rels)
 
         entity.fields = list(fields_dict.values())
-        entity.relationships = list(relationships_dict.values())
+        entity.relationships = [(t, kind, attr) for t, kind, attr, _ in relationships_dict.values()]
+        entity.nullable_relationships = [
+            attr for _, _, attr, nullable in relationships_dict.values() if nullable
+        ]
 
         # Single-column UniqueConstraint / unique Index in __table_args__ (#218).
         # Constraints name the *database* column, which mapped_column("col", ...)
         # may set apart from the attribute name (#221).
         # A string names the DB column; a bare reference names the attribute.
         unique_cols, unique_refs = self._table_args_unique_columns(class_node)
-        db_names = self._db_column_names(class_node, set())
+        db_names = self._db_column_names(class_node)
         for f in entity.fields:
             if f.is_primary_key:
                 continue
@@ -680,25 +703,20 @@ class ASTDatabaseParser:
 
     _is_structural_link_table = staticmethod(is_structural_link_table)
 
-    def _db_column_names(self, class_node: ast.ClassDef, visited: set[str]) -> Dict[str, str]:
+    def _db_column_names(self, class_node: ast.ClassDef) -> Dict[str, str]:
         """Map attribute name -> explicit DB column name for a class and its bases.
 
         See :meth:`_explicit_column_name` for the recognized forms. A column
         without an explicit name maps to itself, so a redeclaration without one
-        overrides an inherited name through the same merge order as the fields
-        (later bases and the class body win), including in diamond hierarchies.
+        overrides an inherited name. Bases resolve in the same order as the
+        fields (:meth:`_merge_order`), so the name matches the winning column.
         """
-        if class_node.name in visited:
-            return {}
-        visited.add(class_node.name)
         names: Dict[str, str] = {}
-        for base in class_node.bases:
-            if isinstance(base, ast.Name) and base.id in self._all_classes:
-                names.update(self._db_column_names(self._all_classes[base.id], visited))
-        for node in class_node.body:
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                db_name = self._explicit_column_name(node.value)
-                names[node.target.id] = db_name if db_name is not None else node.target.id
+        for class_name in self._merge_order(class_node):
+            for node in self._all_classes[class_name].body:
+                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    db_name = self._explicit_column_name(node.value)
+                    names[node.target.id] = db_name if db_name is not None else node.target.id
         return names
 
     @classmethod
@@ -912,69 +930,322 @@ class ASTDatabaseParser:
             isinstance(func, ast.Attribute) and func.attr == func_name
         )
 
-    def _collect_fields_recursive(
-        self, class_node: ast.ClassDef, visited: set[str], model_kind: str
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
-        """Recursively collect fields from a class and all its ancestors."""
-        fields_dict: Dict[str, FieldInfo] = {}
-        relationships_dict: Dict[str, Tuple[str, str, str]] = {}
+    def _local_bases(self, class_node: ast.ClassDef) -> List[str]:
+        """Names of the direct bases that are classes parsed from the input."""
+        return [
+            base.id
+            for base in class_node.bases
+            if isinstance(base, ast.Name) and base.id in self._all_classes
+        ]
 
-        # Avoid infinite recursion
+    def _dfs_order(self, class_node: ast.ClassDef, visited: set[str]) -> List[str]:
+        """Classes in depth-first post-order: bases (left to right), then the class.
+
+        Each class appears once. This is the order fields are listed in.
+        """
         if class_node.name in visited:
-            return fields_dict, relationships_dict
+            return []
         visited.add(class_node.name)
+        order: List[str] = []
+        for base in self._local_bases(class_node):
+            order.extend(self._dfs_order(self._all_classes[base], visited))
+        order.append(class_node.name)
+        return order
 
-        # First, process all base classes recursively
-        for base in class_node.bases:
-            if isinstance(base, ast.Name):
-                base_name = base.id
-                if base_name in self._all_classes:
-                    base_fields, base_rels = self._collect_fields_recursive(
-                        self._all_classes[base_name], visited, model_kind
-                    )
-                    fields_dict.update(base_fields)
-                    relationships_dict.update(base_rels)
+    def _mro(self, name: str, stack: Tuple[str, ...] = ()) -> List[str] | None:
+        """C3 linearization of a parsed class, like Python's ``__mro__``.
 
-        # Then add/override with current class fields
-        class_fields, class_rels = self._extract_class_fields(class_node, model_kind)
+        Bases outside the parsed files are ignored. Returns None when Python
+        would reject the hierarchy (no consistent order) or it is cyclic, e.g.
+        ``class User(User)`` extending a namesake.
+        """
+        if name in self._mro_cache:
+            return self._mro_cache[name]
+        if name in stack:
+            return None
+        bases = self._local_bases(self._all_classes[name])
+        seqs: List[List[str]] = []
+        for base in bases:
+            base_mro = self._mro(base, stack + (name,))
+            if base_mro is None:
+                self._mro_cache[name] = None
+                return None
+            seqs.append(base_mro)
+        seqs.append(list(bases))
+
+        result = [name]
+        seqs = [seq for seq in seqs if seq]
+        while seqs:
+            for seq in seqs:
+                head = seq[0]
+                if not any(head in other[1:] for other in seqs):
+                    break
+            else:
+                self._mro_cache[name] = None
+                return None
+            result.append(head)
+            seqs = [[c for c in seq if c != head] for seq in seqs]
+            seqs = [seq for seq in seqs if seq]
+        self._mro_cache[name] = result
+        return result
+
+    def _merge_order(self, class_node: ast.ClassDef) -> List[str]:
+        """Classes to merge members from, where a later class overrides an earlier one.
+
+        This is the reversed MRO, so the class body wins over its bases and an
+        earlier base wins over a later one, as in Python (#228). Without a valid
+        MRO it falls back to :meth:`_dfs_order`.
+        """
+        mro = self._mro(class_node.name)
+        if mro is None:
+            return self._dfs_order(class_node, set())
+        return mro[::-1]
+
+    def _collect_fields(
+        self, class_node: ast.ClassDef, model_kind: str
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """Collect the fields and relationships of a class and all its ancestors.
+
+        Which declaration of an attribute wins follows the MRO
+        (:meth:`_merge_order`), or, for dataclasses, the dataclass field
+        merge (:meth:`_dataclass_fields`). The order they are listed in is the
+        one the pre-MRO merge produced (:meth:`_listing_order`), so resolving by
+        MRO does not reorder the output.
+        """
+        dfs_order = self._dfs_order(class_node, set())
+        merge_order = self._merge_order(class_node)
+        members = {
+            name: self._class_members(
+                self._all_classes[name],
+                model_kind,
+                self._django_self_owner(name, merge_order) if model_kind == "django" else None,
+            )
+            for name in dfs_order
+        }
+        order_fields, order_rels = self._listing_order(class_node, set(), members, model_kind)
+        if model_kind == "dataclass" and self._mro(class_node.name) is not None:
+            fields, rels = self._dataclass_fields(class_node.name, members)
+        else:
+            fields, rels = self._merge_members(merge_order, members, model_kind)
+        return self._reorder(fields, order_fields), self._reorder(rels, order_rels)
+
+    def _django_self_owner(self, name: str, merge_order: List[str]) -> str:
+        """The model a Django ``"self"`` relation declared in class ``name`` points at.
+
+        A concrete model's own fields point at that model, also when a child
+        inherits them (multi-table inheritance). An abstract base's or a plain
+        mixin's fields are copied into the first concrete model that inherits
+        it, so ``"self"`` points there (#226).
+        """
+        if self._is_concrete_django_model(name):
+            return name
+        for candidate in merge_order:  # root first, so the nearest concrete heir wins
+            if (
+                candidate != name
+                and self._is_concrete_django_model(candidate)
+                and name in (self._mro(candidate) or ())
+            ):
+                return candidate
+        return name
+
+    def _is_concrete_django_model(self, name: str) -> bool:
+        """A Django model with its own table: a ``models.Model`` subclass, not abstract.
+
+        A plain mixin or an abstract base has no table, so a ``"self"``
+        relation declared there belongs to the concrete model that copies it.
+        """
+        node = self._all_classes[name]
+        return self._inherits_django_model(node) and not self._meta_flag(node, "abstract")
+
+    def _dataclass_fields(
+        self, name: str, members: Dict[str, _ClassMembers]
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """The members of a dataclass entity: ``dataclasses.fields()`` plus mixins.
+
+        First the stdlib result (:meth:`_effective_dataclass_fields`). Then
+        annotations of undecorated mixins in the hierarchy, which the stdlib
+        ignores but erdify has always shown, fill in only attributes no
+        dataclass declares (the first such mixin in the MRO wins).
+        """
+        fields, rels = self._effective_dataclass_fields(name, members)
+        # The cache is shared across entities, and _parse_table_class mutates
+        # fields (e.g. is_unique), so each entity gets its own copies.
+        fields, rels = {attr: replace(f) for attr, f in fields.items()}, dict(rels)
+        for base in self._mro(name) or [name]:
+            if self._is_dataclass(self._all_classes[base]):
+                continue
+            base_fields, base_rels, _ = members[base]
+            for attr, field in base_fields.items():
+                if attr not in fields and attr not in rels:
+                    fields[attr] = replace(field)
+            for attr, rel in base_rels.items():
+                if attr not in fields and attr not in rels:
+                    rels[attr] = rel
+        return fields, rels
+
+    def _effective_dataclass_fields(
+        self, name: str, members: Dict[str, _ClassMembers]
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """A class's ``__dataclass_fields__``, as the stdlib computes it.
+
+        A decorated class merges each base's ``__dataclass_fields__`` in
+        reversed MRO, then its own annotations. So in ``Child(Left, Middle)``
+        an attribute ``Left`` merely inherits still overrides one ``Middle``
+        redeclares. An undecorated class has no fields of its own: it exposes
+        those of the first decorated class in its MRO. Cached per parse; a
+        class's own members do not depend on the entity being built.
+        """
+        memo = self._dataclass_cache
+        if name in memo:
+            return memo[name]
+        mro = self._mro(name) or [name]
+        if not self._is_dataclass(self._all_classes[name]):
+            owner = next((c for c in mro if self._is_dataclass(self._all_classes[c])), None)
+            result = (
+                self._effective_dataclass_fields(owner, members) if owner is not None else ({}, {})
+            )
+            memo[name] = result
+            return result
+        synthetic: Dict[str, _ClassMembers] = {}
+        for base in mro[:0:-1]:
+            base_fields, base_rels = self._effective_dataclass_fields(base, members)
+            synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels])
+        synthetic[name] = members[name]
+        result = self._merge_members([*mro[:0:-1], name], synthetic, "dataclass")
+        memo[name] = result
+        return result
+
+    @staticmethod
+    def _drop_django_redeclared(
+        fields: Dict[str, FieldInfo], rels: Dict[str, _Rel], attr: str
+    ) -> None:
+        """Drop whatever earlier classes stored for a redeclared Django attribute.
+
+        A Django attribute is stored under a key that depends on its kind
+        (relationship ``owner`` vs. FK column ``owner_id``, #224), so all of
+        them go.
+        """
+        rels.pop(attr, None)
+        fields.pop(attr, None)
+        inherited_fk = fields.get(f"{attr}_id")
+        if inherited_fk is not None and inherited_fk.is_foreign_key:
+            del fields[f"{attr}_id"]
+
+    def _listing_order(
+        self,
+        class_node: ast.ClassDef,
+        visited: set[str],
+        members: Dict[str, _ClassMembers],
+        model_kind: str,
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """The keys, in listing order, of the recursive merge used before #228.
+
+        Each base's whole subtree is merged in (left to right, each class once),
+        then the class body. Only a Django body's own redeclaration moves an
+        inherited attribute to the body's position; a sibling base never
+        displaces another sibling's attribute. Only the key order is used.
+        """
+        fields: Dict[str, FieldInfo] = {}
+        rels: Dict[str, _Rel] = {}
+        if class_node.name in visited:
+            return fields, rels
+        visited.add(class_node.name)
+        for base in self._local_bases(class_node):
+            base_fields, base_rels = self._listing_order(
+                self._all_classes[base], visited, members, model_kind
+            )
+            fields.update(base_fields)
+            rels.update(base_rels)
+        class_fields, class_rels, declared = members[class_node.name]
         if model_kind == "django":
-            # A Django attribute can be stored under a different key depending
-            # on its kind (relationship `owner` vs. FK column `owner_id`), so a
-            # redeclaration must drop whatever the bases stored for it.
-            for attr in self._django_declared_names(class_node):
-                relationships_dict.pop(attr, None)
-                fields_dict.pop(attr, None)
-                inherited_fk = fields_dict.get(f"{attr}_id")
-                if inherited_fk is not None and inherited_fk.is_foreign_key:
-                    del fields_dict[f"{attr}_id"]
-        fields_dict.update(class_fields)
-        relationships_dict.update(class_rels)
+            for attr in declared:
+                self._drop_django_redeclared(fields, rels, attr)
+        fields.update(class_fields)
+        rels.update(class_rels)
+        return fields, rels
 
-        return fields_dict, relationships_dict
+    @staticmethod
+    def _reorder(values: Dict[str, _V], order: Mapping[str, object]) -> Dict[str, _V]:
+        """Return ``values`` with keys in ``order``'s key order, extra keys last."""
+        result = {key: values[key] for key in order if key in values}
+        result.update((key, value) for key, value in values.items() if key not in result)
+        return result
+
+    def _class_members(
+        self, class_node: ast.ClassDef, model_kind: str, concrete: str | None = None
+    ) -> _ClassMembers:
+        """A single class body's fields, relationships, and declared attribute names."""
+        fields, rels = self._extract_class_fields(class_node, model_kind, concrete)
+        if model_kind == "django":
+            declared = self._django_declared_names(class_node)
+        else:
+            declared = [*fields, *rels]
+        return fields, rels, declared
+
+    @staticmethod
+    def _merge_members(
+        order: List[str], members: Dict[str, _ClassMembers], model_kind: str
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """Merge class members in ``order``; a later class overrides an earlier one.
+
+        A redeclared attribute replaces whatever an earlier class stored for it,
+        even under another key or kind: a Django relationship ``owner`` vs. its
+        FK column ``owner_id`` (#224), or a column vs. a model reference.
+        """
+        fields: Dict[str, FieldInfo] = {}
+        rels: Dict[str, _Rel] = {}
+        for class_name in order:
+            class_fields, class_rels, declared = members[class_name]
+            for attr in declared:
+                if model_kind == "django":
+                    ASTDatabaseParser._drop_django_redeclared(fields, rels, attr)
+                # Same key and kind: update() below replaces it in place.
+                elif attr in class_fields:
+                    rels.pop(attr, None)
+                else:
+                    fields.pop(attr, None)
+            fields.update(class_fields)
+            rels.update(class_rels)
+        return fields, rels
 
     def _django_declared_names(self, class_node: ast.ClassDef) -> List[str]:
-        """Attribute names a Django model body declares as a model field."""
-        names: List[str] = []
-        for node in class_node.body:
-            if (
-                isinstance(node, ast.Assign)
-                and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-                and isinstance(node.value, ast.Call)
-                and self._django_field_type(node.value) is not None
-            ):
-                names.append(node.targets[0].id)
-        return names
+        """Attribute names a Django model body declares or removes.
+
+        A model field declares its name. ``name = None`` removes a field
+        inherited from an abstract base, as Django documents, so it also drops
+        whatever the bases stored under that name.
+        """
+        return [
+            *(name for name, _, _ in self._django_field_calls(class_node)),
+            *self._django_removed_names(class_node),
+        ]
+
+    @staticmethod
+    def _django_removed_names(class_node: ast.ClassDef) -> List[str]:
+        """Names a Django class body sets to ``None`` to remove an inherited field."""
+        return [
+            node.targets[0].id
+            for node in class_node.body
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.Constant)
+            and node.value.value is None
+        ]
 
     def _extract_class_fields(
-        self, class_node: ast.ClassDef, model_kind: str
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
-        """Extract fields and relationships from a class definition."""
+        self, class_node: ast.ClassDef, model_kind: str, concrete: str | None = None
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """Extract fields and relationships from a class definition.
+
+        ``concrete`` (Django only, default: the class itself) is the model a
+        ``"self"`` relation in this body points at (:meth:`_django_self_owner`).
+        """
         if model_kind == "django":
-            return self._extract_django_fields(class_node)
+            return self._extract_django_fields(class_node, concrete or class_node.name)
 
         fields: Dict[str, FieldInfo] = {}
-        relationships: Dict[str, Tuple[str, str, str]] = {}
+        relationships: Dict[str, _Rel] = {}
 
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
@@ -1014,17 +1285,44 @@ class ASTDatabaseParser:
         return fields, relationships
 
     def _extract_django_fields(
-        self, class_node: ast.ClassDef
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
+        self, class_node: ast.ClassDef, concrete: str
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """Extract fields and relationships from a Django model.
 
         Django fields are plain assignments (``name = models.CharField(...)``),
-        not annotated. Relationship fields (ForeignKey/OneToOneField/
-        ManyToManyField) become relationships; every other ``*Field`` is a column.
+        not annotated. ``ForeignKey`` / ``OneToOneField`` become ``<name>_id``
+        foreign-key columns, ``ManyToManyField`` becomes a relationship, and
+        every other ``*Field`` is a column. ``"self"`` names ``concrete``, the
+        model being built, as in Django, where a relation to ``"self"`` in an
+        abstract base points at each concrete subclass.
         """
         fields: Dict[str, FieldInfo] = {}
-        relationships: Dict[str, Tuple[str, str, str]] = {}
+        relationships: Dict[str, _Rel] = {}
 
+        for name, field_type, call in self._django_field_calls(class_node):
+            if field_type in ("ForeignKey", "OneToOneField"):
+                # Both are a real `<name>_id` column in the DB; model them as such
+                # (like SQLAlchemy) so they render consistently across sources and
+                # follow `null=` (#223). A OneToOneField is that column made unique,
+                # or the PK itself with primary_key=True (shared primary key), in
+                # which case Django adds no implicit `id` (#224).
+                fk = self._parse_django_fk_column(
+                    name, call, concrete, one_to_one=field_type == "OneToOneField"
+                )
+                if fk:
+                    fields[fk.name] = fk
+            elif field_type == "ManyToManyField":
+                rel = self._parse_django_many_to_many(name, call, concrete)
+                if rel:
+                    relationships[name] = rel
+            else:
+                fields[name] = self._parse_django_column(name, field_type, call)
+
+        return fields, relationships
+
+    def _django_field_calls(self, class_node: ast.ClassDef) -> List[Tuple[str, str, ast.Call]]:
+        """``(attribute, field class name, call)`` for each model field in a Django class body."""
+        calls: List[Tuple[str, str, ast.Call]] = []
         for node in class_node.body:
             if not isinstance(node, ast.Assign) or len(node.targets) != 1:
                 continue
@@ -1033,30 +1331,10 @@ class ASTDatabaseParser:
                 continue
             if not isinstance(node.value, ast.Call):
                 continue
-
             field_type = self._django_field_type(node.value)
-            if field_type is None:
-                continue
-
-            name = target.id
-            if field_type == "ForeignKey" or (
-                field_type == "OneToOneField" and self._has_true_kw(node.value, "primary_key")
-            ):
-                # A ForeignKey is a real `<name>_id` column in the DB; model it as
-                # such (like SQLAlchemy) so it renders consistently across sources.
-                # A OneToOneField(primary_key=True) is that column *as the PK*
-                # (shared primary key), so Django adds no implicit `id` (#224).
-                fk = self._parse_django_fk_column(name, node.value, class_node.name)
-                if fk:
-                    fields[fk.name] = fk
-            elif field_type in DJANGO_RELATIONSHIP_FIELDS:
-                rel = self._parse_django_relationship(name, field_type, node.value, class_node.name)
-                if rel:
-                    relationships[name] = rel
-            else:
-                fields[name] = self._parse_django_column(name, field_type, node.value)
-
-        return fields, relationships
+            if field_type is not None:
+                calls.append((target.id, field_type, node.value))
+        return calls
 
     @staticmethod
     def _has_true_kw(call: ast.Call, name: str) -> bool:
@@ -1067,22 +1345,25 @@ class ASTDatabaseParser:
         )
 
     def _parse_django_fk_column(
-        self, name: str, call: ast.Call, current_class: str
+        self, name: str, call: ast.Call, current_class: str, *, one_to_one: bool = False
     ) -> FieldInfo | None:
-        """Model a Django ``ForeignKey`` as the ``<name>_id`` column it creates in the DB."""
+        """Model a ``ForeignKey`` / ``OneToOneField`` as the ``<name>_id`` column it creates.
+
+        A ``OneToOneField`` is a ``ForeignKey(unique=True)``.
+        """
         target = self._resolve_django_relationship_target(call, current_class)
         if target is None:
             return None
 
         is_nullable = False
-        is_unique = False
+        is_unique = one_to_one
         is_primary_key = False
         for keyword in call.keywords:
             if not isinstance(keyword.value, ast.Constant):
                 continue
             if keyword.arg == "null":
                 is_nullable = bool(keyword.value.value)
-            elif keyword.arg == "unique":
+            elif keyword.arg == "unique" and not one_to_one:
                 is_unique = bool(keyword.value.value)
             elif keyword.arg == "primary_key":
                 is_primary_key = bool(keyword.value.value)
@@ -1090,15 +1371,104 @@ class ASTDatabaseParser:
         # ForeignKey(primary_key=True) makes `<name>_id` the table's primary key,
         # so Django adds no implicit `id` (#224). A PK is never NULL, and its
         # uniqueness is tracked by is_primary_key, not is_unique.
+        to_field = self._django_to_field(call)
+        column, type_str = self._django_target_column(target, to_field, ())
         return FieldInfo(
             name=f"{name}_id",
-            type_str=self._django_display_type("BigAutoField"),
+            type_str=type_str,
             is_primary_key=is_primary_key,
             is_foreign_key=True,
             is_nullable=is_nullable and not is_primary_key,
             is_unique=is_unique and not is_primary_key,
-            foreign_table=f"{self._django_target_table(target)}.id",
+            foreign_table=f"{self._django_target_table(target)}.{column}",
         )
+
+    @staticmethod
+    def _django_to_field(call: ast.Call) -> str | None:
+        """The literal ``to_field=`` of a Django relationship field, if any."""
+        for kw in call.keywords:
+            if (
+                kw.arg == "to_field"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                return kw.value.value
+        return None
+
+    def _django_target_column(
+        self, target: str, to_field: str | None, stack: Tuple[Tuple[str, str | None], ...]
+    ) -> Tuple[str, str]:
+        """Return the ``(column, type)`` a Django FK to ``target`` references (#226).
+
+        That is the ``to_field`` column if given, else the target's primary key,
+        including one inherited from a base. A key that is itself a foreign key
+        is its ``<name>_id`` column, typed like the column *it* references. An
+        unknown target, field or cycle falls back to ``id`` / ``to_field`` with
+        Django's default ``BigAutoField`` type. A cycle is a repeated
+        ``(model, to_field)`` lookup, so following a key to another column of
+        the same model still resolves.
+        """
+        key = (target, to_field)
+        cached = self._target_column_cache.get(key)
+        if cached is not None:
+            return cached
+        default = (to_field or "id", self._django_display_type("BigAutoField"))
+        node = self._all_classes.get(target)
+        if node is None or key in stack:
+            return default
+        result = self._resolve_django_target_column(target, node, to_field, stack, default)
+        self._target_column_cache[key] = result
+        return result
+
+    def _resolve_django_target_column(
+        self,
+        target: str,
+        node: ast.ClassDef,
+        to_field: str | None,
+        stack: Tuple[Tuple[str, str | None], ...],
+        default: Tuple[str, str],
+    ) -> Tuple[str, str]:
+        """Uncached body of :meth:`_django_target_column`."""
+
+        # The winning declaration of each attribute, resolved like the fields (#228).
+        declared: Dict[str, Tuple[str, ast.Call, str]] = {}
+        for class_name in self._merge_order(node):
+            class_node = self._all_classes[class_name]
+            for attr in self._django_removed_names(class_node):
+                declared.pop(attr, None)
+            for attr, field_type, call in self._django_field_calls(class_node):
+                declared.pop(attr, None)
+                declared[attr] = (field_type, call, class_name)
+
+        if to_field is not None:
+            attr = to_field
+            # Django also accepts a relation's attname (`account_id` for `account`).
+            if attr not in declared and attr.endswith("_id"):
+                relation = declared.get(attr[: -len("_id")])
+                if relation is not None and relation[0] in ("ForeignKey", "OneToOneField"):
+                    attr = attr[: -len("_id")]
+            if attr not in declared:
+                return default
+        else:
+            pks = [
+                a for a, (_, call, _) in declared.items() if self._has_true_kw(call, "primary_key")
+            ]
+            if not pks:
+                return default
+            attr = pks[-1]
+
+        field_type, call, declaring = declared[attr]
+        if field_type in ("ForeignKey", "OneToOneField"):
+            # "self" binds like on the entity side (#226).
+            owner = self._django_self_owner(declaring, self._merge_order(node))
+            ref = self._resolve_django_relationship_target(call, owner)
+            if ref is None:
+                return f"{attr}_id", default[1]
+            _, ref_type = self._django_target_column(
+                ref, self._django_to_field(call), stack + ((target, to_field),)
+            )
+            return f"{attr}_id", ref_type
+        return attr, self._parse_django_column(attr, field_type, call).type_str
 
     def _django_target_table(self, class_name: str) -> str:
         """Resolve a target class name to its table name (Meta.db_table or snake_case)."""
@@ -1192,28 +1562,22 @@ class ASTDatabaseParser:
             return field_type
         return DJANGO_FIELD_TYPE_MAP.get(field_type, field_type)
 
-    def _parse_django_relationship(
-        self, name: str, field_type: str, call: ast.Call, current_class: str
-    ) -> Tuple[str, str, str] | None:
-        """Parse a Django relationship field into a (target, rel_type, attr) tuple.
+    def _parse_django_many_to_many(
+        self, name: str, call: ast.Call, current_class: str
+    ) -> _Rel | None:
+        """Parse a Django ``ManyToManyField`` into a relationship tuple.
 
-        ``ManyToManyField(through=...)`` is skipped - that M:N is drawn through
-        the through-model's own foreign keys, exactly like SQLAlchemy ``secondary=``.
+        ``ForeignKey`` / ``OneToOneField`` are FK columns instead (see
+        :meth:`_parse_django_fk_column`). ``ManyToManyField(through=...)`` is
+        skipped - that M:N is drawn through the through-model's own foreign
+        keys, exactly like SQLAlchemy ``secondary=``.
         """
         target = self._resolve_django_relationship_target(call, current_class)
         if target is None:
             return None
-
-        if field_type == "ManyToManyField":
-            if any(keyword.arg == "through" for keyword in call.keywords):
-                return None
-            rel_type = "many_to_many"
-        elif field_type == "OneToOneField":
-            rel_type = "one_to_one"
-        else:  # ForeignKey
-            rel_type = "one"
-
-        return (target, rel_type, name)
+        if any(keyword.arg == "through" for keyword in call.keywords):
+            return None
+        return (target, "many_to_many", name, False)
 
     def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
         """Resolve a relationship field's target from its first positional or ``to=`` arg."""
@@ -1391,7 +1755,7 @@ class ASTDatabaseParser:
 
         return None
 
-    def _parse_relationship(self, node: ast.AnnAssign) -> Tuple[str, str, str] | None:
+    def _parse_relationship(self, node: ast.AnnAssign) -> _Rel | None:
         """Parse a relationship from an annotated assignment.
 
         A relationship that declares ``link_model=`` (SQLModel) or ``secondary=``
@@ -1412,10 +1776,11 @@ class ASTDatabaseParser:
 
         rel_type = "many" if ("list[" in type_str or "List[" in type_str) else "one"
         target = self._clean_target(type_str)
+        nullable = rel_type == "one" and self._is_optional_annotation(node.annotation)
 
-        return (target, rel_type, field_name)
+        return (target, rel_type, field_name, nullable)
 
-    def _parse_model_reference(self, node: ast.AnnAssign) -> Tuple[str, str, str] | None:
+    def _parse_model_reference(self, node: ast.AnnAssign) -> _Rel | None:
         """Treat a field typed as another known model as a relationship.
 
         Used for Pydantic/dataclass models, which express relationships as plain
@@ -1431,8 +1796,49 @@ class ASTDatabaseParser:
 
         target_class = self._all_classes.get(target)
         if target_class is not None and self._classify_source(target_class) is not None:
-            return (target, rel_type, node.target.id)
+            # `user: User | None` is an optional reference (#223).
+            nullable = rel_type == "one" and self._is_optional_annotation(node.annotation)
+            return (target, rel_type, node.target.id, nullable)
         return None
+
+    @classmethod
+    def _is_optional_annotation(cls, node: ast.expr) -> bool:
+        """Whether an annotation admits ``None`` at its top level.
+
+        Recognizes ``X | None`` (either side), ``Optional[X]``,
+        ``Union[..., None]``, the same inside ``Mapped[...]``, and string
+        (forward-reference) annotations. A name that merely contains
+        "Optional" or "None" (``OptionalSettings``) is not optional.
+        """
+        if isinstance(node, ast.Constant):
+            if node.value is None:
+                return True
+            if isinstance(node.value, str):
+                try:
+                    parsed = ast.parse(node.value, mode="eval").body
+                except SyntaxError:
+                    return False
+                return cls._is_optional_annotation(parsed)
+            return False
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            return cls._is_optional_annotation(node.left) or cls._is_optional_annotation(node.right)
+        if isinstance(node, ast.Subscript):
+            func = node.value
+            name = (
+                func.id
+                if isinstance(func, ast.Name)
+                else func.attr
+                if isinstance(func, ast.Attribute)
+                else None
+            )
+            if name == "Optional":
+                return True
+            if name == "Mapped":
+                return cls._is_optional_annotation(node.slice)
+            if name == "Union":
+                args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+                return any(cls._is_optional_annotation(arg) for arg in args)
+        return False
 
     @staticmethod
     def _clean_target(type_str: str) -> str:

@@ -170,14 +170,16 @@ class Order(models.Model):
 | SQLModel | `table=True` | `Field(primary_key=…, foreign_key=…)` | `Relationship()` |
 | SQLAlchemy 2.0 | `__tablename__` + `Mapped[...]` columns | `mapped_column(primary_key=…)`, `ForeignKey(...)` | `relationship()` (lowercase) |
 | Django ORM | `models.Model` subclass | `primary_key=True` or implicit `id`, `ForeignKey`/`OneToOneField` | `ForeignKey` (N:1), `OneToOneField` (1:1), `ManyToManyField` (M:N, incl. `through=`) |
-| Pydantic | `BaseModel` subclass (incl. transitive) | `--infer-keys` only | nested model refs (`user: User`, `list["Order"]`) |
+| Pydantic | `BaseModel` subclass (incl. transitive) | `--infer-keys` only | nested model refs (`user: User`, optional `user: User \| None`, `list["Order"]`) |
 | Dataclass | `@dataclass` decorator | `--infer-keys` only | nested model refs |
 
 !!! info
 
     Mixins / abstract bases (e.g. a SQLAlchemy mixin without `__tablename__`, or a
     Django `class Meta: abstract = True` base) are not drawn as tables, but their
-    columns are inherited into concrete entities.
+    columns are inherited into concrete entities. An attribute declared in more
+    than one base resolves like Python's MRO: the class body wins, then the
+    first base that declares it.
 
 SQL DDL (`.sql` files parsed via sqlglot) uses a separate file-based detection
 mechanism and is not listed in the AST-detection table above. See [SQL DDL](sql.md).

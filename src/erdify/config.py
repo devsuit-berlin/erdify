@@ -63,6 +63,10 @@ class EntityInfo:
         source: The model kind that produced the entity: one of ``MODEL_SOURCES``
             (``sqlmodel``, ``sqlalchemy``, ``django``, ``dataclass``,
             ``pydantic``) or ``sql`` for SQL DDL.
+        nullable_relationships: Attribute names of ``"one"`` relationships whose
+            reference is optional (e.g. ``user: User | None``); drawn as
+            zero-or-one on the target side. Foreign-key columns carry their own
+            ``FieldInfo.is_nullable`` instead.
     """
 
     name: str
@@ -74,6 +78,7 @@ class EntityInfo:
     is_link_table: bool = False
     base_classes: List[str] = field(default_factory=list)
     source: str = "sqlmodel"
+    nullable_relationships: List[str] = field(default_factory=list)
 
 
 def is_structural_link_table(fields: List[FieldInfo]) -> bool:
