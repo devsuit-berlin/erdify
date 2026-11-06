@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The by-name fallback for column type aliases (used for names a module does
-  not bind, e.g. imported under `TYPE_CHECKING`) now also includes aliases
-  that depend on it, such as `UserId = intpk` where `intpk` comes through an
-  ambiguous absolute import
+- An ambiguous absolute import of a column type alias (several scanned
+  modules match) now uses the alias if every matching module defines the same
+  one, instead of looking the name up across all modules. So an alias built on
+  it (`UserId = intpk`) is found again, also through the by-name fallback for
+  names a module does not bind (e.g. imported under `TYPE_CHECKING`), and
+  re-exports of an ambiguous alias resolve in linear time
   ([#254](https://github.com/devsuit-berlin/erdify/issues/254)).
 
 ### Output changes

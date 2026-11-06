@@ -1202,3 +1202,54 @@ def test_self_referencing_definition_that_differs_conflicts(tmp_path: Path):
     entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
     # Two different `intpk` definitions: the by-name fallback does not guess.
     assert _field(entities, "id").type_str == "intpk"
+
+
+class TestAmbiguousImportCandidates:
+    """An ambiguous import consults only the modules it could name (#254 review)."""
+
+    ALIAS = TestPythonScoping.ALIAS
+
+    def _layout(self, tmp_path: Path, models: dict[str, str]) -> dict[str, EntityInfo]:
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "re0.py").write_text(
+            "from coltypes import intpk as _intpk\nintpk = _intpk\n", encoding="utf-8"
+        )
+        for name, text in models.items():
+            (tmp_path / "pkg" / name).write_text(text, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        return entities
+
+    @staticmethod
+    def _model(cls: str, head: str) -> str:
+        return (
+            head
+            + HEADER.replace("class User(Base):", f"class _{cls}User(Base):")
+            + f"\nclass {cls}(Base):\n    __tablename__ = '{cls.lower()}'\n    id: Mapped[intpk]\n"
+        )
+
+    @pytest.mark.parametrize("order", [("a.py", "b.py"), ("b.py", "a.py")])
+    def test_cold_explicit_import_of_a_re_export(self, tmp_path: Path, order: tuple[str, str]):
+        explicit, unbound = order
+        entities = self._layout(
+            tmp_path,
+            {
+                explicit: self._model("Explicit", "from .re0 import intpk\n"),
+                unbound: self._model("Unbound", ""),
+            },
+        )
+        for cls in ("Explicit", "Unbound"):
+            field = next(f for f in entities[cls].fields if f.name == "id")
+            assert (field.type_str, field.is_primary_key) == ("int", True)
+
+    def test_candidate_without_the_alias_makes_it_unknown(self, tmp_path: Path):
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text("intpk = int\n", encoding="utf-8")
+        (tmp_path / "pkg" / "models.py").write_text(
+            "from coltypes import intpk\n" + self._model("Account", ""),
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert next(f for f in entities["Account"].fields if f.name == "id").type_str == "intpk"

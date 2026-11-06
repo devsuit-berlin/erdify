@@ -140,13 +140,14 @@ mapped_column(primary_key=True)]`, also `X: TypeAlias = ...`, a re-export
   class** counts; a rebinding after it does not.
 - An import is followed into the scanned file it names: relative, absolute
   (when several scanned files match, the one in the importing file's package
-  wins), renamed, or `*` (in order, honouring `__all__`, and through further
+  wins; if that still leaves several, the alias applies only if all of them
+  define the same one), renamed, or `*` (in order, honouring `__all__`, and through further
   star imports). An import from elsewhere (`from uuid import UUID`), a
   function, a class or any other binding means the name is not an alias there.
 - A name the module does not bind at all (e.g. imported under
   `TYPE_CHECKING`) uses the alias of that name if it is defined identically
-  wherever it is defined and is not a model class's name. So does an absolute
-  import that stays ambiguous, and an alias built on such a name.
+  wherever it is defined and is not a model class's name, also when it is
+  built on another alias (`UserId = intpk`).
 - Only module-level statements count, not ones inside `if` / `try` blocks. A
   module-qualified alias (`Mapped[coltypes.intpk]`) is not expanded.
 - Other `Annotated` aliases (e.g. Pydantic's `PositiveInt`) keep their name as
