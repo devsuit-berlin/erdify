@@ -157,24 +157,34 @@ resolved from the call argument.
 ## Both sides of a relationship
 
 A relationship declared on both models (`User.posts` and `Post.user`) is drawn
-once, from the model parsed first. erdify does not read `back_populates`, so it
-pairs the two sides by guesswork: each edge of the first model absorbs one
-reference declared back from the other model. It prefers the inverse
-cardinality (a `list[Post]` on `User` pairs with a `User` reference on `Post`)
-and then an attribute named after the class (`Post.user` for `User`).
+as **one edge**. Each end shows what its own side declares: `list[Post]` on
+`User` and `user: User | None` on `Post` give `Post }o--o| User`, and a list on
+both sides gives `}o--o{`. The edge is drawn from the model whose name sorts
+first and labelled with that side's attribute, so it does not depend on file
+order.
 
-- Every reference left over gets its own edge, so `Post.author` beside
-  `Post.user` is a second edge.
-- A reference back with a *different* cardinality is folded too, because it
-  may be the other side of a 1:1 (`User.profile` / `Profile.user`). Two
-  independent references in opposite directions (`User.pinned_post` and
-  `Post.author`) therefore show as one edge.
-- The kept edge shows the first model's cardinality only; the folded side's
-  optionality is not merged in.
-- A self-reference has no other model, so only an N:1 / 1:N inverse is
-  folded: `Node.parent` and `Node.children` are one edge, while
-  `Employee.manager` and `Employee.mentor`, or two `ManyToManyField("self")`
-  fields, stay two.
+Which two attributes form a pair:
+
+- **Named explicitly:** a SQLAlchemy / SQLModel `relationship(back_populates=...)`
+  pairs exactly with the attribute it names. (`backref=` and Django's
+  `related_name` create the other side implicitly, so there is nothing to
+  pair.)
+- **Guessed** for everything else, e.g. Pydantic and dataclass models, which
+  have no such marker. Each reference of the first model folds at most one
+  reference declared back from the other model, preferring the inverse
+  cardinality (a `list[Post]` pairs with a `User` reference) and attributes
+  named after the class they point at (`Post.user` / `User.posts`).
+  - Every reference left over gets its own edge, so `Post.author` beside
+    `Post.user` is a second edge.
+  - A reference back with a *different* cardinality is folded too, because it
+    may be the other side of a 1:1 (`User.profile` / `Profile.user`). Two
+    independent references in opposite directions (`User.pinned_post` and
+    `Post.author`) therefore show as one edge; use `back_populates` where the
+    framework has it to keep them apart.
+  - A self-reference has no other model, so only an N:1 / 1:N inverse is
+    folded: `Node.parent` and `Node.children` are one edge, while
+    `Employee.manager` and `Employee.mentor`, or two `ManyToManyField("self")`
+    fields, stay two.
 
 A foreign-key column already draws the edge between two models, so their
 declared relationships (which usually mirror it) are not drawn again. A

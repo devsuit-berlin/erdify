@@ -217,6 +217,11 @@ class ASTDatabaseParser:
             entity.nullable_relationships = [
                 attr for attr in entity.nullable_relationships if attr in kept
             ]
+            entity.inverse_relationships = {
+                attr: inverse
+                for attr, inverse in entity.inverse_relationships.items()
+                if attr in kept
+            }
 
     def _parse_enum_class(self, class_node: ast.ClassDef) -> None:
         """Parse an enum class and extract its values."""
@@ -269,10 +274,10 @@ class ASTDatabaseParser:
         fields_dict, relationships_dict = dialect.collect(class_node)
 
         entity.fields = list(fields_dict.values())
-        entity.relationships = [(t, kind, attr) for t, kind, attr, _ in relationships_dict.values()]
-        entity.nullable_relationships = [
-            attr for _, _, attr, nullable in relationships_dict.values() if nullable
-        ]
+        rels = list(relationships_dict.values())
+        entity.relationships = [(r.target, r.kind, r.attr) for r in rels]
+        entity.nullable_relationships = [r.attr for r in rels if r.nullable]
+        entity.inverse_relationships = {r.attr: r.inverse for r in rels if r.inverse}
 
         dialect.finish(entity, class_node)
 

@@ -210,18 +210,12 @@ class _ERGenerator:
         foreign-key column, so only a link table suppresses it: e.g. a Django
         ``ManyToManyField`` to the parent of a multi-table child (#233).
 
-        Every declared attribute gets its own edge (#230), except the inverse
-        side of a bidirectional relationship (e.g. ``User.posts`` and
-        ``Post.user``), which describes the same edge and is collapsed into the
-        side declared first. The IR does not record ``back_populates``, so each
-        edge of the first side absorbs at most one relationship declared back
-        from the other side: the first one with the inverse cardinality
-        (``many`` for ``one`` and vice versa), preferring an attribute named
-        after the class it points at (``Post.user`` for ``User``), else the
-        first one left. A self-reference has no "other side", so there only an
-        N:1 / 1:N inverse (``parent`` / ``children``) is absorbed; two references
-        of the same cardinality (``friends`` / ``blocked``, both M:N) stay two
-        edges.
+        Every declared attribute gets its own edge (#230), except that the two
+        sides of a bidirectional relationship (e.g. ``User.posts`` and
+        ``Post.user``) describe one edge (:meth:`_pair_sides`). That edge is
+        drawn from the side whose entity name sorts first, so it does not
+        depend on file order, and each end shows what its own side declares
+        (#239): ``list[B]`` on ``A`` and ``list[A]`` on ``B`` give ``}o--o{``.
         """
         connected = fk_pairs | link_pairs
         rels = [
@@ -232,34 +226,143 @@ class _ERGenerator:
             and frozenset((entity.name, target))
             not in (link_pairs if rel_type == "many_to_many" else connected)
         ]
-        by_direction: Dict[Tuple[str, str], List[int]] = {}
+        by_pair: Dict[frozenset[str], List[int]] = {}
         for i, (entity, target, _, _) in enumerate(rels):
-            by_direction.setdefault((entity.name, target), []).append(i)
-        first_side: Dict[frozenset[str], str] = {}
-        absorbed: set[int] = set()
-        for i, (entity, target, rel_type, _) in enumerate(rels):
-            if i in absorbed:
+            by_pair.setdefault(frozenset((entity.name, target)), []).append(i)
+        partner: Dict[int, int] = {}
+        for indices in by_pair.values():
+            partner.update(self._pair_sides(rels, indices))
+        folded = set(partner.values())
+        lines: List[str] = []
+        for i, (entity, target, rel_type, attr) in enumerate(rels):
+            if i in folded:
                 continue
-            if first_side.setdefault(frozenset((entity.name, target)), entity.name) != entity.name:
-                continue  # the other side's leftovers: drawn as they are
-            if target == entity.name and self._INVERSE_KIND[rel_type] == rel_type:
-                continue  # two M:N / 1:1 self-references are two relationships
-            inverse = [
-                j
-                for j in by_direction.get((target, entity.name), ())
-                if j > i and j not in absorbed
-            ]
-            exact = [j for j in inverse if rels[j][2] == self._INVERSE_KIND[rel_type]]
-            named = [j for j in exact if rels[j][3] == self._snake_case(entity.name)]
-            if exact:
-                absorbed.add((named or exact)[0])
-            elif inverse and target != entity.name:
-                absorbed.add(inverse[0])
-        return [
-            self._declared_line(entity, target, rel_type, attr)
-            for i, (entity, target, rel_type, attr) in enumerate(rels)
-            if i not in absorbed
+            if i in partner:
+                lines.append(self._merged_line(rels[i], rels[partner[i]]))
+            else:
+                lines.append(self._declared_line(entity, target, rel_type, attr))
+        return lines
+
+    def _pair_sides(
+        self, rels: "List[Tuple[EntityInfo, str, str, str]]", indices: List[int]
+    ) -> Dict[int, int]:
+        """Pair the relationships between one pair of entities: kept index -> folded index.
+
+        A side that names its inverse (``back_populates=``, #240) is paired with
+        exactly that attribute. The rest, which do not, are paired by guess:
+        each relationship of the first side (entity name sorting first) folds
+        at most one relationship declared back from the other side, preferring
+        the inverse cardinality (``many`` for ``one`` and vice versa) and
+        attributes named after the class they point at (``Post.user`` /
+        ``User.posts``), else the first one left. A self-reference
+        has no "other side": there an explicit pair keeps the earlier
+        declaration, and the guess only folds an N:1 / 1:N inverse
+        (``parent`` / ``children``), so two references of the same cardinality
+        (``friends`` / ``blocked``, both M:N) stay two edges.
+        """
+
+        def inverse_of(i: int) -> str | None:
+            entity, _, _, attr = rels[i]
+            return entity.inverse_relationships.get(attr)
+
+        names = sorted({rels[i][0].name for i in indices} | {rels[i][1] for i in indices})
+        first = names[0]
+        self_ref = len(names) == 1
+        side_a = [i for i in indices if rels[i][0].name == first]
+        side_b = side_a if self_ref else [i for i in indices if rels[i][0].name != first]
+        pairs: Dict[int, int] = {}
+        used: set[int] = set()
+
+        def pair(i: int, j: int) -> None:
+            keep, fold = (min(i, j), max(i, j)) if self_ref else (i, j)
+            pairs[keep] = fold
+            used.update((i, j))
+
+        # Explicit: the side names its inverse.
+        for i in indices:
+            inverse = inverse_of(i)
+            if i in used or inverse is None:
+                continue
+            other_side = side_b if i in side_a else side_a
+            j = next(
+                (j for j in other_side if j != i and j not in used and rels[j][3] == inverse),
+                None,
+            )
+            if j is not None:
+                pair(i, j) if i in side_a else pair(j, i)
+
+        # Guessed: neither side names an inverse. Best candidates first, so the
+        # result does not depend on which side is drawn: an exact inverse
+        # cardinality whose attributes are named after the class they point at
+        # on both sides (`Post.user` / `User.posts`), then on one side, then
+        # any exact inverse, then (not for a self-reference) anything left.
+        free_a = [i for i in side_a if i not in used and inverse_of(i) is None]
+        free_b = [j for j in side_b if j not in used and inverse_of(j) is None]
+
+        def exact(i: int, j: int) -> bool:
+            return rels[j][2] == self._INVERSE_KIND[rels[i][2]]
+
+        def named(i: int, j: int) -> int:
+            def after(attr: str, cls: str) -> bool:
+                return attr in (self._snake_case(cls), self._snake_case(cls) + "s")
+
+            entity_i, target_i, _, attr_i = rels[i]
+            return int(after(attr_i, target_i)) + int(after(rels[j][3], entity_i.name))
+
+        tiers = [
+            lambda i, j: exact(i, j) and named(i, j) == 2,
+            lambda i, j: exact(i, j) and named(i, j) == 1,
+            exact,
         ]
+        if not self_ref:
+            tiers.append(lambda i, j: True)
+        for fits in tiers:
+            for i in free_a:
+                if i in used:
+                    continue
+                if self_ref and self._INVERSE_KIND[rels[i][2]] == rels[i][2]:
+                    continue  # two M:N / 1:1 self-references are two relationships
+                j = next(
+                    (
+                        j
+                        for j in free_b
+                        if j not in used and j != i and (not self_ref or j > i) and fits(i, j)
+                    ),
+                    None,
+                )
+                if j is not None:
+                    pair(i, j)
+        return pairs
+
+    #: Crow's-foot end at the *left* entity for what the right entity declares
+    #: about it: (kind, nullable) -> token.
+    _LEFT_END = {
+        ("one", False): "||",
+        ("one", True): "|o",
+        ("many", False): "}o",
+        ("one_to_one", False): "||",
+        ("many_to_many", False): "}o",
+    }
+    #: Crow's-foot end at the *right* entity for what the left entity declares.
+    _RIGHT_END = {
+        ("one", False): "||",
+        ("one", True): "o|",
+        ("many", False): "o{",
+        ("one_to_one", False): "||",
+        ("many_to_many", False): "o{",
+    }
+
+    def _merged_line(
+        self,
+        kept: "Tuple[EntityInfo, str, str, str]",
+        folded: "Tuple[EntityInfo, str, str, str]",
+    ) -> str:
+        """One edge for both sides of a relationship; each end from its own side (#239)."""
+        entity, target, kind, attr = kept
+        other, _, other_kind, other_attr = folded
+        left = self._LEFT_END[(other_kind, other_attr in other.nullable_relationships)]
+        right = self._RIGHT_END[(kind, attr in entity.nullable_relationships)]
+        return f'{entity.name} {left}--{right} {target} : "{attr}"'
 
     def _relationship_lines(self) -> List[str]:
         """Resolve every relationship line, de-duplicated and ordered.
@@ -587,7 +690,8 @@ def generate_json(
 
     Shape: ``{schema_version, title, entities: [{name, table_name, source, is_link_table,
     fields: [{name, type, primary_key, foreign_key, nullable, foreign_table,
-    index, unique, default}], relationships: [{target, type, attribute, nullable}]}],
+    index, unique, default}], relationships: [{target, type, attribute, nullable,
+    inverse}]}],
     enums:
     [{name, values}]}``. Downstream tools can consume this without re-parsing.
     ``schema_version`` is :data:`JSON_SCHEMA_VERSION`; consumers should ignore
@@ -635,6 +739,7 @@ def generate_json(
                             "type": rel_type,
                             "attribute": attr,
                             "nullable": rel_type == "one" and attr in entity.nullable_relationships,
+                            "inverse": entity.inverse_relationships.get(attr),
                         }
                         for target, rel_type, attr in entity.relationships
                     ]

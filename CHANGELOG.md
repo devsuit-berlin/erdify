@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `EntityInfo.inverse_relationships` and an `inverse` key on each JSON
+  relationship: the other side's attribute when the source names it
+  (SQLAlchemy / SQLModel `back_populates=`)
+  ([#240](https://github.com/devsuit-berlin/erdify/issues/240)). The JSON
+  `schema_version` stays `1`: adding a key is not a shape change.
+
+### Fixed
+
+- Both sides of a relationship are drawn as one edge whose ends each show what
+  their own side declares. A list on both sides is now `}o--o{` (was 1:N), and
+  an optional reference keeps its `o|` when the other side is a list.
+  `back_populates=` pairs the two sides exactly; elsewhere they are still
+  paired by cardinality and name, now preferring attributes named after the
+  class on *either* side. The edge is drawn from the model whose name sorts
+  first, so renaming or moving a file no longer changes it
+  ([#239](https://github.com/devsuit-berlin/erdify/issues/239),
+  [#240](https://github.com/devsuit-berlin/erdify/issues/240)).
+
+### Output changes
+
+The #239 fix changes every relationship declared on both models (e.g.
+Pydantic / dataclass `User.posts` with `Post.user`): the edge is now drawn
+from the model whose name sorts first, labelled with that side's attribute,
+and its ends combine both sides (`Warehouse ||--o{ Item : "items"` becomes
+`Item }o--o| Warehouse : "warehouse"` when `Item.warehouse` is optional).
+`--format json` gains the `inverse` key on every relationship. If you gate CI
+on `--check`, regenerate the diagram once after upgrading.
+
 ## [1.3.0] - 2026-11-06
 
 ### Changed

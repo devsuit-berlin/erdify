@@ -530,7 +530,8 @@ class TestDistinctReferencesToSameModel:
             "User": _entity("User", ("Post", "many", "posts")),
             "Post": _entity("Post", ("User", "one", "user")),
         }
-        assert _edges(generate_mermaid(entities)) == ['User ||--o{ Post : "posts"']
+        # Drawn from the entity whose name sorts first; each end from its side.
+        assert _edges(generate_mermaid(entities)) == ['Post }o--|| User : "user"']
 
     def test_extra_reference_beside_bidirectional_pair(self):
         """The inverse side absorbs one reference; the other one is still drawn."""
@@ -539,8 +540,8 @@ class TestDistinctReferencesToSameModel:
             "Post": _entity("Post", ("User", "one", "author"), ("User", "one", "user")),
         }
         assert _edges(generate_mermaid(entities)) == [
-            'User ||--o{ Post : "posts"',
             'Post }o--|| User : "author"',
+            'Post }o--|| User : "user"',  # folded with User.posts
         ]
 
     def test_inverse_prefers_matching_cardinality(self):
@@ -550,8 +551,8 @@ class TestDistinctReferencesToSameModel:
             "Profile": _entity("Profile", ("User", "one_to_one", "owner"), ("User", "one", "user")),
         }
         assert _edges(generate_mermaid(entities)) == [
-            'User ||--o{ Profile : "profiles"',
             'Profile ||--|| User : "owner"',
+            'Profile }o--|| User : "user"',  # folded with User.profiles
         ]
 
     def test_self_reference_parent_children_drawn_once(self):
@@ -601,12 +602,12 @@ class TestDistinctReferencesToSameModel:
         ]
 
     def test_inverse_without_matching_cardinality_still_collapsed(self):
-        """Two N:1 references pointing at each other are one 1:1 edge, as before."""
+        """Two N:1 references pointing at each other are one 1:1 edge."""
         entities = {
             "User": _entity("User", ("Account", "one", "account")),
             "Account": _entity("Account", ("User", "one", "owner")),
         }
-        assert _edges(generate_mermaid(entities)) == ['User }o--|| Account : "account"']
+        assert _edges(generate_mermaid(entities)) == ['Account ||--|| User : "owner"']
 
     def test_inverse_named_after_acronym_class(self):
         """``HTTPRequest`` is referenced as ``http_request``, not ``h_t_t_p_request``."""
@@ -642,7 +643,7 @@ class TestDistinctReferencesToSameModel:
         entities = {"User": user, "Post": post, "Comment": comment}
         assert _edges(generate_mermaid(entities)) == [
             'Comment }o--|| Post : "post_id"',
-            'User ||--o{ Post : "posts"',
+            'Post }o--|| User : "user"',
         ]
 
     @pytest.mark.parametrize("kind", ["many_to_many", "one_to_one"])

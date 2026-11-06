@@ -205,7 +205,19 @@ class AnnotatedDialect(Dialect):
         ref = annotation_reference(node.annotation)
         if ref is None:  # names no single class (e.g. Mapped[A | B]): nothing to draw
             return None
-        return as_rel(ref, node.target.id)
+        rel = as_rel(ref, node.target.id)
+        # back_populates= names the other side's attribute, so the two sides
+        # can be paired exactly (#240). backref= creates that side implicitly,
+        # so there is no second declaration to pair with.
+        if isinstance(node.value, ast.Call):
+            for kw in node.value.keywords:
+                if (
+                    kw.arg == "back_populates"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    rel = rel._replace(inverse=kw.value.value)
+        return rel
 
     def _parse_model_reference(self, node: ast.AnnAssign) -> _Rel | None:
         """Treat a field typed as another known model as a relationship.
