@@ -83,6 +83,8 @@ class TestKeylessReferences:
             ("deque[User]", "many", False),
             ("Union[User, NoneType]", "one", True),
             ("User | types.NoneType", "one", True),
+            ('Union[User, "types.NoneType"]', "one", True),
+            ('Union[User, "NoneType"]', "one", True),
             ("Annotated[User, None]", "one", False),  # metadata None is not optional
             ("typing.Annotated[User | None, 1]", "one", True),
             ('" User "', "one", False),  # whitespace around a forward reference
@@ -113,6 +115,9 @@ class TestKeylessReferences:
             "Union[get_type(), None]",  # single member that names no class
             "None",
             '"a\\x00b"',  # NUL byte: ValueError on Python 3.11, SyntaxError later
+            'Union[User, "a\\x00b"]',  # same, as a union member
+            'Union[User, "1 +"]',  # unparsable union member
+            "Union[User, 1]",  # non-string constant member
             '"User |"',  # unparsable forward reference
             '"get()[User]"',  # subscript of a call
         ],

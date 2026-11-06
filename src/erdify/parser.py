@@ -1851,12 +1851,20 @@ class ASTDatabaseParser:
             return node.attr
         return None
 
-    @staticmethod
-    def _is_none(node: ast.expr) -> bool:
-        """``None``, also as ``"None"`` or ``NoneType`` (``types.NoneType``)."""
+    @classmethod
+    def _is_none(cls, node: ast.expr) -> bool:
+        """``None`` or ``NoneType`` (``types.NoneType``), also as a string forward reference."""
         if isinstance(node, ast.Constant):
-            return node.value in (None, "None", "NoneType")
-        return ASTDatabaseParser._expr_name(node) == "NoneType"
+            if node.value is None:
+                return True
+            if not isinstance(node.value, str):
+                return False
+            try:
+                parsed = ast.parse(node.value.strip(), mode="eval").body
+            except (SyntaxError, ValueError):
+                return False
+            return cls._is_none(parsed)
+        return cls._expr_name(node) == "NoneType"
 
     @classmethod
     def _annotation_reference(cls, node: ast.expr, many: bool = False) -> _AnnotationRef | None:
