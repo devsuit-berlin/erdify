@@ -90,6 +90,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`class Meta: proxy = True`) have no table and are no longer drawn; a
   relation to a proxy points at the model it stands for
   ([#233](https://github.com/devsuit-berlin/erdify/issues/233)).
+- A Django `ManyToManyField` between two models that a foreign key also
+  connects (e.g. `parent = ForeignKey("self")` beside
+  `peers = ManyToManyField("self")`, or the new parent link of #233) is now
+  drawn; previously the foreign key hid it.
 
 ### Output changes
 
@@ -124,7 +128,9 @@ copied parent columns and inherited relationships are replaced by a
 `<parent>_ptr_id` link drawn 1:1 to the parent (`|o--||`), which also replaces
 the implicit `id` primary key unless the model declares its own. Foreign keys
 to such a model now reference its primary-key column. Proxy models disappear
-from the diagram, and edges to them now end at the proxied model.
+from the diagram, and edges to them now end at the proxied model. A
+`ManyToManyField` between two models that a foreign key also connects now
+gets its `}o--o{` edge.
 
 ## [1.2.0] - 2026-11-06
 

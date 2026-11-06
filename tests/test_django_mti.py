@@ -551,3 +551,42 @@ def test_concrete_parent_under_shared_abstract_ancestors(tmp_path: Path):
     layers.append("class Leaf(L29):\n    pass\n")
     entities = _parse(tmp_path, "\n\n".join(layers))
     assert [f.name for f in entities["Leaf"].fields] == ["root_ptr_id"]
+
+
+class TestManyToManyBesideForeignKeys:
+    """A M:N is never the mirror of a foreign-key column, so it is always drawn."""
+
+    def test_m2m_to_the_parent_of_a_child(self, tmp_path: Path):
+        out = generate_mermaid(
+            _parse(
+                tmp_path,
+                """
+class Person(models.Model):
+    pass
+
+
+class Author(Person):
+    fans = models.ManyToManyField(Person, related_name="idols")
+""",
+            )
+        )
+        assert 'Author |o--|| Person : "person_ptr_id"' in out
+        assert 'Author }o--o{ Person : "fans"' in out
+
+    def test_m2m_beside_a_foreign_key(self, tmp_path: Path):
+        out = generate_mermaid(
+            _parse(
+                tmp_path,
+                """
+class Person(models.Model):
+    pass
+
+
+class Club(models.Model):
+    owner = models.ForeignKey(Person, on_delete=models.CASCADE)
+    members = models.ManyToManyField(Person, related_name="clubs")
+""",
+            )
+        )
+        assert 'Club }o--|| Person : "owner_id"' in out
+        assert 'Club }o--o{ Person : "members"' in out

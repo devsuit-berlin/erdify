@@ -177,7 +177,10 @@ and then an attribute named after the class (`Post.user` for `User`).
   fields, stay two.
 
 A foreign-key column already draws the edge between two models, so their
-declared relationships are not drawn again.
+declared relationships (which usually mirror it) are not drawn again. A
+many-to-many is the exception: it never mirrors a foreign-key column, so a
+Django `ManyToManyField` is drawn even when a foreign key also connects the
+two models.
 
 ## Keyless models
 
