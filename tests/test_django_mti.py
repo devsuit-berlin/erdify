@@ -625,3 +625,35 @@ class Bistro(LinkBase, Place):
             ("place_ptr_id", "int", True, True, False, "place.id"),
             ("place", "str", False, False, False, None),
         ]
+
+
+class TestLowerCaseLazyReferences:
+    """Django resolves ``"app.model"`` references case-insensitively."""
+
+    def test_explicit_parent_link_by_lower_case_reference(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Place(models.Model):
+    pass
+
+
+class Restaurant(Place):
+    place = models.OneToOneField("catalog.place", on_delete=models.CASCADE, parent_link=True)
+""",
+        )
+        assert _cols(entities["Restaurant"]) == [("place_id", "int", True, True, False, "place.id")]
+
+    def test_many_to_many_by_lower_case_reference(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Tag(models.Model):
+    pass
+
+
+class Book(models.Model):
+    tags = models.ManyToManyField("catalog.tag")
+""",
+        )
+        assert entities["Book"].relationships == [("Tag", "many_to_many", "tags")]

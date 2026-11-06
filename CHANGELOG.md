@@ -94,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connects (e.g. `parent = ForeignKey("self")` beside
   `peers = ManyToManyField("self")`, or the new parent link of #233) is now
   drawn; previously the foreign key hid it.
+- A Django string reference names its model case-insensitively, as in Django:
+  `ManyToManyField("catalog.tag")` now draws its edge to `Tag`, and a
+  lower-case `parent_link` reference is matched to its parent.
 
 ### Output changes
 

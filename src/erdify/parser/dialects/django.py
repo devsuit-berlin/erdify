@@ -65,6 +65,7 @@ class DjangoDialect(Dialect):
         self._target_column_cache: Dict[Tuple[str, str | None], Tuple[str, str]] = {}
         self._parents_cache: Dict[str, List[str]] = {}
         self._base_parents_cache: Dict[str, List[str]] = {}
+        self._lower_names: Dict[str, str] | None = None
         self._links_cache: Dict[str, List[Tuple[str, str]]] = {}
 
     def detect(self, class_node: ast.ClassDef) -> bool:
@@ -732,8 +733,9 @@ class DjangoDialect(Dialect):
     def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
         """Resolve a relationship field's target from its first positional or ``to=`` arg.
 
-        A proxy model has no table, so a relation to it targets the concrete
-        model it proxies, as in Django.
+        A model name in a string reference is case-insensitive, as in Django
+        (``"catalog.author"`` is ``Author``). A proxy model has no table, so a
+        relation to it targets the concrete model it proxies.
         """
         target = None
         if call.args:
@@ -743,10 +745,21 @@ class DjangoDialect(Dialect):
                 if keyword.arg == "to":
                     target = self._resolve_django_target(keyword.value, current_class)
                     break
+        if target is not None and target not in self.classes.all:
+            target = self._class_names_by_lower().get(target.lower(), target)
         if target is not None and target in self.classes.all:
             if self._meta_flag(self.classes.all[target], "proxy"):
                 return self._concrete_model(target, ()) or target
         return target
+
+    def _class_names_by_lower(self) -> Dict[str, str]:
+        """Lower-cased name -> class name, for names that are unambiguous that way."""
+        if self._lower_names is None:
+            counts: Dict[str, List[str]] = {}
+            for name in self.classes.all:
+                counts.setdefault(name.lower(), []).append(name)
+            self._lower_names = {low: names[0] for low, names in counts.items() if len(names) == 1}
+        return self._lower_names
 
     @staticmethod
     def _resolve_django_target(node: ast.expr, current_class: str) -> str | None:
