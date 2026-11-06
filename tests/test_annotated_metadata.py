@@ -348,18 +348,20 @@ class Account(Base):
         assert _flags(_field(entities, "token")) == ("intpk", False, False, False, None)
 
     def test_import_of_the_alias_itself_keeps_it(self, tmp_path: Path):
-        entities = _parse(
-            tmp_path,
-            """
-intpk = Annotated[int, mapped_column(primary_key=True)]
-from .types import intpk
-
-
-class Account(Base):
-    __tablename__ = "account"
-    id: Mapped[intpk]
-""",
+        """Defined in types.py, imported in models.py: the alias applies."""
+        (tmp_path / "types.py").write_text(
+            "from typing import Annotated\n"
+            "from sqlalchemy.orm import mapped_column\n\n"
+            "intpk = Annotated[int, mapped_column(primary_key=True)]\n",
+            encoding="utf-8",
         )
+        (tmp_path / "models.py").write_text(
+            "from .types import intpk\n"
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[intpk]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
         assert _field(entities, "id").is_primary_key
 
     @pytest.mark.parametrize("rebinding", ["intpk = other = str", "intpk, other = str, int"])
@@ -485,3 +487,22 @@ class Account(Base):
         code = _field(entities, "code")
         assert (code.index, code.is_unique) == (True, True)
         assert _field(entities, "other").index is False
+
+
+def test_same_module_import_replaces_the_alias(tmp_path: Path):
+    """`UUID = Annotated[...]` then `from uuid import UUID`: the name is the import."""
+    entities = _parse(
+        tmp_path,
+        """
+UUID = Annotated[int, mapped_column(index=True)]
+from uuid import UUID
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[UUID]
+""",
+    )
+    token = _field(entities, "token")
+    assert (token.type_str, token.index) == ("UUID", False)
