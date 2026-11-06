@@ -78,6 +78,10 @@ class AliasResolver:
         #: Name -> its by-name fallback alias (or None), once known (#254).
         self._fallback: Dict[str, ast.expr | None] = {}
         self._fallback_names: List[str] | None = None
+        #: Fallback names being computed -> what a self-reference assumes for now.
+        self._assumed: Dict[str, ast.expr | None] = {}
+        #: Per name, re-entries of its active fallback so far (each also a cut-off).
+        self._self_refs: Dict[str, int] = {}
         self._suffixes: Dict[Tuple[str, ...], List[Path]] | None = None
 
     def aliases_for(self, file: Path | None, line: int | None = None) -> Mapping[str, ast.expr]:
@@ -390,25 +394,72 @@ class AliasResolver:
         Used for a name a module does not bind and for an ambiguous import. It
         is resolved on demand, per name, so an alias that itself depends on the
         fallback (``UserId = intpk`` with ``intpk`` through an ambiguous
-        import, #254) is included. A dependency cycle is cut by the resolution
-        stack, and a result computed across a cut-off is not cached.
+        import, #254) is included.
+
+        Definitions that lead back to this very fallback are checked in a
+        second pass, assuming the value the others agree on: a re-export
+        (``intpk = _intpk`` of an ambiguous ``intpk``) then agrees, while one
+        that builds something else on it (``B = Annotated[A, ...]`` with
+        ``A = B``) conflicts. A definition cut short by any *other* cycle may
+        hide a conflict, so the result is then unknown (None) and not cached.
         """
         if name in self._fallback:
             return self._fallback[name]
         if name in self._classes:
             return None
-        cycles = self._cycles
-        values: List[ast.expr] = []
-        for file in self._trees:
-            bindings = self._history(file).get(name)
-            if bindings and bindings[-1].kind == "alias":
-                value = self._resolve(file, name, None, stack)
-                if value is not None:
+        if name in self._assumed:  # re-entered while computing it
+            self._self_refs[name] = self._self_refs.get(name, 0) + 1
+            self._cycles += 1  # callers must not cache what they computed from this
+            return self._assumed[name]
+        self._assumed[name] = None
+        try:
+            values: List[ast.expr] = []
+            deferred: List[Path] = []
+            incomplete = False
+            for file in self._definitions_of(name):
+                value, own, foreign = self._resolve_counting(file, name, stack)
+                if foreign:
+                    incomplete = True  # another cycle may hide a conflict
+                elif own:
+                    deferred.append(file)
+                elif value is not None:
                     values.append(value)
-        result = values[0] if values and len({ast.dump(v) for v in values}) == 1 else None
-        if self._cycles == cycles:
-            self._fallback[name] = result
+            result = self._agreed(values)
+            if result is not None and deferred and not incomplete:
+                self._assumed[name] = result
+                for file in deferred:
+                    value, _, foreign = self._resolve_counting(file, name, stack)
+                    if foreign or value is None or ast.dump(value) != ast.dump(result):
+                        result = None
+                        break
+        finally:
+            del self._assumed[name]
+        if incomplete:
+            return None
+        self._fallback[name] = result
         return result
+
+    def _definitions_of(self, name: str) -> List[Path]:
+        """Files whose last module-level binding of ``name`` may be an alias."""
+        return [
+            file
+            for file in self._trees
+            if (bindings := self._history(file).get(name)) and bindings[-1].kind == "alias"
+        ]
+
+    def _resolve_counting(
+        self, file: Path, name: str, stack: Tuple[_Lookup, ...]
+    ) -> Tuple[ast.expr | None, bool, bool]:
+        """``(value, hit own fallback, hit another cycle)`` for one definition of ``name``."""
+        cycles, own = self._cycles, self._self_refs.get(name, 0)
+        value = self._resolve(file, name, None, stack)
+        own_hits = self._self_refs.get(name, 0) - own
+        return value, own_hits > 0, self._cycles - cycles > own_hits
+
+    @staticmethod
+    def _agreed(values: List[ast.expr]) -> ast.expr | None:
+        """The common value, if every definition gives the same one."""
+        return values[0] if values and len({ast.dump(v) for v in values}) == 1 else None
 
     def _all_fallbacks(self) -> Dict[str, ast.expr]:
         """Every by-name fallback alias (for a class whose file is unknown)."""

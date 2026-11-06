@@ -1111,14 +1111,45 @@ class TestFallbackFixedPoint:
             encoding="utf-8",
         )
         results = set()
-        for patterns in (["**/*.py"], ["pkg/*.py", "*.py"]):
-            entities, _ = parse_models_directory(tmp_path, include_patterns=patterns)
+        for reverse in (False, True):
+            entities = _parse_in_order(tmp_path, reverse=reverse)
             results.add(
                 tuple(_flags(_field(entities, n)) + (_field(entities, n).index,) for n in "ab")
             )
         assert len(results) == 1  # same output whatever the file order
         (a, b) = next(iter(results))
         assert a[1] is False and b[1] is False  # conflicting definitions: no false PK
+
+    def test_conflicting_cycle_through_an_explicit_import(self, tmp_path: Path):
+        """`from .f2 import B` must not get a primary key the fallback would reject."""
+        self.test_conflicting_cycle_is_deterministic(tmp_path)
+        (tmp_path / "pkg" / "models.py").write_text(
+            "from .f2 import B\n"
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n    b: Mapped[B]\n",
+            encoding="utf-8",
+        )
+        for reverse in (False, True):
+            b = _field(_parse_in_order(tmp_path, reverse=reverse), "b")
+            assert b.is_primary_key is False
+
+    def test_re_exports_of_an_ambiguous_alias(self, tmp_path: Path):
+        """Many `intpk = _intpk` re-exports agree with the source and stay fast."""
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        for i in range(12):
+            (tmp_path / "pkg" / f"re{i}.py").write_text(
+                "from coltypes import intpk as _intpk\nintpk = _intpk\n", encoding="utf-8"
+            )
+        (tmp_path / "pkg" / "models.py").write_text(
+            HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[intpk]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
 
     def test_ambiguous_import_of_a_class_name_is_not_an_alias(self, tmp_path: Path):
         self._ambiguous_amb(tmp_path)
@@ -1131,3 +1162,43 @@ class TestFallbackFixedPoint:
         )
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
         assert _field(entities, "col").type_str == "User"
+
+
+def _parse_in_order(root: Path, *, reverse: bool) -> dict[str, EntityInfo]:
+    """Parse ``root`` with the discovered files in sorted or reversed order."""
+    from unittest.mock import patch
+
+    from erdify.parser import core
+
+    real = core.discover_model_files
+
+    def discover(*args, **kwargs):
+        found = real(*args, **kwargs)
+        if reverse:
+            found.files.reverse()
+        return found
+
+    with patch.object(core, "discover_model_files", discover):
+        entities, _ = parse_models_directory(root, include_patterns=["**/*.py"])
+    return entities
+
+
+def test_self_referencing_definition_that_differs_conflicts(tmp_path: Path):
+    """`intpk = Annotated[_intpk, index]` over an ambiguous `intpk` is a different alias."""
+    alias = TestPythonScoping.ALIAS
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "coltypes.py").write_text(alias, encoding="utf-8")
+    (tmp_path / "pkg" / "coltypes.py").write_text(alias, encoding="utf-8")
+    (tmp_path / "pkg" / "indexed.py").write_text(
+        "from typing import Annotated\nfrom sqlalchemy.orm import mapped_column\n"
+        "from coltypes import intpk as _intpk\n"
+        "intpk = Annotated[_intpk, mapped_column(index=True)]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pkg" / "models.py").write_text(
+        HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[intpk]\n",
+        encoding="utf-8",
+    )
+    entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+    # Two different `intpk` definitions: the by-name fallback does not guess.
+    assert _field(entities, "id").type_str == "intpk"
