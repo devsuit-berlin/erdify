@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A model reference is now recognized in every common spelling of its
+  annotation: `Union[User, None]`, `None | User`, module-qualified
+  `typing.Optional[User]` / `typing.Union[...]` / `typing.List[...]`, string
+  forward references such as `"None | User"`, and Pydantic's
+  `Annotated[User | None, Field(...)]`, also inside SQLAlchemy `Mapped[...]`.
+  Previously these were rendered as a column with a garbled type (e.g.
+  `Union_User_None`) and no edge was drawn. The target is now read from the
+  annotation's syntax tree instead of its text
+  ([#229](https://github.com/devsuit-berlin/erdify/issues/229)).
+
+### Output changes
+
+The fix above changes the generated diagram for any model with a reference
+spelled one of these ways: the garbled column disappears and an edge appears.
+`--format json` changes accordingly (the field moves to `relationships`). If you
+commit the diagram and gate CI on `--check` (or the `erdify-check` pre-commit
+hook), the check fails once after upgrading: regenerate the diagram and commit
+it. See [Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
+
 ## [1.2.0] - 2026-11-06
 
 ### Added

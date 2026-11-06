@@ -90,7 +90,8 @@ Notes:
   primary key).
 - A model reference without a foreign key (Pydantic / dataclass, or a
   `relationship()` whose pair no FK column connects) typed as optional
-  (`user: User | None`, `Optional[User]`) is drawn `}o--o|`, a required one
+  (`user: User | None`, `None | User`, `Optional[User]`, `Union[User, None]`,
+  or any of these inside `Annotated[...]`) is drawn `}o--o|`, a required one
   (`user: User`) `}o--||`.
 - A unique non-primary-key column is marked `UK` in the entity block,
   alongside `PK`/`FK`.
