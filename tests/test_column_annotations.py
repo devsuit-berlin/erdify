@@ -205,3 +205,21 @@ class Account(IdMixin, Base):
         assert entities["Account"].source == "sqlalchemy"
         assert [f.name for f in entities["Account"].fields] == ["id"]
         assert ("Item", "many", "items") in entities["Account"].relationships
+
+    def test_classic_column_only_class_not_detected(self, tmp_path: Path):
+        """Classic ``x = Column(...)`` attributes are not read (limitations.md)."""
+        source = """
+from sqlalchemy import Column, Integer
+from sqlalchemy.orm import DeclarativeBase
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Legacy(Base):
+    __tablename__ = "legacy"
+    id = Column(Integer, primary_key=True)
+    note: str = "not a Mapped member"
+"""
+        assert "Legacy" not in _parse(tmp_path, source)
