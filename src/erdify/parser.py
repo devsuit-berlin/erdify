@@ -1005,18 +1005,72 @@ class ASTDatabaseParser:
         """Collect the fields and relationships of a class and all its ancestors.
 
         Which declaration of an attribute wins follows the MRO
-        (:meth:`_merge_order`). The order they are listed in is the one the
-        pre-MRO merge produced (:meth:`_listing_order`), so resolving by MRO
-        does not reorder the output.
+        (:meth:`_merge_order`), or, for dataclasses, the dataclass field
+        merge (:meth:`_dataclass_fields`). The order they are listed in is the
+        one the pre-MRO merge produced (:meth:`_listing_order`), so resolving by
+        MRO does not reorder the output.
         """
         dfs_order = self._dfs_order(class_node, set())
+        merge_order = self._merge_order(class_node)
         members = {
-            name: self._class_members(self._all_classes[name], model_kind, class_node.name)
+            name: self._class_members(
+                self._all_classes[name],
+                model_kind,
+                self._django_self_owner(name, merge_order) if model_kind == "django" else name,
+            )
             for name in dfs_order
         }
         order_fields, order_rels = self._listing_order(class_node, set(), members, model_kind)
-        fields, rels = self._merge_members(self._merge_order(class_node), members, model_kind)
+        if model_kind == "dataclass" and self._mro(class_node.name) is not None:
+            fields, rels = self._dataclass_fields(class_node.name, members, {})
+        else:
+            fields, rels = self._merge_members(merge_order, members, model_kind)
         return self._reorder(fields, order_fields), self._reorder(rels, order_rels)
+
+    def _django_self_owner(self, name: str, merge_order: List[str]) -> str:
+        """The model a Django ``"self"`` relation declared in class ``name`` points at.
+
+        A concrete model's own fields point at that model, also when a child
+        inherits them (multi-table inheritance). An abstract base's fields are
+        copied into the first concrete model that inherits it, so ``"self"``
+        points there (#226).
+        """
+        if not self._meta_flag(self._all_classes[name], "abstract"):
+            return name
+        for candidate in merge_order:  # root first, so the nearest concrete heir wins
+            node = self._all_classes[candidate]
+            if (
+                candidate != name
+                and not self._meta_flag(node, "abstract")
+                and name in self._dfs_order(node, set())
+            ):
+                return candidate
+        return name
+
+    def _dataclass_fields(
+        self,
+        name: str,
+        members: Dict[str, _ClassMembers],
+        memo: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]],
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """The effective members of a dataclass, as ``dataclasses.fields()`` sees them.
+
+        A dataclass collects the *effective* fields of each base in reversed
+        MRO, then its own annotations. So in ``Child(Left, Middle)`` an
+        attribute ``Left`` merely inherits still overrides one ``Middle``
+        redeclares, unlike plain attribute lookup.
+        """
+        if name in memo:
+            return memo[name]
+        mro = self._mro(name) or [name]
+        synthetic: Dict[str, _ClassMembers] = {}
+        for base in mro[:0:-1]:
+            base_fields, base_rels = self._dataclass_fields(base, members, memo)
+            synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels])
+        synthetic[name] = members[name]
+        result = self._merge_members([*mro[:0:-1], name], synthetic, "dataclass")
+        memo[name] = result
+        return result
 
     @staticmethod
     def _drop_django_redeclared(

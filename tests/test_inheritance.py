@@ -531,3 +531,113 @@ class Leaf(TreeBase):
         entities = _parse(tmp_path, self.SRC)
         assert entities["Node"].relationships == [("Node", "many_to_many", "peers")]
         assert entities["Leaf"].relationships == [("Leaf", "many_to_many", "peers")]
+
+
+class TestDjangoConcreteParentSelfReference:
+    """``"self"`` on a concrete parent keeps pointing at the parent (multi-table)."""
+
+    def test_concrete_parent(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class Parent(models.Model):
+    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+    peers = models.ManyToManyField("self")
+
+
+class Child(Parent):
+    extra = models.IntegerField()
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Parent", "parent_id").foreign_table == "parent.id"
+        assert _field(entities, "Child", "parent_id").foreign_table == "parent.id"
+        assert entities["Child"].relationships == [("Parent", "many_to_many", "peers")]
+
+    def test_abstract_base_under_concrete_parent(self, tmp_path: Path):
+        """An abstract base's ``"self"`` binds to the first concrete model that copies it."""
+        src = """
+from django.db import models
+
+
+class TreeBase(models.Model):
+    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+
+    class Meta:
+        abstract = True
+
+
+class Node(TreeBase):
+    pass
+
+
+class SpecialNode(Node):
+    extra = models.IntegerField()
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Node", "parent_id").foreign_table == "node.id"
+        assert _field(entities, "SpecialNode", "parent_id").foreign_table == "node.id"
+
+
+class TestDataclassFieldMerge:
+    """Dataclasses merge each base's effective fields, like ``dataclasses.fields()``."""
+
+    def test_inherited_field_of_earlier_base_wins(self, tmp_path: Path):
+        src = """
+from dataclasses import dataclass
+
+
+@dataclass
+class Root:
+    value: str
+
+
+@dataclass
+class Left(Root):
+    pass
+
+
+@dataclass
+class Middle(Root):
+    value: int
+
+
+@dataclass
+class Right(Root):
+    value: str
+
+
+@dataclass
+class Child(Left, Middle, Right):
+    id: int
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Child", "value").type_str == "str"
+        assert [f.name for f in entities["Child"].fields] == ["value", "id"]
+
+    def test_redeclared_in_first_base_wins(self, tmp_path: Path):
+        src = """
+from dataclasses import dataclass
+
+
+@dataclass
+class Root:
+    value: str
+
+
+@dataclass
+class Left(Root):
+    value: bytes
+
+
+@dataclass
+class Right(Root):
+    value: int
+
+
+@dataclass
+class Child(Left, Right):
+    id: int
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Child", "value").type_str == "bytes"
