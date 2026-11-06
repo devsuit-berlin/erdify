@@ -842,6 +842,54 @@ class Ticket(models.Model):
         assert _field(entities, "Ticket", "state_id").type_str == "Status"
         assert _field(entities, "State", "code").type_str == "Status"
 
+    def test_key_through_another_column_of_the_same_model(self, tmp_path: Path):
+        """Following a PK to another column of the same model is not a cycle."""
+        src = """
+from django.db import models
+
+
+class Item(models.Model):
+    code = models.CharField(max_length=5, unique=True)
+    parent = models.OneToOneField(
+        "self", on_delete=models.CASCADE, to_field="code", primary_key=True
+    )
+
+
+class Ref(models.Model):
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Item", "parent_id").type_str == "str"
+        fk = _field(entities, "Ref", "item_id")
+        assert fk.foreign_table == "item.parent_id"
+        assert fk.type_str == "str"
+
+    def test_removed_inherited_pk_falls_back_to_id(self, tmp_path: Path):
+        """``code = None`` removes the inherited PK, so the target has the implicit ``id``."""
+        src = """
+from django.db import models
+
+
+class Base(models.Model):
+    code = models.CharField(max_length=5, primary_key=True)
+
+    class Meta:
+        abstract = True
+
+
+class Item(Base):
+    code = None
+
+
+class Ref(models.Model):
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
+"""
+        entities = _parse(tmp_path, src)
+        assert [f.name for f in entities["Item"].fields] == ["id"]
+        fk = _field(entities, "Ref", "item_id")
+        assert fk.foreign_table == "item.id"
+        assert fk.type_str == "int"
+
 
 class TestDeclaredRelationshipNullability:
     """#223: 1:1 Django fields and keyless model references follow nullability."""

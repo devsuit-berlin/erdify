@@ -1077,17 +1077,23 @@ class ASTDatabaseParser:
         inherited from an abstract base, as Django documents, so it also drops
         whatever the bases stored under that name.
         """
-        names = [name for name, _, _ in self._django_field_calls(class_node)]
-        for node in class_node.body:
-            if (
-                isinstance(node, ast.Assign)
-                and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-                and isinstance(node.value, ast.Constant)
-                and node.value.value is None
-            ):
-                names.append(node.targets[0].id)
-        return names
+        return [
+            *(name for name, _, _ in self._django_field_calls(class_node)),
+            *self._django_removed_names(class_node),
+        ]
+
+    @staticmethod
+    def _django_removed_names(class_node: ast.ClassDef) -> List[str]:
+        """Names a Django class body sets to ``None`` to remove an inherited field."""
+        return [
+            node.targets[0].id
+            for node in class_node.body
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.Constant)
+            and node.value.value is None
+        ]
 
     def _extract_class_fields(
         self, class_node: ast.ClassDef, model_kind: str
@@ -1246,7 +1252,7 @@ class ASTDatabaseParser:
         return None
 
     def _django_target_column(
-        self, target: str, to_field: str | None, stack: Tuple[str, ...]
+        self, target: str, to_field: str | None, stack: Tuple[Tuple[str, str | None], ...]
     ) -> Tuple[str, str]:
         """Return the ``(column, type)`` a Django FK to ``target`` references (#226).
 
@@ -1254,17 +1260,22 @@ class ASTDatabaseParser:
         including one inherited from a base. A key that is itself a foreign key
         is its ``<name>_id`` column, typed like the column *it* references. An
         unknown target, field or cycle falls back to ``id`` / ``to_field`` with
-        Django's default ``BigAutoField`` type.
+        Django's default ``BigAutoField`` type. A cycle is a repeated
+        ``(model, to_field)`` lookup, so following a key to another column of
+        the same model still resolves.
         """
         default = (to_field or "id", self._django_display_type("BigAutoField"))
         node = self._all_classes.get(target)
-        if node is None or target in stack:
+        if node is None or (target, to_field) in stack:
             return default
 
         # The winning declaration of each attribute, resolved like the fields (#228).
         declared: Dict[str, Tuple[str, ast.Call]] = {}
         for class_name in self._merge_order(node):
-            for attr, field_type, call in self._django_field_calls(self._all_classes[class_name]):
+            class_node = self._all_classes[class_name]
+            for attr in self._django_removed_names(class_node):
+                declared.pop(attr, None)
+            for attr, field_type, call in self._django_field_calls(class_node):
                 declared.pop(attr, None)
                 declared[attr] = (field_type, call)
 
@@ -1285,7 +1296,7 @@ class ASTDatabaseParser:
             if ref is None:
                 return f"{attr}_id", default[1]
             _, ref_type = self._django_target_column(
-                ref, self._django_to_field(call), stack + (target,)
+                ref, self._django_to_field(call), stack + ((target, to_field),)
             )
             return f"{attr}_id", ref_type
         return attr, self._parse_django_column(attr, field_type, call).type_str
