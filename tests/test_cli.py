@@ -669,4 +669,4 @@ def test_cli_no_relationships_hides_edges(tmp_path: Path, capsys, fmt: str):
         assert main() == 0
     out = capsys.readouterr().out
     assert '"a_id"' not in out
-    assert "B" in out
+    assert "a_id" in out  # the FK column itself is still listed

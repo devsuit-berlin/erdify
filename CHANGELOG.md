@@ -62,8 +62,7 @@ the check fails once after upgrading: regenerate the diagram and commit it. See
 [Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
 
 The #230 fix adds an edge for each further reference to an already-referenced
-model, and can change which side of a bidirectional pair names the edge when a
-model declares several references back. With `--no-relationships`, PlantUML,
+model; existing edges are unchanged. With `--no-relationships`, PlantUML,
 Mermaid and HTML output lose all edges, and PlantUML loses its
 `' Relationships` section (#232).
 

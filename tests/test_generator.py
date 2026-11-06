@@ -607,3 +607,40 @@ class TestDistinctReferencesToSameModel:
             "Account": _entity("Account", ("User", "one", "owner")),
         }
         assert _edges(generate_mermaid(entities)) == ['User }o--|| Account : "account"']
+
+    def test_inverse_named_after_acronym_class(self):
+        """``HTTPRequest`` is referenced as ``http_request``, not ``h_t_t_p_request``."""
+        entities = {
+            "HTTPRequest": _entity("HTTPRequest", ("Header", "many", "headers")),
+            "Header": _entity(
+                "Header", ("HTTPRequest", "one", "origin"), ("HTTPRequest", "one", "http_request")
+            ),
+        }
+        assert _edges(generate_mermaid(entities)) == [
+            'HTTPRequest ||--o{ Header : "headers"',
+            'Header }o--|| HTTPRequest : "origin"',
+        ]
+
+    def test_reference_side_declared_first(self):
+        """With the N:1 model first, its references are kept and the 1:N side folds."""
+        entities = {
+            "Post": _entity("Post", ("User", "one", "user"), ("User", "one", "author")),
+            "User": _entity("User", ("Post", "many", "posts")),
+        }
+        assert _edges(generate_mermaid(entities)) == [
+            'Post }o--|| User : "user"',
+            'Post }o--|| User : "author"',
+        ]
+
+    def test_bidirectional_pair_beside_foreign_key_pair(self):
+        user = _entity("User", ("Post", "many", "posts"))
+        post = _entity("Post", ("User", "one", "user"))
+        comment = _entity("Comment")
+        comment.fields.append(
+            FieldInfo(name="post_id", type_str="int", is_foreign_key=True, foreign_table="post.id")
+        )
+        entities = {"User": user, "Post": post, "Comment": comment}
+        assert _edges(generate_mermaid(entities)) == [
+            'Comment }o--|| Post : "post_id"',
+            'User ||--o{ Post : "posts"',
+        ]

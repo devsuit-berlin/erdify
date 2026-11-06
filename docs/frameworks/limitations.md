@@ -149,14 +149,26 @@ resolved from the call argument.
 ## Both sides of a relationship
 
 A relationship declared on both models (`User.posts` and `Post.user`) is drawn
-once. erdify does not read `back_populates`, so it pairs the two sides by
-cardinality: each edge of the model declared first absorbs one reference
-declared back from the other model, preferring the inverse cardinality (a
-`list[Post]` on `User` pairs with a `User` reference on `Post`) and an
-attribute named after the class (`Post.user` for `User`). Every other reference gets its own edge, so `Post.author` beside
-`Post.user` is a second edge. When the two sides are ambiguous, the wrong
-reference may be the one folded away. A foreign-key column already draws the
-edge between two models, so their declared relationships are not drawn again.
+once, from the model parsed first. erdify does not read `back_populates`, so it
+pairs the two sides by guesswork: each edge of the first model absorbs one
+reference declared back from the other model. It prefers the inverse
+cardinality (a `list[Post]` on `User` pairs with a `User` reference on `Post`)
+and then an attribute named after the class (`Post.user` for `User`).
+
+- Every reference left over gets its own edge, so `Post.author` beside
+  `Post.user` is a second edge.
+- A reference back with a *different* cardinality is folded too, because it
+  may be the other side of a 1:1 (`User.profile` / `Profile.user`). Two
+  independent references in opposite directions (`User.pinned_post` and
+  `Post.author`) therefore show as one edge.
+- The kept edge shows the first model's cardinality only; the folded side's
+  optionality is not merged in.
+- A self-reference has no other model, so only an exact inverse is folded:
+  `Node.parent` and `Node.children` are one edge, while `Employee.manager` and
+  `Employee.mentor` stay two.
+
+A foreign-key column already draws the edge between two models, so their
+declared relationships are not drawn again.
 
 ## Keyless models
 

@@ -179,8 +179,12 @@ class _ERGenerator:
 
     @staticmethod
     def _snake_case(name: str) -> str:
-        """``OrderItem`` -> ``order_item``: the usual attribute name for a class."""
-        return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        """``OrderItem`` -> ``order_item``, ``HTTPRequest`` -> ``http_request``.
+
+        The usual attribute name for a reference to a class; an acronym stays
+        one word.
+        """
+        return re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", name).lower()
 
     @staticmethod
     def _declared_line(entity: EntityInfo, target: str, rel_type: str, attr: str) -> str:
@@ -216,6 +220,9 @@ class _ERGenerator:
             for target, rel_type, attr in entity.relationships
             if target in self.entities and frozenset((entity.name, target)) not in connected
         ]
+        by_direction: Dict[Tuple[str, str], List[int]] = {}
+        for i, (entity, target, _, _) in enumerate(rels):
+            by_direction.setdefault((entity.name, target), []).append(i)
         first_side: Dict[frozenset[str], str] = {}
         absorbed: set[int] = set()
         for i, (entity, target, rel_type, _) in enumerate(rels):
@@ -225,8 +232,8 @@ class _ERGenerator:
                 continue  # the other side's leftovers: drawn as they are
             inverse = [
                 j
-                for j in range(i + 1, len(rels))
-                if j not in absorbed and rels[j][0].name == target and rels[j][1] == entity.name
+                for j in by_direction.get((target, entity.name), ())
+                if j > i and j not in absorbed
             ]
             exact = [j for j in inverse if rels[j][2] == self._INVERSE_KIND[rel_type]]
             named = [j for j in exact if rels[j][3] == self._snake_case(entity.name)]
@@ -293,6 +300,8 @@ class PlantUMLGenerator(_ERGenerator):
         entities: Entity name to EntityInfo, as returned by the parsers.
         enums: Optional enum name to EnumInfo.
         title: Diagram title.
+        include_relationships: Draw relationship lines (``False`` omits the
+            whole ``' Relationships`` section).
     """
 
     def generate(self) -> str:
@@ -408,6 +417,7 @@ class MermaidGenerator(_ERGenerator):
         entities: Entity name to EntityInfo, as returned by the parsers.
         enums: Optional enum name to EnumInfo.
         title: Accepted for a uniform API; Mermaid ``erDiagram`` has no title.
+        include_relationships: Draw relationship lines.
     """
 
     def generate(self) -> str:
