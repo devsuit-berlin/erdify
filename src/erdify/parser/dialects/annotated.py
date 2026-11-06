@@ -81,7 +81,9 @@ class AnnotatedDialect(Dialect):
             return False
         if not is_call_to(value, "mapped_column"):
             return True  # `x: Mapped[str] = "a"` (MappedAsDataclass)
-        return any(kw.arg in ("default", "default_factory") for kw in value.keywords)
+        return any(
+            kw.arg in ("default", "default_factory", "insert_default") for kw in value.keywords
+        )
 
     def _with_aliases_expanded(self, node: ast.AnnAssign) -> ast.AnnAssign:
         """``node`` with column type aliases in its annotation expanded (#241)."""
@@ -128,6 +130,8 @@ class AnnotatedDialect(Dialect):
         is_unique = False
         for call in calls:
             for keyword in call.keywords:
+                if isinstance(keyword.value, ast.Constant) and keyword.value.value is None:
+                    continue  # `index=None` etc. means "unspecified" in SQLAlchemy
                 if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
                     is_primary_key = is_primary_key or bool(keyword.value.value)
                 elif keyword.arg == "foreign_key" and isinstance(keyword.value, ast.Constant):

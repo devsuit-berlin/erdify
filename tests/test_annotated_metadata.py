@@ -423,3 +423,65 @@ class Account(Base):
 """,
     )
     assert _field(entities, "status").default_value == "'x'"
+
+
+class TestCopilotRound2:
+    def test_reading_an_alias_in_an_assignment_target_keeps_it(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+intpk = Annotated[int, mapped_column(primary_key=True)]
+Base.type_annotation_map[intpk] = Integer
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[intpk]
+""",
+        )
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_nested_annotated_alias(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+intpk = Annotated[Annotated[int, mapped_column(primary_key=True)], "tag"]
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[intpk]
+""",
+        )
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_insert_default_counts_as_assigned_default(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[Annotated[str, mapped_column(default="meta")]] = mapped_column(
+        insert_default=make_status
+    )
+""",
+        )
+        assert _field(entities, "status").default_value is None
+
+    def test_none_flags_are_unspecified(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[Annotated[str, mapped_column(index=True, unique=True)]] = mapped_column(
+        index=None, unique=None
+    )
+    other: Mapped[Annotated[str, mapped_column(index=True)]] = mapped_column(index=False)
+""",
+        )
+        code = _field(entities, "code")
+        assert (code.index, code.is_unique) == (True, True)
+        assert _field(entities, "other").index is False

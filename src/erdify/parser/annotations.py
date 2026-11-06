@@ -219,10 +219,10 @@ def defines_column_alias(value: ast.expr) -> bool:
     Other ``Annotated`` aliases (e.g. Pydantic's ``PositiveInt = Annotated[int,
     Gt(0)]``) keep their name as the displayed type.
     """
-    if not isinstance(value, ast.Subscript):
+    if not isinstance(value, ast.Subscript) or subscript_parts(value)[0] != "Annotated":
         return False
-    name, args = subscript_parts(value)
-    return name == "Annotated" and any(is_call_to(arg, "mapped_column") for arg in args[1:])
+    # column_metadata flattens nested Annotated, as typing does.
+    return any(is_call_to(arg, "mapped_column") for arg in column_metadata(value))
 
 
 def column_metadata(node: ast.expr) -> List[ast.expr]:

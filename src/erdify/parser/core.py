@@ -296,7 +296,7 @@ class ASTDatabaseParser:
                 sub.id
                 for target in node.targets
                 for sub in ast.walk(target)
-                if isinstance(sub, ast.Name)
+                if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store)
             ]
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             return [
