@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preferring attributes named after the class on *either* side (including
   plurals like `categories`). The edge is drawn from the model whose name
   sorts first (for a self-reference, the attribute whose name sorts first), so
-  renaming or moving a file no longer changes its text
+  renaming or moving a file no longer changes its text (reordering ambiguous
+  declarations within a model still can, since ties go by declaration order)
   ([#239](https://github.com/devsuit-berlin/erdify/issues/239),
   [#240](https://github.com/devsuit-berlin/erdify/issues/240)).
 

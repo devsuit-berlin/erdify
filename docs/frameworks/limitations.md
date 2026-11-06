@@ -162,8 +162,10 @@ as **one edge**. Each end shows what its own side declares: `list[Post]` on
 both sides gives `}o--o{`. The edge is drawn from the model whose name sorts
 first (by code point, so case-sensitive) and labelled with that side's
 attribute; for a self-reference, from the attribute whose name sorts first. So
-the edge's text does not depend on file or declaration order (its position
-among the other edges still follows the models' order).
+the edge's text does not depend on file order (its position among the other
+edges still follows the models' order). Within a model, a guessed pair can
+still change when you reorder ambiguous declarations, since ties go by
+declaration order (see below); `back_populates` removes the ambiguity.
 
 Which two attributes form a pair:
 
