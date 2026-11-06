@@ -19,8 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Output changes
 
-Only SQLAlchemy models using such an alias change: the column now carries the
-alias's settings and underlying type instead of the alias name.
+Only SQLAlchemy models using a column type alias through an ambiguous
+absolute import can change. A derived alias built on it now carries its
+settings and underlying type instead of the alias name. Conversely, where the
+matching modules disagree (one of them does not define the alias, or defines
+a different one), the column now keeps the alias name and loses the type and
+settings 1.4.1 took from the other definition, since it is unknown which
+module the import names. Regenerate the diagram once if you gate CI on
+`--check`.
 
 ## [1.4.1] - 2026-11-06
 
