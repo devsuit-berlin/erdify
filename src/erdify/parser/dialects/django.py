@@ -64,6 +64,7 @@ class DjangoDialect(Dialect):
         super().__init__(ctx)
         self._target_column_cache: Dict[Tuple[str, str | None], Tuple[str, str]] = {}
         self._parents_cache: Dict[str, List[str]] = {}
+        self._base_parents_cache: Dict[str, List[str]] = {}
         self._links_cache: Dict[str, List[Tuple[str, str]]] = {}
 
     def detect(self, class_node: ast.ClassDef) -> bool:
@@ -161,7 +162,14 @@ class DjangoDialect(Dialect):
         return parents
 
     def _base_parents(self, class_node: ast.ClassDef, stack: Tuple[str, ...]) -> List[str]:
-        """The concrete parents contributed by ``class_node``'s direct bases."""
+        """The concrete parents contributed by ``class_node``'s direct bases.
+
+        Memoized per class, so an abstract base shared along several
+        inheritance paths is walked once; ``stack`` only guards cycles.
+        """
+        cached = self._base_parents_cache.get(class_node.name)
+        if cached is not None:
+            return cached
         parents: List[str] = []
         for base in self.classes.local_bases(class_node):
             if base in stack:
@@ -173,6 +181,7 @@ class DjangoDialect(Dialect):
             base_node = self.classes.all[base]
             if self._inherits_django_model(base_node) and self._meta_flag(base_node, "abstract"):
                 parents.extend(self._base_parents(base_node, stack + (base,)))
+        self._base_parents_cache[class_node.name] = parents
         return parents
 
     def _concrete_model(self, name: str, stack: Tuple[str, ...]) -> str | None:
@@ -472,27 +481,40 @@ class DjangoDialect(Dialect):
                 return owner
         return None
 
-    def _own_column_names(self, node: ast.ClassDef) -> Set[str]:
-        """Field names (and FK attnames) stored in the model's own table."""
-        names: Set[str] = set()
+    def _own_declarations(self, node: ast.ClassDef) -> Dict[str, Tuple[str, ast.Call, str]]:
+        """The winning ``(field type, call, declaring class)`` of each attribute in the table.
+
+        Resolved like the fields (#228), after removals (``name = None``) and
+        overrides; a concrete parent's fields live in the parent's table (#233).
+        """
         merge_order = self.classes.merge_order(node)
         own = self.table_classes(node, merge_order)
+        declared: Dict[str, Tuple[str, ast.Call, str]] = {}
         for class_name in merge_order:
             if class_name not in own:
                 continue
-            for attr, field_type, _ in self._django_field_calls(self.classes.all[class_name]):
-                names.add(attr)
-                if field_type in ("ForeignKey", "OneToOneField"):
-                    names.add(f"{attr}_id")
+            class_node = self.classes.all[class_name]
+            for attr in self._django_removed_names(class_node):
+                declared.pop(attr, None)
+            for attr, field_type, call in self._django_field_calls(class_node):
+                declared.pop(attr, None)
+                declared[attr] = (field_type, call, class_name)
+        return declared
+
+    def _own_column_names(self, node: ast.ClassDef) -> Set[str]:
+        """Field names (and FK attnames) stored in the model's own table."""
+        names: Set[str] = set()
+        declared = self._own_declarations(node)
+        for attr, (field_type, _, _) in declared.items():
+            names.add(attr)
+            if field_type in ("ForeignKey", "OneToOneField"):
+                names.add(f"{attr}_id")
         links = self._parent_links(node)
         for _, link in links:
             names.update((link, f"{link}_id"))
         # Django's implicit `id`, when nothing else is the primary key.
         if not links and not any(
-            self._has_true_kw(call, "primary_key")
-            for class_name in merge_order
-            if class_name in own
-            for _, _, call in self._django_field_calls(self.classes.all[class_name])
+            self._has_true_kw(call, "primary_key") for _, call, _ in declared.values()
         ):
             names.add("id")
         return names
@@ -549,20 +571,8 @@ class DjangoDialect(Dialect):
     ) -> Tuple[str, str]:
         """Uncached body of :meth:`_django_target_column`."""
 
-        # The winning declaration of each attribute, resolved like the fields (#228).
-        # A concrete parent's fields live in the parent's table (#233).
         merge_order = self.classes.merge_order(node)
-        own = self.table_classes(node, merge_order)
-        declared: Dict[str, Tuple[str, ast.Call, str]] = {}
-        for class_name in merge_order:
-            if class_name not in own:
-                continue
-            class_node = self.classes.all[class_name]
-            for attr in self._django_removed_names(class_node):
-                declared.pop(attr, None)
-            for attr, field_type, call in self._django_field_calls(class_node):
-                declared.pop(attr, None)
-                declared[attr] = (field_type, call, class_name)
+        declared = self._own_declarations(node)
 
         if to_field is not None:
             attr = to_field

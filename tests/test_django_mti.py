@@ -493,3 +493,43 @@ class Ref(models.Model):
         assert (bridge.foreign_table, bridge.type_str) == ("parent.slug", "str")
         ref = _field(entities["Ref"], "bridge_id")
         assert (ref.foreign_table, ref.type_str) == ("bridge.child_id", "str")
+
+    def test_removed_inherited_primary_key_restores_implicit_id(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Tokened(models.Model):
+    token = models.UUIDField(primary_key=True)
+
+    class Meta:
+        abstract = True
+
+
+class Parent(Tokened):
+    token = None
+
+
+class Child(Parent):
+    pass
+
+
+class Ref(models.Model):
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, to_field="id")
+""",
+        )
+        assert [f.name for f in entities["Parent"].fields] == ["id"]
+        assert _field(entities["Ref"], "child_id").foreign_table == "parent.id"
+
+
+def test_shared_abstract_ancestors_are_walked_once(tmp_path: Path):
+    """Stacked diamonds of abstract bases stay fast (memoized walk)."""
+    layers = ["class L0(models.Model):\n    class Meta:\n        abstract = True\n"]
+    for i in range(1, 30):
+        layers.append(
+            f"class A{i}(L{i - 1}):\n    class Meta:\n        abstract = True\n\n\n"
+            f"class B{i}(L{i - 1}):\n    class Meta:\n        abstract = True\n\n\n"
+            f"class L{i}(A{i}, B{i}):\n    class Meta:\n        abstract = True\n"
+        )
+    layers.append("class Leaf(L29):\n    pass\n")
+    entities = _parse(tmp_path, "\n\n".join(layers))
+    assert [f.name for f in entities["Leaf"].fields] == ["id"]
