@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The by-name fallback for column type aliases (used for names a module does
+  not bind, e.g. imported under `TYPE_CHECKING`) now also includes aliases
+  that depend on it, such as `UserId = intpk` where `intpk` comes through an
+  ambiguous absolute import
+  ([#254](https://github.com/devsuit-berlin/erdify/issues/254)).
+
+### Output changes
+
+Only SQLAlchemy models using such an alias change: the column now carries the
+alias's settings and underlying type instead of the alias name.
+
 ## [1.4.1] - 2026-11-06
 
 ### Fixed

@@ -146,7 +146,7 @@ mapped_column(primary_key=True)]`, also `X: TypeAlias = ...`, a re-export
 - A name the module does not bind at all (e.g. imported under
   `TYPE_CHECKING`) uses the alias of that name if it is defined identically
   wherever it is defined and is not a model class's name. So does an absolute
-  import that stays ambiguous.
+  import that stays ambiguous, and an alias built on such a name.
 - Only module-level statements count, not ones inside `if` / `try` blocks. A
   module-qualified alias (`Mapped[coltypes.intpk]`) is not expanded.
 - Other `Annotated` aliases (e.g. Pydantic's `PositiveInt`) keep their name as

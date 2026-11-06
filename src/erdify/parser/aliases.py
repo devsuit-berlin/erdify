@@ -367,22 +367,42 @@ class AliasResolver:
         root = dotted[: len(dotted) - depth]
         return self._absolute(importer).parts[: len(root)] == root
 
+    #: Upper bound on fallback rounds; conflicting definitions could otherwise
+    #: keep changing the table (in practice it settles after a few rounds).
+    _FALLBACK_ROUNDS = 10
+
     def _fallback_aliases(self) -> Dict[str, ast.expr]:
-        """Aliases by name, for names a module does not bind (defined identically everywhere)."""
+        """Aliases by name, for names a module does not bind (defined identically everywhere).
+
+        Computed to a fixed point: an alias may itself depend on the fallback,
+        e.g. ``UserId = intpk`` where ``intpk`` comes through an ambiguous
+        import (#254), so rounds repeat until the table stops changing.
+        """
         if self._fallback is not None:
             return self._fallback
-        self._fallback = {}  # guards re-entry from an ambiguous import while computing
-        found: Dict[str, List[ast.expr]] = {}
-        for file in self._trees:
-            for name, bindings in self._history(file).items():
-                if bindings[-1].kind == "alias" and name not in self._classes:
-                    value = self._resolve(file, name, None, ())
-                    if value is not None:
-                        found.setdefault(name, []).append(value)
-        self._fallback = {
-            name: values[0]
-            for name, values in found.items()
-            if len({ast.dump(v) for v in values}) == 1
-        }
-        self._resolved.clear()  # may hold results computed without the fallback
+        table: Dict[str, ast.expr] = {}
+        for _ in range(self._FALLBACK_ROUNDS):
+            self._fallback = table  # what ambiguous imports see during this round
+            self._resolved.clear()  # results of the last round used the old table
+            found: Dict[str, List[ast.expr]] = {}
+            for file in self._trees:
+                for name, bindings in self._history(file).items():
+                    if bindings[-1].kind == "alias" and name not in self._classes:
+                        value = self._resolve(file, name, None, ())
+                        if value is not None:
+                            found.setdefault(name, []).append(value)
+            next_table = {
+                name: values[0]
+                for name, values in found.items()
+                if len({ast.dump(v) for v in values}) == 1
+            }
+            if self._dumped(next_table) == self._dumped(table):
+                break
+            table = next_table
+        self._fallback = table
+        self._resolved.clear()
         return self._fallback
+
+    @staticmethod
+    def _dumped(table: Mapping[str, ast.expr]) -> Dict[str, str]:
+        return {name: ast.dump(value) for name, value in table.items()}

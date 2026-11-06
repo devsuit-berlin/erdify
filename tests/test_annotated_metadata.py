@@ -1028,3 +1028,43 @@ class Account(Base):
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
         f = _field(entities, "id")
         assert (f.is_primary_key, f.index) == (True, False)
+
+
+class TestFallbackFixedPoint:
+    """#254: the by-name fallback includes aliases that depend on it."""
+
+    ALIAS = TestPythonScoping.ALIAS
+
+    def test_derived_alias_through_an_ambiguous_import(self, tmp_path: Path):
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "derived.py").write_text(
+            "from coltypes import intpk\nUserId = intpk\n", encoding="utf-8"
+        )
+        (tmp_path / "pkg" / "models.py").write_text(
+            "from typing import TYPE_CHECKING\n"
+            "if TYPE_CHECKING:\n    from .derived import UserId\n"
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[UserId]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_chain_of_fallback_dependencies(self, tmp_path: Path):
+        """Only the first link needs the fallback; the rest are imports of it."""
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "a.py").write_text(
+            "from coltypes import intpk\nA = intpk\n", encoding="utf-8"
+        )
+        (tmp_path / "pkg" / "b.py").write_text("from .a import A\nB = A\n", encoding="utf-8")
+        (tmp_path / "pkg" / "c.py").write_text("from .b import B\nC = B\n", encoding="utf-8")
+        (tmp_path / "pkg" / "models.py").write_text(
+            HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[C]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _field(entities, "id").is_primary_key
