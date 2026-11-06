@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Column settings in `Annotated` metadata are read: a `mapped_column(...)` or
+  `Field(...)` inside `Mapped[Annotated[int, mapped_column(primary_key=True)]]`
+  sets the primary key, foreign key (`ForeignKey(...)`), `unique`, `index` and
+  `nullable`, merged with an assigned `mapped_column()` that wins on conflicts,
+  as in SQLAlchemy. Module-level `Annotated` type aliases
+  (`intpk = Annotated[int, mapped_column(primary_key=True)]`, also
+  `X: TypeAlias = ...` and `type X = ...`) are resolved from any scanned file,
+  so `id: Mapped[intpk]` is a primary key typed `int` (was a plain column typed
+  `intpk`) ([#241](https://github.com/devsuit-berlin/erdify/issues/241)).
 - Both sides of a relationship are drawn as one edge whose ends each show what
   their own side declares. A list on both sides is now `}o--o{` (was 1:N), and
   an optional reference keeps its `o|` when the other side is a list.
@@ -41,7 +50,10 @@ self-reference is labelled with the attribute whose name sorts first
 (`Node }o--o| Node : "parent"` becomes `Node |o--o{ Node : "children"`), and
 two references guessed to be a 1:1 (`User.profile` / `Profile.user`) are
 drawn `||--||`.
-`--format json` gains the `inverse` key on every relationship. If you gate CI
+`--format json` gains the `inverse` key on every relationship. The #241 fix
+turns columns declared through `Annotated` metadata or an `Annotated` type
+alias into the keys they declare (a model with only `id: Mapped[intpk]` gains
+its primary key) and shows an alias's underlying type (`int`, not `intpk`). If you gate CI
 on `--check`, regenerate the diagram once after upgrading.
 
 ## [1.3.0] - 2026-11-06

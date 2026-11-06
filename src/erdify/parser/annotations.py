@@ -5,7 +5,8 @@ nullability (#236), and call / wrapper recognition.
 """
 
 import ast
-from typing import Callable, List, NamedTuple, Tuple, TypeGuard
+import copy
+from typing import Callable, List, Mapping, NamedTuple, Tuple, TypeGuard
 
 from .common import _Rel
 
@@ -150,6 +151,66 @@ def column_type(node: ast.expr) -> Tuple[str, bool]:
         if name == "Literal":
             return ast.unparse(node), literal_admits_none(args)
     return ast.unparse(node), False
+
+
+def expand_aliases(
+    node: ast.expr, aliases: Mapping[str, ast.expr], stack: Tuple[str, ...] = ()
+) -> ast.expr:
+    """``node`` with each ``Annotated`` type alias replaced by its definition (#241).
+
+    ``id: Mapped[intpk]`` with ``intpk = Annotated[int, mapped_column(...)]``
+    reads as ``Mapped[Annotated[int, mapped_column(...)]]``, also when quoted
+    (``Mapped["intpk"]``). An alias referring to itself is left as is.
+    """
+    if not aliases:
+        return node
+
+    class _Expand(ast.NodeTransformer):
+        def visit_Name(self, name: ast.Name) -> ast.expr:
+            if name.id in aliases and name.id not in stack:
+                return expand_aliases(copy.deepcopy(aliases[name.id]), aliases, stack + (name.id,))
+            return name
+
+        def visit_Constant(self, constant: ast.Constant) -> ast.expr:
+            parsed = parse_quoted(constant)
+            if parsed is None:
+                return constant
+            expanded = expand_aliases(parsed, aliases, stack)
+            return expanded if ast.dump(expanded) != ast.dump(parsed) else constant
+
+    result = _Expand().visit(copy.deepcopy(node))
+    assert isinstance(result, ast.expr)
+    return result
+
+
+def column_metadata(node: ast.expr) -> List[ast.expr]:
+    """The ``Annotated`` metadata that applies to a column, innermost first (#241).
+
+    Follows the same wrappers as :func:`column_type`: ``Mapped`` and its
+    variants, type qualifiers, quotes, and an optional type (``Optional[X]``,
+    ``X | None``), but not a union of several types.
+    """
+    if isinstance(node, ast.Constant):
+        parsed = parse_quoted(node)
+        return column_metadata(parsed) if parsed is not None else []
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        rest = [option for option in union_operands(node) if not is_none(option)]
+        return column_metadata(rest[0]) if len(rest) == 1 else []
+    if not isinstance(node, ast.Subscript):
+        return []
+    name, args = subscript_parts(node)
+    if not args:
+        return []
+    if name == "Annotated":
+        return [*column_metadata(args[0]), *args[1:]]
+    if name in TRANSPARENT_WRAPPERS | MANY_WRAPPERS | QUALIFIERS:
+        return column_metadata(args[0])
+    if name == "Optional" and len(args) == 1:
+        return column_metadata(args[0])
+    if name == "Union":
+        rest = [option for option in args if not is_none(option)]
+        return column_metadata(rest[0]) if len(rest) == 1 else []
+    return []
 
 
 def literal_admits_none(args: List[ast.expr]) -> bool:

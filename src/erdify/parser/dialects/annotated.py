@@ -10,7 +10,14 @@ import ast
 from typing import Dict, Tuple
 
 from ...config import FieldInfo
-from ..annotations import annotation_reference, as_rel, column_type, is_call_to
+from ..annotations import (
+    annotation_reference,
+    as_rel,
+    column_metadata,
+    column_type,
+    expand_aliases,
+    is_call_to,
+)
 from ..common import _Rel
 from .base import Dialect
 
@@ -71,44 +78,53 @@ class AnnotatedDialect(Dialect):
             return None
 
         field_name = node.target.id
-        type_str, is_nullable = column_type(node.annotation)
+        annotation = expand_aliases(node.annotation, self.ctx.aliases)
+        type_str, is_nullable = column_type(annotation)
 
-        # Parse Field() / mapped_column() parameters
+        # Field() (SQLModel) / mapped_column() (SQLAlchemy), bare or qualified
+        # (e.g. orm.mapped_column): the ones in the Annotated metadata (#241),
+        # then the assigned one, which wins on conflicts as in SQLAlchemy.
+        calls = [
+            call
+            for call in column_metadata(annotation)
+            if is_call_to(call, "Field") or is_call_to(call, "mapped_column")
+        ]
+        if node.value is not None and (
+            is_call_to(node.value, "Field") or is_call_to(node.value, "mapped_column")
+        ):
+            calls.append(node.value)
+
         is_primary_key = False
         is_foreign_key = False
         foreign_table = None
         index = False
         is_unique = False
-
-        if node.value and isinstance(node.value, ast.Call):
-            # Field() (SQLModel) / mapped_column() (SQLAlchemy), bare or qualified
-            # (e.g. orm.mapped_column).
-            if is_call_to(node.value, "Field") or is_call_to(node.value, "mapped_column"):
-                for keyword in node.value.keywords:
-                    if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
-                        is_primary_key = bool(keyword.value.value)
-                    elif keyword.arg == "foreign_key" and isinstance(keyword.value, ast.Constant):
-                        is_foreign_key = True
-                        foreign_table = str(keyword.value.value)
-                    elif keyword.arg == "index" and isinstance(keyword.value, ast.Constant):
-                        index = bool(keyword.value.value)
-                    elif keyword.arg == "unique" and isinstance(keyword.value, ast.Constant):
-                        is_unique = bool(keyword.value.value)
-                    elif (
-                        keyword.arg == "nullable"
-                        and isinstance(keyword.value, ast.Constant)
-                        and isinstance(keyword.value.value, bool)
-                    ):
-                        # An explicit nullable=True/False is what the database gets
-                        # and overrides the annotation; nullable=None means
-                        # "unspecified", so the annotation still decides.
-                        is_nullable = keyword.value.value
-
-                # SQLAlchemy: ForeignKey("table.col") passed to mapped_column()
-                fk_target = extract_foreign_key_arg(node.value)
-                if fk_target is not None:
+        for call in calls:
+            for keyword in call.keywords:
+                if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
+                    is_primary_key = bool(keyword.value.value)
+                elif keyword.arg == "foreign_key" and isinstance(keyword.value, ast.Constant):
                     is_foreign_key = True
-                    foreign_table = fk_target
+                    foreign_table = str(keyword.value.value)
+                elif keyword.arg == "index" and isinstance(keyword.value, ast.Constant):
+                    index = bool(keyword.value.value)
+                elif keyword.arg == "unique" and isinstance(keyword.value, ast.Constant):
+                    is_unique = bool(keyword.value.value)
+                elif (
+                    keyword.arg == "nullable"
+                    and isinstance(keyword.value, ast.Constant)
+                    and isinstance(keyword.value.value, bool)
+                ):
+                    # An explicit nullable=True/False is what the database gets
+                    # and overrides the annotation; nullable=None means
+                    # "unspecified", so the annotation still decides.
+                    is_nullable = keyword.value.value
+
+            # SQLAlchemy: ForeignKey("table.col") passed to mapped_column()
+            fk_target = extract_foreign_key_arg(call)
+            if fk_target is not None:
+                is_foreign_key = True
+                foreign_table = fk_target
 
         # Optional name-based key inference for keyless sources (Pydantic/dataclass).
         # Never overrides explicitly declared keys above.

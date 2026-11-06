@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from ..config import EntityInfo, EnumInfo, is_structural_link_table
+from .annotations import subscript_parts
 from .common import is_enum_class, to_snake_case
 from .dialects import ParseContext
 from .discovery import discover_model_files
@@ -242,7 +243,40 @@ class ASTDatabaseParser:
             infer_keys=self.infer_keys,
             django_raw_types=self.django_raw_types,
             base_classes=self.base_classes,
+            aliases=self._annotated_aliases(),
         )
+
+    def _annotated_aliases(self) -> Dict[str, ast.expr]:
+        """Module-level ``Annotated`` type aliases of every scanned file, by name (#241).
+
+        ``X = Annotated[...]``, ``X: TypeAlias = Annotated[...]`` and (Python
+        3.12) ``type X = Annotated[...]``. A class of the same name wins, and
+        a later file's alias replaces an earlier one, as for classes.
+        """
+        aliases: Dict[str, ast.expr] = {}
+        for tree in self._file_trees.values():
+            for node in tree.body:
+                name, value = None, None
+                if (
+                    isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                ):
+                    name, value = node.targets[0].id, node.value
+                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    name, value = node.target.id, node.value
+                elif type(node).__name__ == "TypeAlias":  # `type X = ...` (3.12+)
+                    alias_name = getattr(node, "name", None)
+                    if isinstance(alias_name, ast.Name):
+                        name, value = alias_name.id, getattr(node, "value", None)
+                if (
+                    name is not None
+                    and name not in self._all_classes
+                    and isinstance(value, ast.Subscript)
+                    and subscript_parts(value)[0] == "Annotated"
+                ):
+                    aliases[name] = value
+        return aliases
 
     def _classify_source(self, class_node: ast.ClassDef) -> str | None:
         """Classify which model framework a class belongs to (:meth:`ParseContext.classify`).

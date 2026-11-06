@@ -144,8 +144,12 @@ The annotation must name **exactly one class**, possibly optional (`X | None`,
 collection (`list`, `set`, `Sequence`, `Iterable`, `tuple[X, ...]`, a mapping's
 value, and SQLAlchemy's collection-only `WriteOnlyMapped` / `DynamicMapped`). A union of several classes
 (`Mapped[Union["Cat", "Dog"]]`) names no single class, so nothing is drawn for
-it. A type alias (`Mapped[ChildList]`) is taken as a class name, so it draws an
-edge only if a model of that name exists. A module-qualified name
+it. A type alias for a relationship (`Mapped[ChildList]`) is taken as a class
+name, so it draws an edge only if a model of that name exists. Only
+module-level `Annotated[...]` aliases are resolved, for column settings
+(`intpk = Annotated[int, mapped_column(primary_key=True)]`; also
+`X: TypeAlias = ...` and `type X = ...`), from any scanned file; a model class
+of the same name wins. A module-qualified name
 (`schemas.User`) resolves by its last part inside `relationship()` /
 `Relationship()`; on a plain Pydantic / dataclass field it stays a column,
 because it may be an external class that shares a model's name.
