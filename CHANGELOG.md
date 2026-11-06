@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The Python model parser is split into one module per framework
+  (`erdify.parser` is now a package with a `Dialect` class per framework),
+  so a new framework can be added without touching the others. The public
+  API (`erdify.parser.ASTDatabaseParser`, `parse_models_directory`, …) and
+  the generated output are unchanged; code importing private helpers from
+  `erdify.parser` may need updating
+  ([#81](https://github.com/devsuit-berlin/erdify/issues/81)).
+
 ### Fixed
 
 - Model references are now read from the annotation's syntax tree instead of

@@ -8,7 +8,7 @@ non-project dirs (site-packages, .venv, …) are pruned from the traversal, and
 import os
 from pathlib import Path
 
-import erdify.parser as parser_mod
+import erdify.parser.discovery as parser_mod
 from erdify.parser import parse_models_directory
 
 

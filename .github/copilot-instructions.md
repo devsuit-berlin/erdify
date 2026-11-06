@@ -52,21 +52,34 @@ touching a database** — it parses source with the stdlib `ast` module and has
 The pipeline is a clean three-stage flow, wired together by the CLI:
 
 ```
-parser.py  ──►  config.py (IR)  ──►  generator.py
+parser/    ──►  config.py (IR)  ──►  generator.py
 (AST scan)      EntityInfo/         PlantUML / Mermaid /
                 EnumInfo/           JSON / HTML
                 FieldInfo
 ```
 
-- **`parser.py`** — `parse_models_directory()` discovers model files (glob
-  `include_patterns`, default `models.py`; prunes `DEFAULT_EXCLUDE_DIRS` *during*
-  the walk for speed) and `ASTDatabaseParser` walks each file's AST. Every class
-  is classified into exactly one of `MODEL_SOURCES`
-  (`sqlmodel`, `sqlalchemy`, `django`, `dataclass`, `pydantic`) **in that order**,
-  then its fields/relationships/enums are extracted. This is the largest and most
-  intricate module — framework-specific parsing logic lives here. Link tables are
-  detected **structurally** (a composite PK made up entirely of FKs, with no
-  payload columns — two FKs or more), not by name.
+- **`parser/`** — the Python model frontend. `import erdify.parser` re-exports
+  the public API; the submodules are internal.
+  - `core.py`: `parse_models_directory()` and `ASTDatabaseParser`, which runs
+    the passes: collect every class, classify it, build entities, add Core
+    association tables, apply `--exclude`.
+  - `discovery.py`: finds model files (glob `include_patterns`, default
+    `models.py`; prunes `DEFAULT_EXCLUDE_DIRS` *during* the walk for speed).
+  - `dialects/`: one `Dialect` per framework (`base.py` has the interface and
+    `ParseContext`). Every class is classified into exactly one of
+    `MODEL_SOURCES` (`sqlmodel`, `sqlalchemy`, `django`, `dataclass`,
+    `pydantic`) by trying the dialects **in that order**. The dialect of the
+    concrete model reads its body *and every ancestor's*: a mixin is read the
+    way the model that inherits it is. SQLModel, SQLAlchemy, Pydantic and
+    dataclass share `annotated.py` (annotated class bodies); Django has its own.
+  - `inheritance.py`: `ClassIndex` (MRO, merge order, listing order) and member
+    merging, shared by all dialects; a dialect adjusts it via hooks (`merge`,
+    `self_owner`, `declared_names`).
+  - `annotations.py`: pure helpers that read annotations from the syntax tree
+    (model references, column type and nullability).
+
+  Link tables are detected **structurally** (a composite PK made up entirely of
+  FKs, with no payload columns — two FKs or more), not by name.
 
 - **`sql_parser.py`** — the optional SQL DDL frontend (`erdify[sql]`).
   `SqlSchemaParser` turns `CREATE TABLE` / `CREATE TYPE ... AS ENUM` /
@@ -107,8 +120,9 @@ The public Python API is whatever `src/erdify/__init__.py` re-exports.
 - Google-style docstrings on public modules, classes, and functions.
 - Releases are tag-driven: pushing a `vX.Y.Z` tag publishes to PyPI; the version
   is single-sourced from package metadata via `importlib.metadata`.
-- New framework parsing → add a fixture dir under `tests/fixtures/` and wire it
-  into the integration tests.
+- New framework parsing → add a `Dialect` subclass under `parser/dialects/`,
+  register it in `DIALECTS` and `MODEL_SOURCES` (same order), add a fixture dir
+  under `tests/fixtures/` and wire it into the integration tests.
 
 ## Keep everything in sync
 
@@ -131,5 +145,5 @@ its changelog entry under the matching heading: `### Changed — **breaking**`,
 generated diagram text changes (it makes `--check` fail once after upgrading).
 
 The feature matrix and CLI flags are the parts that drift most often. When in
-doubt, verify a claimed feature against the code (`parser.py` for detection,
+doubt, verify a claimed feature against the code (`parser/dialects/` for detection,
 `generator.py` for what's actually rendered) before documenting it.
