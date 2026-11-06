@@ -42,7 +42,8 @@ added) and is drawn 1:1 as well.
 The column references the target's primary key, including one inherited from
 an abstract base, or the `to_field=` column, and takes that column's type
 (`foreign_table` in [JSON output](../usage/output-formats.md#json)). A target
-outside the parsed files is assumed to have the implicit `id`.
+outside the parsed files is assumed to reference its implicit `id` (or the
+`to_field=` column), typed as Django's default auto field.
 
 Relationship targets are resolved by class name, including `"self"` and
 `"app.Model"` string references. A `ManyToManyField(through=LinkModel)` is drawn

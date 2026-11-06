@@ -4,6 +4,7 @@ Each test parses real model source, so it covers the base-class merge in the
 parser and, where relevant, the edges the generator draws from it.
 """
 
+import time
 from pathlib import Path
 
 from erdify.generator import generate_mermaid
@@ -324,14 +325,19 @@ class Item(Base):
 """
         entities = _parse(tmp_path, src)
         assert [f.name for f in entities["Item"].fields] == ["id", "note"]
-        assert "Item" not in generate_mermaid(entities).split("Tag {")[0].split("erDiagram")[1]
+        out = generate_mermaid(entities)
+        assert not any(
+            line.strip().startswith("Item ") and "Tag :" in line for line in out.splitlines()
+        )
 
 
 class TestDeepDiamonds:
     def test_stacked_diamonds_parse_quickly(self, tmp_path: Path):
-        """The MRO is memoized; stacked diamonds must not blow up exponentially."""
-        import time
+        """The MRO is memoized; stacked diamonds must not blow up exponentially.
 
+        Unmemoized, 29 stacked diamonds would take on the order of 2**29 steps,
+        so the generous bound only catches a regression, never a slow runner.
+        """
         lines = [
             "from pydantic import BaseModel",
             "",
@@ -352,7 +358,7 @@ class TestDeepDiamonds:
             ]
         start = time.perf_counter()
         entities = _parse(tmp_path, "\n".join(lines))
-        assert time.perf_counter() - start < 5
+        assert time.perf_counter() - start < 30
         assert len(entities["L29"].fields) == 1 + 3 * 29
 
 
@@ -442,3 +448,47 @@ class Child(Base):
 """
         child = _parse(tmp_path, src)["Child"]
         assert [f.name for f in child.fields] == ["id", "other", "code"]
+
+
+class TestBodyKindChange:
+    """A body redeclaring an inherited attribute as another kind replaces it."""
+
+    def test_column_to_reference(self, tmp_path: Path):
+        src = """
+from pydantic import BaseModel
+
+
+class User(BaseModel):
+    id: int
+
+
+class Base(BaseModel):
+    user: int
+
+
+class Post(Base):
+    user: User
+"""
+        post = _parse(tmp_path, src)["Post"]
+        assert post.fields == []
+        assert post.relationships == [("User", "one", "user")]
+
+    def test_reference_to_column(self, tmp_path: Path):
+        src = """
+from pydantic import BaseModel
+
+
+class User(BaseModel):
+    id: int
+
+
+class Base(BaseModel):
+    user: User
+
+
+class Post(Base):
+    user: int
+"""
+        post = _parse(tmp_path, src)["Post"]
+        assert [f.name for f in post.fields] == ["user"]
+        assert post.relationships == []

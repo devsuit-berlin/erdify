@@ -226,6 +226,7 @@ class ASTDatabaseParser:
         self._enums: Dict[str, EnumInfo] = {}
         self._all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
         self._mro_cache: Dict[str, List[str] | None] = {}
+        self._target_column_cache: Dict[Tuple[str, str | None], Tuple[str, str]] = {}
         self._file_trees: Dict[Path, ast.Module] = {}
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
@@ -262,6 +263,7 @@ class ASTDatabaseParser:
 
         # Second pass: process enum and model classes
         self._mro_cache = {}
+        self._target_column_cache = {}
         for class_node in self._all_classes.values():
             if self._is_enum_class(class_node):
                 self._parse_enum_class(class_node)
@@ -1015,6 +1017,22 @@ class ASTDatabaseParser:
         fields, rels = self._merge_members(self._merge_order(class_node), members, model_kind)
         return self._reorder(fields, order_fields), self._reorder(rels, order_rels)
 
+    @staticmethod
+    def _drop_django_redeclared(
+        fields: Dict[str, FieldInfo], rels: Dict[str, _Rel], attr: str
+    ) -> None:
+        """Drop whatever earlier classes stored for a redeclared Django attribute.
+
+        A Django attribute is stored under a key that depends on its kind
+        (relationship ``owner`` vs. FK column ``owner_id``, #224), so all of
+        them go.
+        """
+        rels.pop(attr, None)
+        fields.pop(attr, None)
+        inherited_fk = fields.get(f"{attr}_id")
+        if inherited_fk is not None and inherited_fk.is_foreign_key:
+            del fields[f"{attr}_id"]
+
     def _listing_order(
         self,
         class_node: ast.ClassDef,
@@ -1043,11 +1061,7 @@ class ASTDatabaseParser:
         class_fields, class_rels, declared = members[class_node.name]
         if model_kind == "django":
             for attr in declared:
-                rels.pop(attr, None)
-                fields.pop(attr, None)
-                inherited_fk = fields.get(f"{attr}_id")
-                if inherited_fk is not None and inherited_fk.is_foreign_key:
-                    del fields[f"{attr}_id"]
+                self._drop_django_redeclared(fields, rels, attr)
         fields.update(class_fields)
         rels.update(class_rels)
         return fields, rels
@@ -1084,11 +1098,7 @@ class ASTDatabaseParser:
             class_fields, class_rels, declared = members[class_name]
             for attr in declared:
                 if model_kind == "django":
-                    rels.pop(attr, None)
-                    fields.pop(attr, None)
-                    inherited_fk = fields.get(f"{attr}_id")
-                    if inherited_fk is not None and inherited_fk.is_foreign_key:
-                        del fields[f"{attr}_id"]
+                    ASTDatabaseParser._drop_django_redeclared(fields, rels, attr)
                 # Same key and kind: update() below replaces it in place.
                 elif attr in class_fields:
                     rels.pop(attr, None)
@@ -1292,10 +1302,27 @@ class ASTDatabaseParser:
         ``(model, to_field)`` lookup, so following a key to another column of
         the same model still resolves.
         """
+        key = (target, to_field)
+        cached = self._target_column_cache.get(key)
+        if cached is not None:
+            return cached
         default = (to_field or "id", self._django_display_type("BigAutoField"))
         node = self._all_classes.get(target)
-        if node is None or (target, to_field) in stack:
+        if node is None or key in stack:
             return default
+        result = self._resolve_django_target_column(target, node, to_field, stack, default)
+        self._target_column_cache[key] = result
+        return result
+
+    def _resolve_django_target_column(
+        self,
+        target: str,
+        node: ast.ClassDef,
+        to_field: str | None,
+        stack: Tuple[Tuple[str, str | None], ...],
+        default: Tuple[str, str],
+    ) -> Tuple[str, str]:
+        """Uncached body of :meth:`_django_target_column`."""
 
         # The winning declaration of each attribute, resolved like the fields (#228).
         declared: Dict[str, Tuple[str, ast.Call]] = {}

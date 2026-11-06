@@ -34,27 +34,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bases declare the same attribute, the first base wins (previously the last),
   and in a diamond hierarchy a sibling base's redeclaration replaces the one
   from the shared root instead of leaving a stale edge or column. Field order
-  is unchanged. A Django `name = None`, which removes a field inherited from an
-  abstract base, now removes it from the diagram too
+  is unchanged. A class body that redeclares an inherited column as a model
+  reference (or the reverse) now replaces it instead of keeping both. A Django
+  `name = None`, which removes a field inherited from an abstract base, now
+  removes it from the diagram too
   ([#228](https://github.com/devsuit-berlin/erdify/issues/228)).
 
 ### Output changes
 
-The fixes above change the generated diagram for any Django model with a
-`OneToOneField` (an `<name>_id FK,UK` column replaces the relationship, and the
-edge label becomes `<name>_id`), any Pydantic / dataclass model with an
-optional model reference, and any model whose bases declare the same attribute
-differently. Because a `OneToOneField` is now a foreign-key column, its edge is
-drawn even with `--no-relationships` (like `ForeignKey`), and a `ForeignKey`
-plus a `OneToOneField` to the same model now draw two edges instead of one.
-The JSON changes are content changes, not shape changes, so `schema_version`
-stays `1`; the [JSON compatibility](https://erdify.devsuit.io/usage/output-formats/#compatibility)
-rules now say so explicitly. `--format json` changes accordingly: `OneToOneField` moves from
+The fixes above change the generated diagram for:
+
+- any Django model with a `OneToOneField`: an `<name>_id FK,UK` column
+  replaces the relationship, and the edge label becomes `<name>_id`. A
+  `ForeignKey` plus a `OneToOneField` to the same model draw two edges instead
+  of one;
+- any Django foreign key to a model whose primary key is not the implicit `id`,
+  or with `to_field=`: the FK column takes the referenced column's type (e.g.
+  `UUID` instead of `int`);
+- any Pydantic / dataclass model with an optional model reference;
+- any model whose bases declare the same attribute differently, or whose body
+  redeclares an inherited attribute as another kind, and any Django model with
+  `name = None`.
+
+`--format json` changes accordingly: `OneToOneField` moves from
 `relationships` to `fields`, `foreign_table` names the referenced column for
-Django foreign keys to a non-`id` key, and relationships gain `nullable`. If
-you commit the diagram and gate CI on `--check` (or the `erdify-check`
-pre-commit hook), the check fails once after upgrading: regenerate the diagram
-and commit it. See
+Django foreign keys to a non-`id` key, and relationships gain `nullable`. These
+are content changes, not shape changes, so `schema_version` stays `1`; the
+[JSON compatibility](https://erdify.devsuit.io/usage/output-formats/#compatibility)
+rules now say so explicitly. If you commit the diagram and gate CI on `--check`
+(or the `erdify-check` pre-commit hook), the check fails once after upgrading:
+regenerate the diagram and commit it. See
 [Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
 
 ## [1.1.1] - 2026-11-05

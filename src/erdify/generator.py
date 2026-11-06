@@ -558,7 +558,7 @@ def generate_json(
                             "target": target,
                             "type": rel_type,
                             "attribute": attr,
-                            "nullable": attr in entity.nullable_relationships,
+                            "nullable": rel_type == "one" and attr in entity.nullable_relationships,
                         }
                         for target, rel_type, attr in entity.relationships
                     ]

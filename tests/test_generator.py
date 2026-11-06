@@ -402,3 +402,19 @@ def test_declared_relationship_glyphs():
     assert 'A }o--|| C : "c"' in out
     assert 'A }o--o| D : "d"' in out
     assert 'A ||--o{ E : "es"' in out
+
+
+def test_json_nullable_only_for_one():
+    """A hand-built flag on a non-"one" relationship is ignored, as in the diagram."""
+    entities = {
+        "A": EntityInfo(
+            name="A",
+            table_name="a",
+            relationships=[("B", "one", "b"), ("B", "one_to_one", "c"), ("B", "many", "ds")],
+            nullable_relationships=["b", "c", "ds"],
+        ),
+        "B": EntityInfo(name="B", table_name="b"),
+    }
+    doc = json.loads(generate_json(entities))
+    rels = doc["entities"][0]["relationships"]
+    assert {r["attribute"]: r["nullable"] for r in rels} == {"b": True, "c": False, "ds": False}
