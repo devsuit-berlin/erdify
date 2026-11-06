@@ -4,7 +4,7 @@ import ast
 import os
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Dict, List, Mapping, Tuple, TypeGuard, TypeVar
@@ -1068,14 +1068,16 @@ class ASTDatabaseParser:
         dataclass declares (the first such mixin in the MRO wins).
         """
         fields, rels = self._effective_dataclass_fields(name, members)
-        fields, rels = dict(fields), dict(rels)
+        # The cache is shared across entities, and _parse_table_class mutates
+        # fields (e.g. is_unique), so each entity gets its own copies.
+        fields, rels = {attr: replace(f) for attr, f in fields.items()}, dict(rels)
         for base in self._mro(name) or [name]:
             if self._is_dataclass(self._all_classes[base]):
                 continue
             base_fields, base_rels, _ = members[base]
             for attr, field in base_fields.items():
                 if attr not in fields and attr not in rels:
-                    fields[attr] = field
+                    fields[attr] = replace(field)
             for attr, rel in base_rels.items():
                 if attr not in fields and attr not in rels:
                     rels[attr] = rel

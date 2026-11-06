@@ -755,3 +755,33 @@ class Ref(models.Model):
         fk = _field(entities, "Ref", "x_id")
         assert fk.foreign_table == "special_node.parent_id"
         assert fk.type_str == "int"
+
+
+class TestDataclassCacheIsolation:
+    def test_entity_changes_do_not_leak_between_entities(self, tmp_path: Path):
+        """A child's unique constraint must not mark the base's or a sibling's field."""
+        src = """
+from dataclasses import dataclass
+
+from sqlalchemy import UniqueConstraint
+
+
+@dataclass
+class Base:
+    account_id: int
+
+
+@dataclass
+class Unique(Base):
+    __table_args__ = (UniqueConstraint("account_id"),)
+    id: int
+
+
+@dataclass
+class Plain(Base):
+    id: int
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Unique", "account_id").is_unique
+        assert not _field(entities, "Plain", "account_id").is_unique
+        assert not _field(entities, "Base", "account_id").is_unique
