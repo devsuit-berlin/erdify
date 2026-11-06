@@ -354,3 +354,91 @@ class TestDeepDiamonds:
         entities = _parse(tmp_path, "\n".join(lines))
         assert time.perf_counter() - start < 5
         assert len(entities["L29"].fields) == 1 + 3 * 29
+
+
+class TestDjangoSiblingOrder:
+    """Sibling bases never displace each other's fields (order as before #228)."""
+
+    def test_same_kind_in_both_siblings(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class Left(models.Model):
+    code = models.CharField(max_length=5)
+    left_only = models.IntegerField()
+
+    class Meta:
+        abstract = True
+
+
+class Right(models.Model):
+    code = models.IntegerField()
+    right_only = models.IntegerField()
+
+    class Meta:
+        abstract = True
+
+
+class Child(Left, Right):
+    pass
+"""
+        entities = _parse(tmp_path, src)
+        assert [f.name for f in entities["Child"].fields] == [
+            "id",
+            "code",
+            "left_only",
+            "right_only",
+        ]
+        assert _field(entities, "Child", "code").type_str == "str"
+
+    def test_mixed_kind_in_siblings(self, tmp_path: Path):
+        """A losing sibling's M2M neither survives nor moves the winning FK column."""
+        src = """
+from django.db import models
+
+
+class Tag(models.Model):
+    pass
+
+
+class Left(models.Model):
+    owner = models.ForeignKey(Tag, on_delete=models.CASCADE)
+
+    class Meta:
+        abstract = True
+
+
+class Right(models.Model):
+    owner = models.ManyToManyField(Tag)
+
+    class Meta:
+        abstract = True
+
+
+class Child(Left, Right):
+    note = models.IntegerField()
+"""
+        child = _parse(tmp_path, src)["Child"]
+        assert [f.name for f in child.fields] == ["id", "owner_id", "note"]
+        assert child.relationships == []
+
+    def test_body_redeclaration_still_moves(self, tmp_path: Path):
+        """A Django body redeclaring an inherited field lists it at the body (as before)."""
+        src = """
+from django.db import models
+
+
+class Base(models.Model):
+    code = models.CharField(max_length=5)
+    other = models.IntegerField()
+
+    class Meta:
+        abstract = True
+
+
+class Child(Base):
+    code = models.IntegerField()
+"""
+        child = _parse(tmp_path, src)["Child"]
+        assert [f.name for f in child.fields] == ["id", "other", "code"]

@@ -1003,26 +1003,54 @@ class ASTDatabaseParser:
         """Collect the fields and relationships of a class and all its ancestors.
 
         Which declaration of an attribute wins follows the MRO
-        (:meth:`_merge_order`). The order they are listed in is unchanged from
-        the depth-first merge (:meth:`_dfs_order`), so resolving by MRO does not
-        reorder the output: an attribute keeps the position where it first
-        appears, except that a Django redeclaration moves it to the
-        redeclaring class, as before.
+        (:meth:`_merge_order`). The order they are listed in is the one the
+        pre-MRO merge produced (:meth:`_listing_order`), so resolving by MRO
+        does not reorder the output.
         """
         dfs_order = self._dfs_order(class_node, set())
         members = {
             name: self._class_members(self._all_classes[name], model_kind) for name in dfs_order
         }
-        if model_kind == "django":
-            order_fields, order_rels = self._merge_members(dfs_order, members, model_kind)
-        else:
-            order_fields, order_rels = {}, {}
-            for name in dfs_order:
-                class_fields, class_rels, _ = members[name]
-                order_fields.update(class_fields)
-                order_rels.update(class_rels)
+        order_fields, order_rels = self._listing_order(class_node, set(), members, model_kind)
         fields, rels = self._merge_members(self._merge_order(class_node), members, model_kind)
         return self._reorder(fields, order_fields), self._reorder(rels, order_rels)
+
+    def _listing_order(
+        self,
+        class_node: ast.ClassDef,
+        visited: set[str],
+        members: Dict[str, _ClassMembers],
+        model_kind: str,
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """The keys, in listing order, of the recursive merge used before #228.
+
+        Each base's whole subtree is merged in (left to right, each class once),
+        then the class body. Only a Django body's own redeclaration moves an
+        inherited attribute to the body's position; a sibling base never
+        displaces another sibling's attribute. Only the key order is used.
+        """
+        fields: Dict[str, FieldInfo] = {}
+        rels: Dict[str, _Rel] = {}
+        if class_node.name in visited:
+            return fields, rels
+        visited.add(class_node.name)
+        for base in self._local_bases(class_node):
+            base_fields, base_rels = self._listing_order(
+                self._all_classes[base], visited, members, model_kind
+            )
+            fields.update(base_fields)
+            rels.update(base_rels)
+        class_fields, class_rels, declared = members[class_node.name]
+        if model_kind == "django":
+            for attr in declared:
+                rels.pop(attr, None)
+                fields.pop(attr, None)
+                inherited_fk = fields.get(f"{attr}_id")
+                if inherited_fk is not None and inherited_fk.is_foreign_key:
+                    del fields[f"{attr}_id"]
+        fields.update(class_fields)
+        rels.update(class_rels)
+        return fields, rels
 
     @staticmethod
     def _reorder(values: Dict[str, _V], order: Mapping[str, object]) -> Dict[str, _V]:
