@@ -18,6 +18,7 @@ is resolved like Python resolves the name when the class body runs:
 """
 
 import ast
+from bisect import bisect_left
 from pathlib import Path
 from types import MappingProxyType
 from typing import Dict, Iterable, List, Mapping, NamedTuple, Set, Tuple
@@ -61,8 +62,14 @@ class AliasResolver:
         self._trees = trees
         self._classes = set(classes)
         self._events: Dict[Path, List[Tuple[str, _Binding]]] = {}
-        self._scopes: Dict[Tuple[Path, int | None], Dict[str, _Binding]] = {}
+        #: Per file, each name's bindings in statement order (star imports expanded).
+        self._histories: Dict[Path, Dict[str, List[_Binding]]] = {}
+        #: Per file, names with a binding that may be an alias.
+        self._candidates: Dict[Path, List[str]] = {}
         self._scoping: Set[Path] = set()
+        #: Star-import cut-offs so far; a history built across one is not cached.
+        self._star_cycles = 0
+        self._resolved_paths: Dict[Path, Path] = {}
         self._modules: Dict[Tuple[Path, str | None, int], Path | None] = {}
         self._resolved: Dict[Tuple[Path, str, int | None], ast.expr | None] = {}
         #: Cycle cut-offs so far; a result computed across one is not cached.
@@ -79,15 +86,14 @@ class AliasResolver:
         view = self._views.get(key)
         if view is not None:
             return view
-        scope = self._scope(file, line)
         result: Dict[str, ast.expr] = {}
-        for name, binding in scope.items():
-            if binding.kind != "other":
-                value = self._resolve(file, name, line, ())
-                if value is not None:
-                    result[name] = value
+        for name in self._candidate_names(file):
+            value = self._resolve(file, name, line, ())
+            if value is not None:
+                result[name] = value
         for name, value in self._fallback_aliases().items():
-            if name not in scope:  # bound names, also via `*`, never fall back
+            # A name bound before the class (also via `*`) never falls back.
+            if name not in result and self._binding_at(file, name, line) is None:
                 result[name] = value
         view = MappingProxyType(result)
         self._views[key] = view
@@ -148,30 +154,60 @@ class AliasResolver:
             return _Binding("alias", line, value=value)
         return _Binding("other", line)
 
-    def _scope(self, file: Path, line: int | None) -> Dict[str, _Binding]:
-        """Each name's last module-level binding before ``line`` (all of them if None)."""
-        key = (file, line)
-        cached = self._scopes.get(key)
+    def _history(self, file: Path) -> Dict[str, List[_Binding]]:
+        """Each name's module-level bindings in statement order, star imports expanded.
+
+        Not cached while a circular star import cut it short, so the cut-off
+        never becomes a permanently missing binding.
+        """
+        cached = self._histories.get(file)
         if cached is not None:
             return cached
-        scope: Dict[str, _Binding] = {}
+        history: Dict[str, List[_Binding]] = {}
+        cycles = self._star_cycles
         self._scoping.add(file)
         try:
             for name, binding in self._module_events(file):
-                if line is not None and binding.line >= line:
-                    break
                 if name != "*":
-                    scope[name] = binding
+                    history.setdefault(name, []).append(binding)
                     continue
                 target = self._find_module(file, binding.module, binding.level)
-                if target is None or target is _AMBIGUOUS or target in self._scoping:
+                if target is None or target is _AMBIGUOUS:
+                    continue
+                if target in self._scoping:
+                    self._star_cycles += 1
                     continue
                 for exported in self._exports(target):
-                    scope[exported] = binding._replace(original=exported)
+                    history.setdefault(exported, []).append(binding._replace(original=exported))
         finally:
             self._scoping.discard(file)
-        self._scopes[key] = scope
-        return scope
+        if self._star_cycles == cycles:
+            self._histories[file] = history
+        return history
+
+    def _candidate_names(self, file: Path) -> List[str]:
+        """Names with a binding in ``file`` that may be an alias (few, usually)."""
+        cached = self._candidates.get(file)
+        if cached is not None:
+            return cached
+        names = [
+            name
+            for name, bindings in self._history(file).items()
+            if any(b.kind != "other" for b in bindings)
+        ]
+        if file in self._histories:  # only once the history itself is final
+            self._candidates[file] = names
+        return names
+
+    def _binding_at(self, file: Path, name: str, line: int | None) -> _Binding | None:
+        """The last module-level binding of ``name`` before ``line`` (any, if None)."""
+        bindings = self._history(file).get(name)
+        if not bindings:
+            return None
+        if line is None:
+            return bindings[-1]
+        index = bisect_left([b.line for b in bindings], line)
+        return bindings[index - 1] if index else None
 
     def _exports(self, file: Path) -> List[str]:
         """What ``from <file> import *`` binds: the last literal ``__all__``, else public names."""
@@ -186,6 +222,8 @@ class AliasResolver:
             )
             if any(isinstance(t, ast.Name) and t.id == "__all__" for t in targets):
                 value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+                if value is None:  # `__all__: list[str]` alone binds nothing
+                    continue
                 exports = (
                     [
                         elt.value
@@ -197,7 +235,7 @@ class AliasResolver:
                 )
         if exports is not None:
             return exports
-        return [name for name in self._scope(file, None) if not name.startswith("_")]
+        return [name for name in self._history(file) if not name.startswith("_")]
 
     # -- resolution ----------------------------------------------------------------
 
@@ -218,7 +256,7 @@ class AliasResolver:
             return None
         cycles = self._cycles
         result = None
-        binding = self._scope(file, line).get(name)
+        binding = self._binding_at(file, name, line)
         if binding is not None:
             result = self._resolve_binding(file, binding, stack + (key,))
         if self._cycles == cycles:
@@ -265,13 +303,14 @@ class AliasResolver:
                 candidates = [base / "__init__.py"]
             found = next((c for c in candidates if c in self._trees), None)
         elif parts:
-            matches = self._suffix_index().get(tuple(parts), [])
-            if len(matches) > 1:
-                # Prefer the module whose package root contains the importing file.
-                matches = [m for m in matches if self._root_contains(m, len(parts), file)]
+            # Only a module whose import root contains the importing file can be
+            # what it imports: a scanned `pkg/uuid.py` is not `import uuid`.
+            matches = [
+                m
+                for m in self._suffix_index().get(tuple(parts), [])
+                if self._root_contains(m, len(parts), file)
+            ]
             found = matches[0] if len(matches) == 1 else (_AMBIGUOUS if matches else None)
-            if found is None and self._suffix_index().get(tuple(parts)):
-                found = _AMBIGUOUS
         self._modules[key] = found
         return found
 
@@ -280,24 +319,33 @@ class AliasResolver:
         if self._suffixes is None:
             index: Dict[Tuple[str, ...], List[Path]] = {}
             for path in self._trees:
-                dotted = (
-                    path.parent.parts if path.name == "__init__.py" else path.with_suffix("").parts
-                )
+                dotted = self._dotted(path)
                 for size in range(1, len(dotted) + 1):
                     index.setdefault(tuple(dotted[-size:]), []).append(path)
             self._suffixes = index
         return self._suffixes
 
-    @staticmethod
-    def _root_contains(module_file: Path, depth: int, importer: Path) -> bool:
-        """Whether ``importer`` lies under the root ``module_file`` is imported from."""
-        dotted = (
-            module_file.parent.parts
-            if module_file.name == "__init__.py"
-            else module_file.with_suffix("").parts
+    def _absolute(self, path: Path) -> Path:
+        """``path`` resolved, so a relative scan root (``erdify .``) keeps its packages."""
+        resolved = self._resolved_paths.get(path)
+        if resolved is None:
+            resolved = self._resolved_paths[path] = path.resolve()
+        return resolved
+
+    def _dotted(self, path: Path) -> Tuple[str, ...]:
+        """The module path parts of a scanned file (``app/models.py`` -> app, models)."""
+        absolute = self._absolute(path)
+        return (
+            absolute.parent.parts
+            if absolute.name == "__init__.py"
+            else absolute.with_suffix("").parts
         )
+
+    def _root_contains(self, module_file: Path, depth: int, importer: Path) -> bool:
+        """Whether ``importer`` lies under the root ``module_file`` is imported from."""
+        dotted = self._dotted(module_file)
         root = dotted[: len(dotted) - depth]
-        return importer.parts[: len(root)] == root
+        return self._absolute(importer).parts[: len(root)] == root
 
     def _fallback_aliases(self) -> Dict[str, ast.expr]:
         """Aliases by name, for names a module does not bind (defined identically everywhere)."""
@@ -306,8 +354,8 @@ class AliasResolver:
         self._fallback = {}  # guards re-entry from an ambiguous import while computing
         found: Dict[str, List[ast.expr]] = {}
         for file in self._trees:
-            for name, binding in self._scope(file, None).items():
-                if binding.kind == "alias" and name not in self._classes:
+            for name, bindings in self._history(file).items():
+                if bindings[-1].kind == "alias" and name not in self._classes:
                     value = self._resolve(file, name, None, ())
                     if value is not None:
                         found.setdefault(name, []).append(value)

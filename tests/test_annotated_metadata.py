@@ -729,13 +729,64 @@ class TestPythonScoping:
         assert (f.is_primary_key, f.index) == (True, False)
 
     def test_still_ambiguous_import_falls_back_by_name(self, tmp_path: Path):
-        for svc in ("svc1", "svc2"):
-            (tmp_path / svc).mkdir()
-            (tmp_path / svc / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
-        (tmp_path / "models.py").write_text(
+        """`coltypes` at the top and in `pkg/` both fit `pkg/models.py`: by name."""
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "models.py").write_text(
             self._model("from coltypes import intpk\n"), encoding="utf-8"
         )
         assert _field(self._parse_tree(tmp_path), "id").is_primary_key
+
+    def test_module_outside_the_import_root_is_not_imported(self, tmp_path: Path):
+        """A scanned `unrelated_pkg/uuid.py` is not what `from uuid import UUID` imports."""
+        (tmp_path / "unrelated_pkg").mkdir()
+        (tmp_path / "unrelated_pkg" / "uuid.py").write_text(
+            self.ALIAS.replace("intpk", "UUID"), encoding="utf-8"
+        )
+        (tmp_path / "models.py").write_text(
+            self._model(
+                "from uuid import UUID\n",
+                "    id: Mapped[int] = mapped_column(primary_key=True)\n    token: Mapped[UUID]\n",
+            ),
+            encoding="utf-8",
+        )
+        token = _field(self._parse_tree(tmp_path), "token")
+        assert (token.type_str, token.is_primary_key) == ("UUID", False)
+
+    def test_absolute_import_with_a_relative_scan_root(self, tmp_path: Path, monkeypatch):
+        """`erdify .` inside `app/` still resolves `from app.coltypes import intpk`."""
+        (tmp_path / "app").mkdir()
+        (tmp_path / "app" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "app" / "models.py").write_text(
+            self._model("from app.coltypes import intpk as Key\n", "    id: Mapped[Key]\n"),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path / "app")
+        entities, _ = parse_models_directory(Path("."), include_patterns=["*.py"])
+        assert _field(entities, "id").is_primary_key
+
+    def test_circular_star_imports_keep_their_bindings(self, tmp_path: Path):
+        (tmp_path / "a.py").write_text(self.ALIAS + "from .b import *\n", encoding="utf-8")
+        (tmp_path / "b.py").write_text("from .a import *\n", encoding="utf-8")
+        (tmp_path / "models.py").write_text(
+            self._model("from .a import *\nfrom .b import intpk as Key\n", "    id: Mapped[Key]\n"),
+            encoding="utf-8",
+        )
+        assert _field(self._parse_tree(tmp_path), "id").is_primary_key
+
+    def test_bare_all_annotation_does_not_reset_all(self, tmp_path: Path):
+        (tmp_path / "coltypes.py").write_text(
+            self.ALIAS + "__all__ = []\n__all__: list[str]\n", encoding="utf-8"
+        )
+        (tmp_path / "models.py").write_text(
+            self._model(
+                "intpk = int\nfrom .coltypes import *\n",
+                "    id: Mapped[int] = mapped_column(primary_key=True)\n    col: Mapped[intpk]\n",
+            ),
+            encoding="utf-8",
+        )
+        assert _field(self._parse_tree(tmp_path), "col").type_str == "intpk"
 
     def test_star_import_of_a_non_alias_blocks_the_fallback(self, tmp_path: Path):
         (tmp_path / "coltypes.py").write_text(self.ALIAS.replace("intpk", "UUID"), encoding="utf-8")
