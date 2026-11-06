@@ -641,3 +641,69 @@ class Child(Left, Right):
 """
         entities = _parse(tmp_path, src)
         assert _field(entities, "Child", "value").type_str == "bytes"
+
+
+class TestDataclassUndecoratedAncestors:
+    """Undecorated classes contribute no dataclass fields, only mixin-only attributes."""
+
+    def test_plain_mixin_does_not_override_a_dataclass_field(self, tmp_path: Path):
+        src = """
+from dataclasses import dataclass
+
+
+class Mixin:
+    value: bytes
+
+
+@dataclass
+class Base:
+    value: int
+
+
+@dataclass
+class Child(Mixin, Base):
+    id: int
+"""
+        assert _field(_parse(tmp_path, src), "Child", "value").type_str == "int"
+
+    def test_undecorated_subclass_exposes_inherited_fields(self, tmp_path: Path):
+        src = """
+from dataclasses import dataclass
+
+
+@dataclass
+class Root:
+    value: str
+
+
+class Left(Root):
+    value: bytes
+
+
+@dataclass
+class Right(Root):
+    value: int
+
+
+@dataclass
+class Child(Left, Right):
+    id: int
+"""
+        # dataclasses.fields(Child) reports value: str (Left exposes Root's fields).
+        assert _field(_parse(tmp_path, src), "Child", "value").type_str == "str"
+
+    def test_mixin_only_attribute_is_still_shown(self, tmp_path: Path):
+        src = """
+from dataclasses import dataclass
+
+
+class AuditMixin:
+    created: str
+
+
+@dataclass
+class Child(AuditMixin):
+    id: int
+"""
+        child = _parse(tmp_path, src)["Child"]
+        assert [f.name for f in child.fields] == ["created", "id"]

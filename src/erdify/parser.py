@@ -1053,19 +1053,56 @@ class ASTDatabaseParser:
         members: Dict[str, _ClassMembers],
         memo: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]],
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
-        """The effective members of a dataclass, as ``dataclasses.fields()`` sees them.
+        """The members of a dataclass entity: ``dataclasses.fields()`` plus mixins.
 
-        A dataclass collects the *effective* fields of each base in reversed
-        MRO, then its own annotations. So in ``Child(Left, Middle)`` an
-        attribute ``Left`` merely inherits still overrides one ``Middle``
-        redeclares, unlike plain attribute lookup.
+        First the stdlib result (:meth:`_effective_dataclass_fields`). Then
+        annotations of undecorated mixins in the hierarchy, which the stdlib
+        ignores but erdify has always shown, fill in only attributes no
+        dataclass declares (the first such mixin in the MRO wins).
+        """
+        fields, rels = self._effective_dataclass_fields(name, members, memo)
+        fields, rels = dict(fields), dict(rels)
+        for base in self._mro(name) or [name]:
+            if self._is_dataclass(self._all_classes[base]):
+                continue
+            base_fields, base_rels, _ = members[base]
+            for attr, field in base_fields.items():
+                if attr not in fields and attr not in rels:
+                    fields[attr] = field
+            for attr, rel in base_rels.items():
+                if attr not in fields and attr not in rels:
+                    rels[attr] = rel
+        return fields, rels
+
+    def _effective_dataclass_fields(
+        self,
+        name: str,
+        members: Dict[str, _ClassMembers],
+        memo: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]],
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """A class's ``__dataclass_fields__``, as the stdlib computes it.
+
+        A decorated class merges each base's ``__dataclass_fields__`` in
+        reversed MRO, then its own annotations. So in ``Child(Left, Middle)``
+        an attribute ``Left`` merely inherits still overrides one ``Middle``
+        redeclares. An undecorated class has no fields of its own: it exposes
+        those of the first decorated class in its MRO.
         """
         if name in memo:
             return memo[name]
         mro = self._mro(name) or [name]
+        if not self._is_dataclass(self._all_classes[name]):
+            owner = next((c for c in mro if self._is_dataclass(self._all_classes[c])), None)
+            result = (
+                self._effective_dataclass_fields(owner, members, memo)
+                if owner is not None
+                else ({}, {})
+            )
+            memo[name] = result
+            return result
         synthetic: Dict[str, _ClassMembers] = {}
         for base in mro[:0:-1]:
-            base_fields, base_rels = self._dataclass_fields(base, members, memo)
+            base_fields, base_rels = self._effective_dataclass_fields(base, members, memo)
             synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels])
         synthetic[name] = members[name]
         result = self._merge_members([*mro[:0:-1], name], synthetic, "dataclass")
