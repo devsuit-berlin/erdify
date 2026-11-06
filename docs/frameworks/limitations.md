@@ -153,7 +153,9 @@ metadata holds a `mapped_column(...)`
 Pydantic's `PositiveInt`) keep their name as the type, a model class of the
 same name wins, and a name defined differently in two places (or rebound to
 something else, including by an import or a chained assignment) is ambiguous
-and ignored. Only SQLAlchemy models read this metadata; SQLModel, Pydantic and
+and ignored. Aliases are matched by name across the scanned files: a model
+module that imports an unrelated object under an alias's name still gets the
+alias. Only SQLAlchemy models read this metadata; SQLModel, Pydantic and
 dataclass fields keep the alias name and get no settings from it. A PEP 695 `type X = ...` alias is
 not read, since SQLAlchemy does not take a `mapped_column()` from it, and
 neither is a subscripted one (`Pk[int]`). A module-qualified name
