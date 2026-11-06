@@ -23,7 +23,7 @@ Before 1.0.0, a minor release may break things. Every break is listed under
 | `[tool.erdify]` keys | Yes | Removing or renaming a key, or changing its default. |
 | pre-commit hook ids (`erdify`, `erdify-check`) | Yes | Removing or renaming an id. |
 | Python API (`erdify.__all__`) | Yes, as defined in [What is public](usage/cli.md#what-is-public) | Removing a name, or an incompatible signature change. |
-| JSON output | Yes, via `schema_version` | See [JSON compatibility](usage/output-formats.md#compatibility). |
+| JSON output | The shape, via `schema_version`; the content follows the parser, like the diagram | See [JSON compatibility](usage/output-formats.md#compatibility). A bug fix that changes the content is not breaking and is listed under **Output changes**. |
 | PlantUML / Mermaid / HTML text | The meaning is stable; the formatting is not | See [below](#diagram-output). |
 | Anything else | No | Submodules (`erdify.parser`, …), names starting with `_`, stderr messages, and the HTML page's markup and styling. |
 

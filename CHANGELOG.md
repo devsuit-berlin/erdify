@@ -46,7 +46,10 @@ edge label becomes `<name>_id`), any Pydantic / dataclass model with an
 optional model reference, and any model whose bases declare the same attribute
 differently. Because a `OneToOneField` is now a foreign-key column, its edge is
 drawn even with `--no-relationships` (like `ForeignKey`), and a `ForeignKey`
-plus a `OneToOneField` to the same model now draw two edges instead of one. `--format json` changes accordingly: `OneToOneField` moves from
+plus a `OneToOneField` to the same model now draw two edges instead of one.
+The JSON changes are content changes, not shape changes, so `schema_version`
+stays `1`; the [JSON compatibility](https://erdify.devsuit.io/usage/output-formats/#compatibility)
+rules now say so explicitly. `--format json` changes accordingly: `OneToOneField` moves from
 `relationships` to `fields`, `foreign_table` names the referenced column for
 Django foreign keys to a non-`id` key, and relationships gain `nullable`. If
 you commit the diagram and gate CI on `--check` (or the `erdify-check`

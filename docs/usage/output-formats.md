@@ -188,6 +188,11 @@ Enum:
   `schema_version` and ships only in a major erdify release.
 - Check `schema_version` before reading the document if your tool must fail
   loudly on an incompatible shape.
+- These rules cover the document's *shape*. Its *content* follows what the
+  parser recognizes: a bug fix may change values or move an item between
+  `fields` and `relationships` (e.g. a Django `OneToOneField` became a
+  `<name>_id` field in 1.2.0). Such changes are listed under **Output changes**
+  in the changelog and do not bump `schema_version`.
 
 ## HTML
 
