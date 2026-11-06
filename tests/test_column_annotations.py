@@ -121,6 +121,8 @@ class TestColumnNullability:
             # A None literal admits None; the string "None" does not.
             ('Literal["a", None]', "Literal['a', None]", True),
             ("Literal[None]", "Literal[None]", True),
+            ('Literal[Literal["a", None], "b"]', "Literal[Literal['a', None], 'b']", True),
+            ('Literal[Literal["None"], "b"]', "Literal[Literal['None'], 'b']", False),
             # None inside a generic argument is the element's, not the column's.
             ("list[int | None]", "list[int | None]", False),
             ("dict[str, Optional[int]]", "dict[str, Optional[int]]", False),

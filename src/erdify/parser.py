@@ -1905,9 +1905,23 @@ class ASTDatabaseParser:
                 prefix = ast.unparse(node.value)
                 return cls._column_union(args, lambda parts: f"{prefix}[{', '.join(parts)}]")
             if name == "Literal":
-                literal_none = any(isinstance(a, ast.Constant) and a.value is None for a in args)
-                return ast.unparse(node), literal_none
+                return ast.unparse(node), cls._literal_admits_none(args)
         return ast.unparse(node), False
+
+    @classmethod
+    def _literal_admits_none(cls, args: List[ast.expr]) -> bool:
+        """``Literal[..., None]``, also nested (``Literal[Literal[None], "a"]``).
+
+        The string ``"None"`` is a value, not ``None``.
+        """
+        for arg in args:
+            if isinstance(arg, ast.Constant) and arg.value is None:
+                return True
+            if isinstance(arg, ast.Subscript):
+                name, inner = cls._subscript_parts(arg)
+                if name == "Literal" and cls._literal_admits_none(inner):
+                    return True
+        return False
 
     @classmethod
     def _column_union(
