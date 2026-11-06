@@ -443,3 +443,53 @@ class Stadium(Venue):
             ("capacity", "int", False, False, False, None),
             ("roof", "bool", False, False, False, None),
         ]
+
+
+class TestInheritedKeys:
+    def test_to_field_id_references_the_parent(self, tmp_path: Path):
+        """A child has no `id` of its own: `to_field="id"` is the parent's implicit key."""
+        entities = _parse(
+            tmp_path,
+            """
+class Parent(models.Model):
+    pass
+
+
+class Child(Parent):
+    pass
+
+
+class Ref(models.Model):
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, to_field="id")
+    parent = models.ForeignKey(Parent, on_delete=models.CASCADE, to_field="id")
+""",
+        )
+        assert _field(entities["Ref"], "child_id").foreign_table == "parent.id"
+        assert _field(entities["Ref"], "parent_id").foreign_table == "parent.id"
+
+    def test_chained_inherited_to_field_keeps_its_type(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Parent(models.Model):
+    slug = models.SlugField(unique=True)
+
+
+class Child(Parent):
+    pass
+
+
+class Bridge(models.Model):
+    child = models.OneToOneField(
+        Child, on_delete=models.CASCADE, to_field="slug", primary_key=True
+    )
+
+
+class Ref(models.Model):
+    bridge = models.ForeignKey(Bridge, on_delete=models.CASCADE)
+""",
+        )
+        bridge = _field(entities["Bridge"], "child_id")
+        assert (bridge.foreign_table, bridge.type_str) == ("parent.slug", "str")
+        ref = _field(entities["Ref"], "bridge_id")
+        assert (ref.foreign_table, ref.type_str) == ("bridge.child_id", "str")

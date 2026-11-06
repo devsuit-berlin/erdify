@@ -484,8 +484,17 @@ class DjangoDialect(Dialect):
                 names.add(attr)
                 if field_type in ("ForeignKey", "OneToOneField"):
                     names.add(f"{attr}_id")
-        for _, link in self._parent_links(node):
+        links = self._parent_links(node)
+        for _, link in links:
             names.update((link, f"{link}_id"))
+        # Django's implicit `id`, when nothing else is the primary key.
+        if not links and not any(
+            self._has_true_kw(call, "primary_key")
+            for class_name in merge_order
+            if class_name in own
+            for _, _, call in self._django_field_calls(self.classes.all[class_name])
+        ):
+            names.add("id")
         return names
 
     @staticmethod
@@ -521,7 +530,12 @@ class DjangoDialect(Dialect):
         node = self.classes.all.get(target)
         if node is None or key in stack:
             return default
-        result = self._resolve_django_target_column(target, node, to_field, stack, default)
+        # A to_field column of a multi-table parent lives in the parent's table (#233).
+        owner = self._column_owner(target, to_field, ()) if to_field is not None else None
+        if owner is not None and owner != target:
+            result = self._django_target_column(owner, to_field, stack + (key,))
+        else:
+            result = self._resolve_django_target_column(target, node, to_field, stack, default)
         self._target_column_cache[key] = result
         return result
 
