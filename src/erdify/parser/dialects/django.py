@@ -1,7 +1,7 @@
 """Django ORM: ``models.Model`` subclasses with ``*Field`` class attributes."""
 
 import ast
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import expr_name
@@ -49,7 +49,13 @@ class DjangoDialect(Dialect):
     """A subclass of Django's ``models.Model``, directly or via ancestors.
 
     An abstract base (``class Meta: abstract = True``) is inherited but not
-    drawn itself, and is not claimed by any other framework.
+    drawn itself, and is not claimed by any other framework; neither is a proxy
+    model (``proxy = True``), which has no table of its own.
+
+    A model subclassing a *concrete* model (multi-table inheritance, #233) gets
+    its own table: its own fields, those of its abstract bases, and a
+    ``<parent>_ptr`` one-to-one link to each direct concrete parent. The first
+    link is the primary key unless the model declares one.
     """
 
     kind = "django"
@@ -62,7 +68,7 @@ class DjangoDialect(Dialect):
         return self._inherits_django_model(class_node)
 
     def is_drawable(self, class_node: ast.ClassDef) -> bool:
-        return not self._meta_flag(class_node, "abstract")
+        return not (self._meta_flag(class_node, "abstract") or self._meta_flag(class_node, "proxy"))
 
     def table_name(self, class_node: ast.ClassDef) -> str | None:
         """``__tablename__`` if set, else ``class Meta: db_table = "..."``."""
@@ -83,6 +89,14 @@ class DjangoDialect(Dialect):
 
     def self_owner(self, name: str, merge_order: List[str]) -> str:
         return self._django_self_owner(name, merge_order)
+
+    def table_classes(self, class_node: ast.ClassDef, names: List[str]) -> Set[str]:
+        """Leave out each concrete parent and its ancestors: they have their own table."""
+        excluded: Set[str] = set()
+        for parent in self._concrete_parents(class_node):
+            parent_node = self.classes.all[parent]
+            excluded.update(self.classes.mro(parent) or self.classes.dfs_order(parent_node, set()))
+        return {name for name in names if name not in excluded}
 
     def drop_on_merge(
         self,
@@ -111,10 +125,11 @@ class DjangoDialect(Dialect):
         self.drop_on_merge(fields, rels, attr, {}, {})
 
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
-        """Add Django's implicit ``id`` primary key when no field declares one."""
+        """Add the parent links and Django's implicit ``id`` primary key."""
         super().finish(entity, class_node)
+        self._add_parent_links(entity, class_node)
         # Django implicitly adds an `id` primary key (BigAutoField since Django 3.2)
-        # when no field declares primary_key=True.
+        # when no field declares primary_key=True and there is no parent link.
         if not any(f.is_primary_key for f in entity.fields):
             entity.fields.insert(
                 0,
@@ -124,6 +139,80 @@ class DjangoDialect(Dialect):
                     is_primary_key=True,
                 ),
             )
+
+    def _concrete_parents(self, class_node: ast.ClassDef) -> List[str]:
+        """The concrete models ``class_node`` directly subclasses, in base order.
+
+        Each one gets a parent link. A proxy base stands for the concrete model
+        it proxies, as in Django.
+        """
+        parents: List[str] = []
+        for base in self.classes.local_bases(class_node):
+            concrete = self._concrete_model(base, ())
+            if concrete is not None and concrete not in parents:
+                parents.append(concrete)
+        return parents
+
+    def _concrete_model(self, name: str, stack: Tuple[str, ...]) -> str | None:
+        """``name`` if it is a concrete model, the model a proxy stands for, else None."""
+        if name in stack or not self._is_concrete_django_model(name):
+            return None
+        node = self.classes.all[name]
+        if not self._meta_flag(node, "proxy"):
+            return name
+        for base in self.classes.local_bases(node):
+            concrete = self._concrete_model(base, stack + (name,))
+            if concrete is not None:
+                return concrete
+        return None
+
+    def _parent_links(self, class_node: ast.ClassDef) -> List[Tuple[str, str]]:
+        """``(parent, link attribute)`` per concrete parent, in base order.
+
+        The link is a ``OneToOneField(parent, parent_link=True)`` the model
+        declares itself, else the implicit ``<parent model name>_ptr``.
+        """
+        explicit: Dict[str, str] = {}
+        for attr, field_type, call in self._django_field_calls(class_node):
+            if field_type == "OneToOneField" and self._has_true_kw(call, "parent_link"):
+                target = self._resolve_django_relationship_target(call, class_node.name)
+                if target is not None:
+                    explicit.setdefault(target, attr)
+        return [
+            (parent, explicit.get(parent, f"{parent.lower()}_ptr"))
+            for parent in self._concrete_parents(class_node)
+        ]
+
+    def _add_parent_links(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
+        """Add a one-to-one link column per concrete parent (multi-table inheritance).
+
+        Like Django, the first link becomes the primary key unless the model
+        declares one; the others are unique one-to-one columns.
+        """
+        has_pk = any(f.is_primary_key for f in entity.fields)
+        added: List[FieldInfo] = []
+        for parent, attr in self._parent_links(class_node):
+            is_pk = not has_pk
+            has_pk = True
+            declared = next((f for f in entity.fields if f.name == f"{attr}_id"), None)
+            if declared is not None:  # an explicit parent_link field
+                if is_pk:
+                    declared.is_primary_key = True
+                    declared.is_unique = False
+                    declared.is_nullable = False
+                continue
+            column, type_str = self._django_target_column(parent, None, ())
+            added.append(
+                FieldInfo(
+                    name=f"{attr}_id",
+                    type_str=type_str,
+                    is_primary_key=is_pk,
+                    is_foreign_key=True,
+                    is_unique=not is_pk,
+                    foreign_table=f"{self._django_target_table(parent)}.{column}",
+                )
+            )
+        entity.fields[0:0] = added
 
     def _inherits_django_model(
         self, class_node: ast.ClassDef, visited: set[str] | None = None
@@ -371,8 +460,13 @@ class DjangoDialect(Dialect):
         """Uncached body of :meth:`_django_target_column`."""
 
         # The winning declaration of each attribute, resolved like the fields (#228).
+        # A concrete parent's fields live in the parent's table (#233).
+        merge_order = self.classes.merge_order(node)
+        own = self.table_classes(node, merge_order)
         declared: Dict[str, Tuple[str, ast.Call, str]] = {}
-        for class_name in self.classes.merge_order(node):
+        for class_name in merge_order:
+            if class_name not in own:
+                continue
             class_node = self.classes.all[class_name]
             for attr in self._django_removed_names(class_node):
                 declared.pop(attr, None)
@@ -394,7 +488,17 @@ class DjangoDialect(Dialect):
                 a for a, (_, call, _) in declared.items() if self._has_true_kw(call, "primary_key")
             ]
             if not pks:
-                return default
+                links = self._parent_links(node)
+                if not links:
+                    return default
+                # The first parent link is the primary key (multi-table inheritance).
+                parent, link = links[0]
+                if link not in declared:  # implicit `<parent>_ptr`
+                    _, ref_type = self._django_target_column(
+                        parent, None, stack + ((target, to_field),)
+                    )
+                    return f"{link}_id", ref_type
+                pks = [link]
             attr = pks[-1]
 
         field_type, call, declaring = declared[attr]

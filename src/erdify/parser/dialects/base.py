@@ -149,6 +149,14 @@ class Dialect:
         """The model a ``"self"`` reference declared in class ``name`` points at."""
         return name
 
+    def table_classes(self, class_node: ast.ClassDef, names: List[str]) -> Set[str]:
+        """Which of ``names`` (the class and its ancestors) store columns in its table.
+
+        All of them by default: a base's members are copied into the model.
+        Django's multi-table inheritance keeps a concrete parent's in its own table.
+        """
+        return set(names)
+
     def drop_on_merge(
         self,
         fields: Dict[str, FieldInfo],
@@ -196,8 +204,14 @@ class Dialect:
         """
         dfs_order = self.classes.dfs_order(class_node, set())
         merge_order = self.classes.merge_order(class_node)
+        own = self.table_classes(class_node, dfs_order)
+        empty: _ClassMembers = ({}, {}, [])
         members = {
-            name: self.class_members(self.classes.all[name], self.self_owner(name, merge_order))
+            name: (
+                self.class_members(self.classes.all[name], self.self_owner(name, merge_order))
+                if name in own
+                else empty
+            )
             for name in dfs_order
         }
         order_fields, order_rels = self.classes.listing_order(class_node, set(), members, self)

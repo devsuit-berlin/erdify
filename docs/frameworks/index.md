@@ -177,7 +177,9 @@ class Order(models.Model):
 
     Mixins / abstract bases (e.g. a SQLAlchemy mixin without `__tablename__`, or a
     Django `class Meta: abstract = True` base) are not drawn as tables, but their
-    columns are inherited into concrete entities. An attribute declared in more
+    columns are inherited into concrete entities. A Django model subclassing a
+    *concrete* model is the exception: it gets its own table linked 1:1 to the
+    parent ([multi-table inheritance](django.md#inheritance)). An attribute declared in more
     than one base resolves like Python's MRO: the class body wins, then the
     first base that declares it.
 

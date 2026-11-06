@@ -1,5 +1,5 @@
 ---
-description: "Django-specific erdify parsing: foreign key mapping, field-to-type mapping, TextChoices enums, abstract bases and Meta.db_table."
+description: "Django-specific erdify parsing: foreign key mapping, field-to-type mapping, TextChoices enums, abstract bases, multi-table inheritance and Meta.db_table."
 ---
 
 # Django ORM
@@ -44,6 +44,34 @@ an abstract base, or the `to_field=` column, and takes that column's type
 (`foreign_table` in [JSON output](../usage/output-formats.md#json)). A target
 outside the parsed files is assumed to reference its implicit `id` (or the
 `to_field=` column), typed as Django's default auto field.
+
+## Inheritance
+
+Inheritance follows Django's three model inheritance styles:
+
+| Base | Result |
+|---|---|
+| Abstract base (`class Meta: abstract = True`) | Not drawn; its fields are copied into each subclass. |
+| Concrete model (**multi-table inheritance**) | The subclass gets its own table with only its own fields (plus those of its abstract bases) and a `<parent>_ptr_id` column: a one-to-one link to the parent, drawn 1:1. The parent's fields stay on the parent. |
+| Proxy model (`class Meta: proxy = True`) | Not drawn: a proxy has no table. A subclass of a proxy links to the model the proxy stands for. |
+
+```python
+class Place(models.Model):
+    name = models.CharField(max_length=50)
+
+
+class Restaurant(Place):             # place_ptr_id PK,FK -> place.id
+    serves_pizza = models.BooleanField()
+```
+
+As in Django, the link is named after the parent's lower-cased class name
+(`OrderItem` → `orderitem_ptr_id`). It is the subclass's primary key unless
+the subclass declares one; with several concrete parents, only the first link
+is the primary key and the others are unique one-to-one columns. An explicit
+`OneToOneField(Place, parent_link=True)` replaces the implicit link. A foreign
+key to the subclass references its link column.
+
+## Relationship targets
 
 Relationship targets are resolved by class name, including `"self"` and
 `"app.Model"` string references. A `ManyToManyField(through=LinkModel)` is drawn
