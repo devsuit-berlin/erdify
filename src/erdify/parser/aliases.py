@@ -77,7 +77,8 @@ class AliasResolver:
         self._views: Dict[Tuple[Path, int | None], Mapping[str, ast.expr]] = {}
         #: Name -> its by-name fallback alias (or None), once known (#254).
         self._fallback: Dict[str, ast.expr | None] = {}
-        self._fallback_names: List[str] | None = None
+        #: Name -> files whose last binding of it may be an alias (built once).
+        self._definers: Dict[str, List[Path]] | None = None
         #: Candidate modules of each ambiguous absolute import.
         self._ambiguous: Dict[Tuple[Path, str | None, int], List[Path]] = {}
         self._suffixes: Dict[Tuple[str, ...], List[Path]] | None = None
@@ -375,18 +376,23 @@ class AliasResolver:
         root = dotted[: len(dotted) - depth]
         return self._absolute(importer).parts[: len(root)] == root
 
+    def _definer_index(self) -> Dict[str, List[Path]]:
+        """Name -> files whose last module-level binding of it may be an alias.
+
+        Built in one pass over the modules; resolving the values stays lazy.
+        """
+        if self._definers is None:
+            definers: Dict[str, List[Path]] = {}
+            for file in self._trees:
+                for name, bindings in self._history(file).items():
+                    if bindings[-1].kind == "alias" and name not in self._classes:
+                        definers.setdefault(name, []).append(file)
+            self._definers = dict(sorted(definers.items()))
+        return self._definers
+
     def _fallback_candidates(self) -> List[str]:
         """Names some scanned module ends up defining as a possible alias."""
-        if self._fallback_names is None:
-            self._fallback_names = sorted(
-                {
-                    name
-                    for file in self._trees
-                    for name, bindings in self._history(file).items()
-                    if bindings[-1].kind == "alias" and name not in self._classes
-                }
-            )
-        return self._fallback_names
+        return list(self._definer_index())
 
     def _agreed_import(
         self, file: Path, binding: _Binding, stack: Tuple[_Lookup, ...]
@@ -424,11 +430,7 @@ class AliasResolver:
 
     def _definitions_of(self, name: str) -> List[Path]:
         """Files whose last module-level binding of ``name`` may be an alias."""
-        return [
-            file
-            for file in self._trees
-            if (bindings := self._history(file).get(name)) and bindings[-1].kind == "alias"
-        ]
+        return self._definer_index().get(name, [])
 
     @staticmethod
     def _agreed(values: List[ast.expr]) -> ast.expr | None:
