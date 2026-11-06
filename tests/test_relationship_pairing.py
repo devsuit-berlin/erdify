@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from erdify.config import EntityInfo, FieldInfo
-from erdify.generator import generate_json, generate_mermaid
+from erdify.generator import generate_json, generate_mermaid, generate_plantuml
 from erdify.parser import parse_models_directory
 
 
@@ -83,13 +83,79 @@ class Tag(Base):
         assert entities["User"].inverse_relationships == {}
 
 
+class TestParserSpellings:
+    def _parse(self, tmp_path: Path, src: str) -> dict[str, EntityInfo]:
+        (tmp_path / "models.py").write_text(src, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return entities
+
+    def test_sqlmodel_back_populates_both_forms(self, tmp_path: Path):
+        entities = self._parse(
+            tmp_path,
+            """
+from sqlmodel import Field, Relationship, SQLModel
+
+
+class Team(SQLModel, table=True):
+    id: int = Field(primary_key=True)
+    heroes: list["Hero"] = Relationship(back_populates="team")
+    leaders: list["Hero"] = Relationship(sa_relationship_kwargs={"back_populates": "led"})
+
+
+class Hero(SQLModel, table=True):
+    id: int = Field(primary_key=True)
+    team: "Team" = Relationship(back_populates="heroes")
+    led: "Team" = Relationship()
+""",
+        )
+        assert entities["Team"].inverse_relationships == {"heroes": "team", "leaders": "led"}
+        assert entities["Hero"].inverse_relationships == {"team": "heroes"}
+
+    MIXIN = """
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class AuthoredMixin:
+    author: Mapped["User"] = relationship(back_populates="posts")
+
+
+class User(Base):
+    __tablename__ = "user"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    posts: Mapped[list["Post"]] = relationship(back_populates="author")
+
+
+class Post(AuthoredMixin, Base):
+    __tablename__ = "post"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Draft(AuthoredMixin, Base):
+    __tablename__ = "draft"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author: Mapped["User"] = relationship()
+"""
+
+    def test_mixin_carries_back_populates(self, tmp_path: Path):
+        assert self._parse(tmp_path, self.MIXIN)["Post"].inverse_relationships == {
+            "author": "posts"
+        }
+
+    def test_redeclaration_without_back_populates_drops_it(self, tmp_path: Path):
+        assert self._parse(tmp_path, self.MIXIN)["Draft"].inverse_relationships == {}
+
+
 class TestExplicitPairing:
     """``back_populates`` pairs exactly where the guess would pair wrongly."""
 
     @staticmethod
     def _entities(explicit: bool) -> dict[str, EntityInfo]:
-        post_inverse = {"editor": "edited_post", "author": "authored_posts"} if explicit else {}
-        user_inverse = {"authored_posts": "author", "edited_post": "editor"} if explicit else {}
+        post_inverse = {"editor": "edited_post", "writer": "authored_posts"} if explicit else {}
+        user_inverse = {"authored_posts": "writer", "edited_post": "editor"} if explicit else {}
         return {
             "User": _entity(
                 "User",
@@ -101,35 +167,51 @@ class TestExplicitPairing:
             "Post": _entity(
                 "Post",
                 ("User", "one", "editor"),
-                ("User", "one", "author"),
+                ("User", "one", "writer"),
                 nullable=("editor",),
                 inverse=post_inverse,
             ),
         }
 
     def test_guess_without_back_populates(self):
-        # The guess pairs the first N:1 with the first 1:N, which here is wrong.
+        # The guess pairs the N:1 sorting first with the 1:N, which here is wrong.
         assert _edges(generate_mermaid(self._entities(explicit=False))) == [
             'Post }o--o| User : "editor"',
-            'Post |o--|| User : "author"',
+            'Post |o--|| User : "writer"',
         ]
 
     def test_back_populates_pairs_exactly(self):
         assert _edges(generate_mermaid(self._entities(explicit=True))) == [
             'Post |o--o| User : "editor"',  # with User.edited_post: 1:1, optional both ways
-            'Post }o--|| User : "author"',  # with User.authored_posts: N:1
+            'Post }o--|| User : "writer"',  # with User.authored_posts: N:1
         ]
 
-    def test_explicit_inverse_is_not_taken_by_the_guess(self):
-        """A side naming another attribute is never folded into a guessed pair."""
+    def test_inverse_naming_a_missing_attribute_is_guessed(self):
+        """A stale or misspelled back_populates falls back to the guess."""
         entities = {
-            "User": _entity("User", ("Post", "many", "posts"), inverse={"posts": "missing"}),
+            "User": _entity("User", ("Post", "many", "posts"), inverse={"posts": "writer"}),
             "Post": _entity("Post", ("User", "one", "user")),
         }
-        assert _edges(generate_mermaid(entities)) == [
-            'User ||--o{ Post : "posts"',
-            'Post }o--|| User : "user"',
+        assert _edges(generate_mermaid(entities)) == ['Post }o--|| User : "user"']
+
+    def test_inverse_naming_a_taken_attribute_is_not_guessed(self):
+        """Two sides claiming the same partner: the mutual one wins, the other stays alone."""
+        entities = {
+            "A": _entity(
+                "A",
+                ("B", "many", "x"),
+                ("B", "many", "x2"),
+                inverse={"x": "y", "x2": "y"},
+            ),
+            "B": _entity("B", ("A", "one", "y"), nullable=("y",), inverse={"y": "x2"}),
+        }
+        expected = [
+            'A ||--o{ B : "x"',  # its partner is taken: drawn alone, not guessed
+            'A |o--o{ B : "x2"',  # mutual with B.y (optional)
         ]
+        assert _edges(generate_mermaid(entities)) == expected
+        reordered = {"B": entities["B"], "A": entities["A"]}
+        assert _edges(generate_mermaid(reordered)) == expected
 
     def test_self_reference_back_populates(self):
         entities = {
@@ -171,3 +253,64 @@ class TestMergedEnds:
         forward = _edges(generate_mermaid({"User": user, "Post": post}))
         backward = _edges(generate_mermaid({"Post": post, "User": user}))
         assert forward == backward == ['Post }o--o| User : "user"']
+
+
+class TestMoreSpellings:
+    def test_one_sided_back_populates(self):
+        entities = {
+            "User": _entity("User", ("Post", "many", "items"), inverse={"items": "owner"}),
+            "Post": _entity("Post", ("User", "one", "owner"), ("User", "one", "user")),
+        }
+        # Without back_populates the guess would fold `user` (named after User).
+        assert _edges(generate_mermaid(entities)) == [
+            'Post }o--|| User : "owner"',
+            'Post }o--|| User : "user"',
+        ]
+        out = generate_mermaid(entities)
+        assert 'User ||--o{ Post : "items"' not in out
+
+    def test_self_reference_guess_is_independent_of_declaration_order(self):
+        def node(*rels: tuple[str, str, str]) -> dict[str, EntityInfo]:
+            return {"Node": _entity("Node", *rels, nullable=("parent",))}
+
+        children_first = node(("Node", "many", "children"), ("Node", "one", "parent"))
+        parent_first = node(("Node", "one", "parent"), ("Node", "many", "children"))
+        assert (
+            _edges(generate_mermaid(children_first))
+            == _edges(generate_mermaid(parent_first))
+            == ['Node |o--o{ Node : "children"']
+        )
+
+    def test_irregular_plural_counts_as_named(self):
+        """``Product.categories`` is named after ``Category``: it wins over ``archived``."""
+        entities = {
+            "Category": _entity("Category", ("Product", "one", "product")),
+            "Product": _entity(
+                "Product",
+                ("Category", "many", "archived"),
+                ("Category", "many", "categories"),
+            ),
+        }
+        assert _edges(generate_mermaid(entities)) == [
+            'Category }o--|| Product : "product"',  # folded with Product.categories
+            'Product ||--o{ Category : "archived"',
+        ]
+
+    def test_nullable_non_one_kinds_do_not_crash(self):
+        """A hand-built IR may list any attribute as nullable; only `one` uses it."""
+        entities = {
+            "A": _entity("A", ("B", "one_to_one", "b"), nullable=("b",)),
+            "B": _entity("B", ("A", "many", "a"), nullable=("a",)),
+        }
+        assert _edges(generate_mermaid(entities)) == ['A }o--|| B : "b"']
+
+    def test_plantuml_uses_the_same_merged_edges(self):
+        entities = {
+            "A": _entity("A", ("B", "many", "tags")),
+            "B": _entity("B", ("A", "many", "items")),
+            "Post": _entity("Post", ("User", "one", "user"), nullable=("user",)),
+            "User": _entity("User", ("Post", "many", "posts"), ("Post", "one", "pinned")),
+        }
+        out = generate_plantuml(entities)
+        assert 'A }o--o{ B : "tags"' in out
+        assert 'Post }o--o| User : "user"' in out

@@ -3,7 +3,7 @@
 import html
 import json
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 from .config import EntityInfo, EnumInfo, FieldInfo
 
@@ -186,18 +186,34 @@ class _ERGenerator:
         """
         return re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", name).lower()
 
+    #: Crow's-foot end at the target for what a relationship declares about
+    #: it: (kind, nullable) -> token, written on the target's side.
+    _TARGET_END = {
+        ("one", False): "||",
+        ("one", True): "o|",
+        ("many", False): "o{",
+        ("one_to_one", False): "||",
+        ("many_to_many", False): "o{",
+    }
+    #: The source end when only one side is declared: kind -> token.
+    _DEFAULT_SOURCE_END = {"one": "}o", "many": "||", "one_to_one": "||", "many_to_many": "}o"}
+
     @staticmethod
-    def _declared_line(entity: EntityInfo, target: str, rel_type: str, attr: str) -> str:
-        """The edge for one declared relationship of ``entity``."""
-        if rel_type == "many":
-            return f'{entity.name} ||--o{{ {target} : "{attr}"'
-        if rel_type == "one_to_one":
-            return f'{entity.name} ||--|| {target} : "{attr}"'
-        if rel_type == "many_to_many":
-            return f'{entity.name} }}o--o{{ {target} : "{attr}"'
-        if attr in entity.nullable_relationships:  # optional "one" (#223)
-            return f'{entity.name} }}o--o| {target} : "{attr}"'
-        return f'{entity.name} }}o--|| {target} : "{attr}"'  # "one"
+    def _mirror(token: str) -> str:
+        """The same end written on the other side of ``--`` (``o{`` -> ``}o``)."""
+        return token[::-1].replace("{", "}")
+
+    def _end(self, entity: EntityInfo, kind: str, attr: str) -> str:
+        """The target end of ``entity.attr``; only a ``one`` reference can be optional."""
+        if kind not in self._DEFAULT_SOURCE_END:
+            kind = "one"
+        nullable = kind == "one" and attr in entity.nullable_relationships  # #223
+        return self._TARGET_END[(kind, nullable)]
+
+    def _declared_line(self, entity: EntityInfo, target: str, rel_type: str, attr: str) -> str:
+        """The edge for one declared relationship of ``entity``, other side undeclared."""
+        source = self._DEFAULT_SOURCE_END.get(rel_type, self._DEFAULT_SOURCE_END["one"])
+        return f'{entity.name} {source}--{self._end(entity, rel_type, attr)} {target} : "{attr}"'
 
     def _declared_relationship_lines(
         self, fk_pairs: "set[frozenset[str]]", link_pairs: "set[frozenset[str]]"
@@ -248,66 +264,92 @@ class _ERGenerator:
     ) -> Dict[int, int]:
         """Pair the relationships between one pair of entities: kept index -> folded index.
 
-        A side that names its inverse (``back_populates=``, #240) is paired with
-        exactly that attribute. The rest, which do not, are paired by guess:
-        each relationship of the first side (entity name sorting first) folds
-        at most one relationship declared back from the other side, preferring
-        the inverse cardinality (``many`` for ``one`` and vice versa) and
-        attributes named after the class they point at (``Post.user`` /
-        ``User.posts``), else the first one left. A self-reference
-        has no "other side": there an explicit pair keeps the earlier
-        declaration, and the guess only folds an N:1 / 1:N inverse
-        (``parent`` / ``children``), so two references of the same cardinality
+        1. **Explicit** (#240): a side naming its inverse (``back_populates=``)
+           pairs with that attribute of the other side, mutual declarations
+           first. One naming an attribute the other side does not declare is
+           guessed like the rest.
+        2. **Guessed**: each relationship of the first side (the entity whose
+           name sorts first) folds at most one relationship declared back
+           from the other side, best candidates first: the inverse
+           cardinality (``many`` for ``one`` and vice versa) with attributes
+           named after the class they point at on both sides (``Post.user`` /
+           ``User.posts``), then on one side, then any inverse cardinality,
+           then (not for a self-reference) anything left.
+
+        Equal candidates are tried in declaration order within each entity, the
+        first side before the other, so the file (entity) order never changes
+        the result. The kept side is the first side's relationship; for a
+        self-reference, the attribute whose name sorts first. A self-reference
+        only folds an N:1 / 1:N inverse (``parent`` / ``children``): two
+        references of the same cardinality
         (``friends`` / ``blocked``, both M:N) stay two edges.
         """
 
+        def attr(i: int) -> str:
+            return rels[i][3]
+
         def inverse_of(i: int) -> str | None:
-            entity, _, _, attr = rels[i]
-            return entity.inverse_relationships.get(attr)
+            return rels[i][0].inverse_relationships.get(attr(i))
+
+        def by_attr(idx: Iterable[int]) -> List[int]:
+            return sorted(idx, key=attr)
 
         names = sorted({rels[i][0].name for i in indices} | {rels[i][1] for i in indices})
         first = names[0]
         self_ref = len(names) == 1
-        side_a = [i for i in indices if rels[i][0].name == first]
-        side_b = side_a if self_ref else [i for i in indices if rels[i][0].name != first]
+        side_a = {i for i in indices if rels[i][0].name == first}
+        side_b = side_a if self_ref else set(indices) - side_a
         pairs: Dict[int, int] = {}
         used: set[int] = set()
 
+        def other_side(i: int) -> "set[int]":
+            return side_b if i in side_a else side_a
+
         def pair(i: int, j: int) -> None:
-            keep, fold = (min(i, j), max(i, j)) if self_ref else (i, j)
+            if self_ref:
+                keep, fold = by_attr((i, j))
+            else:
+                keep, fold = (i, j) if i in side_a else (j, i)
             pairs[keep] = fold
             used.update((i, j))
 
-        # Explicit: the side names its inverse.
-        for i in indices:
-            inverse = inverse_of(i)
-            if i in used or inverse is None:
-                continue
-            other_side = side_b if i in side_a else side_a
-            j = next(
-                (j for j in other_side if j != i and j not in used and rels[j][3] == inverse),
-                None,
-            )
-            if j is not None:
-                pair(i, j) if i in side_a else pair(j, i)
+        # 1. Explicit: mutual back_populates first, then one-sided ones.
+        for mutual in (True, False):
+            for i in [*sorted(side_a), *sorted(side_b - side_a)]:
+                inverse = inverse_of(i)
+                if i in used or inverse is None:
+                    continue
+                j = next(
+                    (
+                        j
+                        for j in sorted(other_side(i))
+                        if j != i
+                        and j not in used
+                        and attr(j) == inverse
+                        and (inverse_of(j) == attr(i) if mutual else inverse_of(j) is None)
+                    ),
+                    None,
+                )
+                if j is not None:
+                    pair(i, j)
 
-        # Guessed: neither side names an inverse. Best candidates first, so the
-        # result does not depend on which side is drawn: an exact inverse
-        # cardinality whose attributes are named after the class they point at
-        # on both sides (`Post.user` / `User.posts`), then on one side, then
-        # any exact inverse, then (not for a self-reference) anything left.
-        free_a = [i for i in side_a if i not in used and inverse_of(i) is None]
-        free_b = [j for j in side_b if j not in used and inverse_of(j) is None]
+        # 2. Guessed: everything not paired whose inverse (if named) does not exist.
+        def guessable(i: int) -> bool:
+            inverse = inverse_of(i)
+            return i not in used and (
+                inverse is None or not any(attr(j) == inverse for j in other_side(i))
+            )
+
+        plural_names = {name: self._class_attr_names(name) for name in names}
 
         def exact(i: int, j: int) -> bool:
             return rels[j][2] == self._INVERSE_KIND[rels[i][2]]
 
         def named(i: int, j: int) -> int:
-            def after(attr: str, cls: str) -> bool:
-                return attr in (self._snake_case(cls), self._snake_case(cls) + "s")
-
             entity_i, target_i, _, attr_i = rels[i]
-            return int(after(attr_i, target_i)) + int(after(rels[j][3], entity_i.name))
+            return int(attr_i in plural_names[target_i]) + int(
+                attr(j) in plural_names[entity_i.name]
+            )
 
         tiers = [
             lambda i, j: exact(i, j) and named(i, j) == 2,
@@ -316,41 +358,28 @@ class _ERGenerator:
         ]
         if not self_ref:
             tiers.append(lambda i, j: True)
+        free_a = [i for i in sorted(side_a) if guessable(i)]
+        free_b = [j for j in sorted(side_b) if guessable(j)]
         for fits in tiers:
             for i in free_a:
                 if i in used:
                     continue
                 if self_ref and self._INVERSE_KIND[rels[i][2]] == rels[i][2]:
                     continue  # two M:N / 1:1 self-references are two relationships
-                j = next(
-                    (
-                        j
-                        for j in free_b
-                        if j not in used and j != i and (not self_ref or j > i) and fits(i, j)
-                    ),
-                    None,
-                )
+                j = next((j for j in free_b if j not in used and j != i and fits(i, j)), None)
                 if j is not None:
                     pair(i, j)
         return pairs
 
-    #: Crow's-foot end at the *left* entity for what the right entity declares
-    #: about it: (kind, nullable) -> token.
-    _LEFT_END = {
-        ("one", False): "||",
-        ("one", True): "|o",
-        ("many", False): "}o",
-        ("one_to_one", False): "||",
-        ("many_to_many", False): "}o",
-    }
-    #: Crow's-foot end at the *right* entity for what the left entity declares.
-    _RIGHT_END = {
-        ("one", False): "||",
-        ("one", True): "o|",
-        ("many", False): "o{",
-        ("one_to_one", False): "||",
-        ("many_to_many", False): "o{",
-    }
+    def _class_attr_names(self, name: str) -> "set[str]":
+        """Attribute names that refer to class ``name``: ``user``, ``users``, ``categories``."""
+        snake = self._snake_case(name)
+        names = {snake, snake + "s"}
+        if snake.endswith("y") and snake[-2:-1] not in ("a", "e", "i", "o", "u", ""):
+            names.add(snake[:-1] + "ies")
+        elif snake.endswith(("s", "x", "z", "ch", "sh")):
+            names.add(snake + "es")
+        return names
 
     def _merged_line(
         self,
@@ -360,8 +389,8 @@ class _ERGenerator:
         """One edge for both sides of a relationship; each end from its own side (#239)."""
         entity, target, kind, attr = kept
         other, _, other_kind, other_attr = folded
-        left = self._LEFT_END[(other_kind, other_attr in other.nullable_relationships)]
-        right = self._RIGHT_END[(kind, attr in entity.nullable_relationships)]
+        left = self._mirror(self._end(other, other_kind, other_attr))
+        right = self._end(entity, kind, attr)
         return f'{entity.name} {left}--{right} {target} : "{attr}"'
 
     def _relationship_lines(self) -> List[str]:

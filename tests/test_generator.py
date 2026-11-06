@@ -564,7 +564,8 @@ class TestDistinctReferencesToSameModel:
                 nullable=("parent",),
             ),
         }
-        assert _edges(generate_mermaid(entities)) == ['Node }o--o| Node : "parent"']
+        # Kept: the attribute sorting first, whatever the declaration order.
+        assert _edges(generate_mermaid(entities)) == ['Node |o--o{ Node : "children"']
 
     def test_self_reference_extra_reference_drawn(self):
         entities = {
@@ -577,7 +578,7 @@ class TestDistinctReferencesToSameModel:
             ),
         }
         assert _edges(generate_mermaid(entities)) == [
-            'Node }o--o| Node : "parent"',
+            'Node |o--o{ Node : "children"',
             'Node }o--|| Node : "owner"',
         ]
 

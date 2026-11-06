@@ -210,14 +210,29 @@ class AnnotatedDialect(Dialect):
         # can be paired exactly (#240). backref= creates that side implicitly,
         # so there is no second declaration to pair with.
         if isinstance(node.value, ast.Call):
-            for kw in node.value.keywords:
-                if (
-                    kw.arg == "back_populates"
-                    and isinstance(kw.value, ast.Constant)
-                    and isinstance(kw.value.value, str)
-                ):
-                    rel = rel._replace(inverse=kw.value.value)
+            inverse = self._back_populates(node.value)
+            if inverse is not None:
+                rel = rel._replace(inverse=inverse)
         return rel
+
+    @staticmethod
+    def _back_populates(call: ast.Call) -> str | None:
+        """``back_populates="x"``, also SQLModel's ``sa_relationship_kwargs={...}`` form."""
+        for kw in call.keywords:
+            value = kw.value
+            if kw.arg == "back_populates":
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    return value.value
+            elif kw.arg == "sa_relationship_kwargs" and isinstance(value, ast.Dict):
+                for key, item in zip(value.keys, value.values):
+                    if (
+                        isinstance(key, ast.Constant)
+                        and key.value == "back_populates"
+                        and isinstance(item, ast.Constant)
+                        and isinstance(item.value, str)
+                    ):
+                        return item.value
+        return None
 
     def _parse_model_reference(self, node: ast.AnnAssign) -> _Rel | None:
         """Treat a field typed as another known model as a relationship.

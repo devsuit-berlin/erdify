@@ -20,10 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Both sides of a relationship are drawn as one edge whose ends each show what
   their own side declares. A list on both sides is now `}o--o{` (was 1:N), and
   an optional reference keeps its `o|` when the other side is a list.
-  `back_populates=` pairs the two sides exactly; elsewhere they are still
-  paired by cardinality and name, now preferring attributes named after the
-  class on *either* side. The edge is drawn from the model whose name sorts
-  first, so renaming or moving a file no longer changes it
+  `back_populates=` (also SQLModel's `sa_relationship_kwargs`) pairs the two
+  sides exactly; elsewhere they are still paired by cardinality and name, now
+  preferring attributes named after the class on *either* side (including
+  plurals like `categories`). The edge is drawn from the model whose name
+  sorts first (for a self-reference, the attribute whose name sorts first), so
+  renaming or moving a file no longer changes its text
   ([#239](https://github.com/devsuit-berlin/erdify/issues/239),
   [#240](https://github.com/devsuit-berlin/erdify/issues/240)).
 
@@ -33,7 +35,11 @@ The #239 fix changes every relationship declared on both models (e.g.
 Pydantic / dataclass `User.posts` with `Post.user`): the edge is now drawn
 from the model whose name sorts first, labelled with that side's attribute,
 and its ends combine both sides (`Warehouse ||--o{ Item : "items"` becomes
-`Item }o--o| Warehouse : "warehouse"` when `Item.warehouse` is optional).
+`Item }o--o| Warehouse : "warehouse"` when `Item.warehouse` is optional). A
+self-reference is labelled with the attribute whose name sorts first
+(`Node }o--o| Node : "parent"` becomes `Node |o--o{ Node : "children"`), and
+two references guessed to be a 1:1 (`User.profile` / `Profile.user`) are
+drawn `||--||`.
 `--format json` gains the `inverse` key on every relationship. If you gate CI
 on `--check`, regenerate the diagram once after upgrading.
 
