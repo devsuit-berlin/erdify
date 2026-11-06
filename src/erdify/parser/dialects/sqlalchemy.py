@@ -30,6 +30,7 @@ class SQLAlchemyDialect(AnnotatedDialect):
     """
 
     kind = "sqlalchemy"
+    reads_annotated_columns = True
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         return has_tablename(class_node) and has_mapped_field(class_node)

@@ -21,6 +21,8 @@ class ParseContext:
         base_classes: Extra base-class names treated as Pydantic models.
         dialects: One instance of every dialect, in ``MODEL_SOURCES`` order;
             created on first use.
+        aliases: Module-level ``Annotated`` type aliases by name
+            (``intpk = Annotated[int, mapped_column(primary_key=True)]``, #241).
     """
 
     classes: ClassIndex = field(default_factory=lambda: ClassIndex({}))
@@ -28,6 +30,7 @@ class ParseContext:
     django_raw_types: bool = False
     base_classes: Set[str] = field(default_factory=set)
     dialects: List["Dialect"] = field(default_factory=list)
+    aliases: Dict[str, ast.expr] = field(default_factory=dict)
 
     def all_dialects(self) -> List["Dialect"]:
         """Every dialect, in classification order, bound to this context."""
@@ -73,6 +76,9 @@ class Dialect:
     #: typed as another model is a relationship, and an optional primary key
     #: really is optional.
     keyless: ClassVar[bool] = False
+    #: Reads SQLAlchemy column settings from ``Annotated`` metadata and column
+    #: type aliases (#241); only SQLAlchemy itself does.
+    reads_annotated_columns: ClassVar[bool] = False
 
     def __init__(self, ctx: ParseContext):
         self.ctx = ctx

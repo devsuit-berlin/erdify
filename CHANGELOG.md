@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SQLAlchemy column settings in `Annotated` metadata are read: a
+  `mapped_column(...)` inside `Mapped[Annotated[int, mapped_column(primary_key=True)]]` sets the
+  primary key, foreign key (`ForeignKey(...)`), `unique`, `index`, `nullable`
+  and default. As in SQLAlchemy, the first one in the metadata is merged with
+  an assigned `mapped_column()`: what the assigned call sets wins, except that
+  `primary_key=True` from either sticks. Column type aliases
+  (`intpk = Annotated[int, mapped_column(primary_key=True)]`, also
+  `X: TypeAlias = ...`) are resolved from any scanned file, so
+  `id: Mapped[intpk]` is a primary key typed `int` (was a plain column typed
+  `intpk`). Aliases without a `mapped_column()` keep their name, a name
+  defined differently in two places (or rebound, e.g. by an import) is
+  ignored, and other frameworks (SQLModel, Pydantic, dataclasses), which do not
+  read `mapped_column()` metadata, are unaffected
+  ([#241](https://github.com/devsuit-berlin/erdify/issues/241)).
 - Both sides of a relationship are drawn as one edge whose ends each show what
   their own side declares. A list on both sides is now `}o--o{` (was 1:N), and
   an optional reference keeps its `o|` when the other side is a list.
@@ -41,7 +55,11 @@ self-reference is labelled with the attribute whose name sorts first
 (`Node }o--o| Node : "parent"` becomes `Node |o--o{ Node : "children"`), and
 two references guessed to be a 1:1 (`User.profile` / `Profile.user`) are
 drawn `||--||`.
-`--format json` gains the `inverse` key on every relationship. If you gate CI
+`--format json` gains the `inverse` key on every relationship. The #241 fix
+turns columns declared through `Annotated` metadata or a column type alias
+into the keys they declare (a model with only `id: Mapped[intpk]` gains its
+primary key) and shows the alias's underlying type (`int`, not `intpk`). Other
+`Annotated` aliases, such as Pydantic constraint types, are unchanged. If you gate CI
 on `--check`, regenerate the diagram once after upgrading.
 
 ## [1.3.0] - 2026-11-06

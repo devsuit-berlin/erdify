@@ -7,10 +7,17 @@ and in which of these member kinds they accept.
 """
 
 import ast
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from ...config import FieldInfo
-from ..annotations import annotation_reference, as_rel, column_type, is_call_to
+from ..annotations import (
+    annotation_reference,
+    as_rel,
+    column_metadata,
+    column_type,
+    expand_aliases,
+    is_call_to,
+)
 from ..common import _Rel
 from .base import Dialect
 
@@ -33,6 +40,8 @@ class AnnotatedDialect(Dialect):
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 field_name = node.target.id
+                if self.reads_annotated_columns:
+                    node = self._with_aliases_expanded(node)
 
                 # Skip special attributes
                 if field_name.startswith("_"):
@@ -65,6 +74,27 @@ class AnnotatedDialect(Dialect):
 
         return fields, relationships
 
+    @staticmethod
+    def _declares_default(value: ast.expr | None) -> bool:
+        """Whether the assigned value sets a default, even one that cannot be shown."""
+        if value is None:
+            return False
+        if not is_call_to(value, "mapped_column"):
+            return True  # `x: Mapped[str] = "a"` (MappedAsDataclass)
+        return any(
+            kw.arg in ("default", "default_factory", "insert_default") for kw in value.keywords
+        )
+
+    def _with_aliases_expanded(self, node: ast.AnnAssign) -> ast.AnnAssign:
+        """``node`` with column type aliases in its annotation expanded (#241)."""
+        annotation = expand_aliases(node.annotation, self.ctx.aliases)
+        if annotation is node.annotation:
+            return node
+        expanded = ast.AnnAssign(
+            target=node.target, annotation=annotation, value=node.value, simple=node.simple
+        )
+        return ast.copy_location(expanded, node)
+
     def _parse_field(self, node: ast.AnnAssign) -> FieldInfo | None:
         """Parse a field from an annotated assignment."""
         if not isinstance(node.target, ast.Name):
@@ -73,42 +103,59 @@ class AnnotatedDialect(Dialect):
         field_name = node.target.id
         type_str, is_nullable = column_type(node.annotation)
 
-        # Parse Field() / mapped_column() parameters
+        # As in SQLAlchemy, the first mapped_column() in the Annotated metadata
+        # (#241) is merged with the assigned Field() (SQLModel) / mapped_column()
+        # (SQLAlchemy), bare or qualified (e.g. orm.mapped_column): what the
+        # assigned call sets wins, except that primary_key=True from either
+        # sticks. SQLModel ignores Field() keys in Annotated metadata.
+        metadata_calls = (
+            [
+                call
+                for call in column_metadata(node.annotation)
+                if is_call_to(call, "mapped_column")
+            ][:1]
+            if self.reads_annotated_columns
+            else []
+        )
+        calls: List[ast.Call] = list(metadata_calls)
+        if node.value is not None and (
+            is_call_to(node.value, "Field") or is_call_to(node.value, "mapped_column")
+        ):
+            calls.append(node.value)
+
         is_primary_key = False
         is_foreign_key = False
         foreign_table = None
         index = False
         is_unique = False
-
-        if node.value and isinstance(node.value, ast.Call):
-            # Field() (SQLModel) / mapped_column() (SQLAlchemy), bare or qualified
-            # (e.g. orm.mapped_column).
-            if is_call_to(node.value, "Field") or is_call_to(node.value, "mapped_column"):
-                for keyword in node.value.keywords:
-                    if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
-                        is_primary_key = bool(keyword.value.value)
-                    elif keyword.arg == "foreign_key" and isinstance(keyword.value, ast.Constant):
-                        is_foreign_key = True
-                        foreign_table = str(keyword.value.value)
-                    elif keyword.arg == "index" and isinstance(keyword.value, ast.Constant):
-                        index = bool(keyword.value.value)
-                    elif keyword.arg == "unique" and isinstance(keyword.value, ast.Constant):
-                        is_unique = bool(keyword.value.value)
-                    elif (
-                        keyword.arg == "nullable"
-                        and isinstance(keyword.value, ast.Constant)
-                        and isinstance(keyword.value.value, bool)
-                    ):
-                        # An explicit nullable=True/False is what the database gets
-                        # and overrides the annotation; nullable=None means
-                        # "unspecified", so the annotation still decides.
-                        is_nullable = keyword.value.value
-
-                # SQLAlchemy: ForeignKey("table.col") passed to mapped_column()
-                fk_target = extract_foreign_key_arg(node.value)
-                if fk_target is not None:
+        for call in calls:
+            for keyword in call.keywords:
+                if isinstance(keyword.value, ast.Constant) and keyword.value.value is None:
+                    continue  # `index=None` etc. means "unspecified" in SQLAlchemy
+                if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
+                    is_primary_key = is_primary_key or bool(keyword.value.value)
+                elif keyword.arg == "foreign_key" and isinstance(keyword.value, ast.Constant):
                     is_foreign_key = True
-                    foreign_table = fk_target
+                    foreign_table = str(keyword.value.value)
+                elif keyword.arg == "index" and isinstance(keyword.value, ast.Constant):
+                    index = bool(keyword.value.value)
+                elif keyword.arg == "unique" and isinstance(keyword.value, ast.Constant):
+                    is_unique = bool(keyword.value.value)
+                elif (
+                    keyword.arg == "nullable"
+                    and isinstance(keyword.value, ast.Constant)
+                    and isinstance(keyword.value.value, bool)
+                ):
+                    # An explicit nullable=True/False is what the database gets
+                    # and overrides the annotation; nullable=None means
+                    # "unspecified", so the annotation still decides.
+                    is_nullable = keyword.value.value
+
+            # SQLAlchemy: ForeignKey("table.col") passed to mapped_column()
+            fk_target = extract_foreign_key_arg(call)
+            if fk_target is not None:
+                is_foreign_key = True
+                foreign_table = fk_target
 
         # Optional name-based key inference for keyless sources (Pydantic/dataclass).
         # Never overrides explicitly declared keys above.
@@ -121,6 +168,12 @@ class AnnotatedDialect(Dialect):
 
         # Extract default value
         default_value = self._extract_default_value(node)
+        for call in metadata_calls:  # only when nothing assigned declares a default
+            if self._declares_default(node.value):
+                break
+            default_value = self._extract_default_value(
+                ast.AnnAssign(target=node.target, annotation=node.annotation, value=call, simple=1)
+            )
 
         # A primary key is never NULL in the database. SQLModel's idiomatic
         # `id: int | None = Field(default=None, primary_key=True)` only means
