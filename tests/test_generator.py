@@ -3,7 +3,15 @@
 import json
 from pathlib import Path
 
-from erdify.generator import PlantUMLGenerator, generate_plantuml, generate_json, generate_mermaid
+import pytest
+
+from erdify.generator import (
+    PlantUMLGenerator,
+    generate_html,
+    generate_json,
+    generate_mermaid,
+    generate_plantuml,
+)
 from erdify.parser import parse_models_directory
 from erdify.config import EntityInfo, FieldInfo
 
@@ -418,3 +426,184 @@ def test_json_nullable_only_for_one():
     doc = json.loads(generate_json(entities))
     rels = doc["entities"][0]["relationships"]
     assert {r["attribute"]: r["nullable"] for r in rels} == {"b": True, "c": False, "ds": False}
+
+
+def _edges(output: str) -> list[str]:
+    """The relationship lines of a PlantUML or Mermaid diagram, stripped."""
+    return [line.strip() for line in output.splitlines() if "--" in line and " : " in line]
+
+
+def _entity(name: str, *relationships: tuple[str, str, str], nullable: tuple[str, ...] = ()):
+    return EntityInfo(
+        name=name,
+        table_name=name.lower(),
+        fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        relationships=list(relationships),
+        source="pydantic",
+        nullable_relationships=list(nullable),
+    )
+
+
+class TestNoRelationships:
+    """``include_relationships=False`` hides every edge in every format (#232)."""
+
+    @staticmethod
+    def _entities() -> dict[str, EntityInfo]:
+        user = EntityInfo(
+            name="User",
+            table_name="user",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        )
+        group = EntityInfo(
+            name="Group",
+            table_name="group",
+            fields=[FieldInfo(name="id", type_str="int", is_primary_key=True)],
+        )
+        post = EntityInfo(
+            name="Post",
+            table_name="post",
+            fields=[
+                FieldInfo(name="id", type_str="int", is_primary_key=True),
+                FieldInfo(
+                    name="user_id", type_str="int", is_foreign_key=True, foreign_table="user.id"
+                ),
+            ],
+            relationships=[("Group", "one_to_one", "group")],
+        )
+        link = EntityInfo(
+            name="UserGroup",
+            table_name="user_group",
+            fields=[
+                FieldInfo(
+                    name="user_id",
+                    type_str="int",
+                    is_primary_key=True,
+                    is_foreign_key=True,
+                    foreign_table="user.id",
+                ),
+                FieldInfo(
+                    name="group_id",
+                    type_str="int",
+                    is_primary_key=True,
+                    is_foreign_key=True,
+                    foreign_table="group.id",
+                ),
+            ],
+            is_link_table=True,
+        )
+        return {e.name: e for e in (user, group, post, link)}
+
+    @pytest.mark.parametrize("generate", [generate_plantuml, generate_mermaid, generate_html])
+    def test_edges_drawn_by_default(self, generate):
+        """Sanity check: the fixture has FK, link-table and declared edges."""
+        assert len(_edges(generate(self._entities()))) == 4
+
+    @pytest.mark.parametrize("generate", [generate_plantuml, generate_mermaid, generate_html])
+    def test_no_edges_when_disabled(self, generate):
+        output = generate(self._entities(), include_relationships=False)
+        assert _edges(output) == []
+        # The entities themselves are still rendered.
+        assert "Post" in output and "UserGroup" in output
+
+    def test_plantuml_omits_relationships_section(self):
+        output = generate_plantuml(self._entities(), include_relationships=False)
+        assert "' Relationships" not in output
+
+
+class TestDistinctReferencesToSameModel:
+    """Several declared references to one model each get an edge (#230)."""
+
+    def test_two_references_from_one_model(self):
+        entities = {
+            "User": _entity("User"),
+            "Post": _entity(
+                "Post", ("User", "one", "user"), ("User", "one", "author"), nullable=("user",)
+            ),
+        }
+        assert _edges(generate_mermaid(entities)) == [
+            'Post }o--o| User : "user"',
+            'Post }o--|| User : "author"',
+        ]
+
+    def test_bidirectional_pair_drawn_once(self):
+        entities = {
+            "User": _entity("User", ("Post", "many", "posts")),
+            "Post": _entity("Post", ("User", "one", "user")),
+        }
+        assert _edges(generate_mermaid(entities)) == ['User ||--o{ Post : "posts"']
+
+    def test_extra_reference_beside_bidirectional_pair(self):
+        """The inverse side absorbs one reference; the other one is still drawn."""
+        entities = {
+            "User": _entity("User", ("Post", "many", "posts")),
+            "Post": _entity("Post", ("User", "one", "author"), ("User", "one", "user")),
+        }
+        assert _edges(generate_mermaid(entities)) == [
+            'User ||--o{ Post : "posts"',
+            'Post }o--|| User : "author"',
+        ]
+
+    def test_inverse_prefers_matching_cardinality(self):
+        """A 1:N side pairs with an N:1 reference before a 1:1 one."""
+        entities = {
+            "User": _entity("User", ("Profile", "many", "profiles")),
+            "Profile": _entity("Profile", ("User", "one_to_one", "owner"), ("User", "one", "user")),
+        }
+        assert _edges(generate_mermaid(entities)) == [
+            'User ||--o{ Profile : "profiles"',
+            'Profile ||--|| User : "owner"',
+        ]
+
+    def test_self_reference_parent_children_drawn_once(self):
+        entities = {
+            "Node": _entity(
+                "Node",
+                ("Node", "one", "parent"),
+                ("Node", "many", "children"),
+                nullable=("parent",),
+            ),
+        }
+        assert _edges(generate_mermaid(entities)) == ['Node }o--o| Node : "parent"']
+
+    def test_self_reference_extra_reference_drawn(self):
+        entities = {
+            "Node": _entity(
+                "Node",
+                ("Node", "one", "parent"),
+                ("Node", "many", "children"),
+                ("Node", "one", "owner"),
+                nullable=("parent",),
+            ),
+        }
+        assert _edges(generate_mermaid(entities)) == [
+            'Node }o--o| Node : "parent"',
+            'Node }o--|| Node : "owner"',
+        ]
+
+    def test_foreign_key_pair_still_skips_declared_relationships(self):
+        user = _entity("User")
+        post = _entity("Post", ("User", "one", "user"), ("User", "one", "author"))
+        post.fields.append(
+            FieldInfo(name="user_id", type_str="int", is_foreign_key=True, foreign_table="user.id")
+        )
+        entities = {"User": user, "Post": post}
+        assert _edges(generate_mermaid(entities)) == ['Post }o--|| User : "user_id"']
+
+    def test_self_reference_same_cardinality_stays_two_edges(self):
+        entities = {
+            "Employee": _entity(
+                "Employee", ("Employee", "one", "manager"), ("Employee", "one", "mentor")
+            ),
+        }
+        assert _edges(generate_mermaid(entities)) == [
+            'Employee }o--|| Employee : "manager"',
+            'Employee }o--|| Employee : "mentor"',
+        ]
+
+    def test_inverse_without_matching_cardinality_still_collapsed(self):
+        """Two N:1 references pointing at each other are one 1:1 edge, as before."""
+        entities = {
+            "User": _entity("User", ("Account", "one", "account")),
+            "Account": _entity("Account", ("User", "one", "owner")),
+        }
+        assert _edges(generate_mermaid(entities)) == ['User }o--|| Account : "account"']

@@ -37,11 +37,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module-qualified name on a plain Pydantic / dataclass field
   (`ext: other_service.User`) stays a column, since it may be an external
   class that merely shares a model's name.
+- A model with several declared references to the same model (e.g.
+  `Post.user` and `Post.author`, both `User`) now gets one edge per
+  reference; previously only the first was drawn. Both sides of a
+  bidirectional relationship are still drawn as one edge
+  ([#230](https://github.com/devsuit-berlin/erdify/issues/230)).
+- `--no-relationships` (and `no_relationships = true` in `[tool.erdify]`) now
+  removes every edge from PlantUML, Mermaid and HTML output, foreign-key edges
+  included; previously only `--format json` honored it
+  ([#232](https://github.com/devsuit-berlin/erdify/issues/232)).
 
 ### Output changes
 
-The fix above changes the generated diagram where a model reference uses one
-of these spellings: a Pydantic / dataclass column with the raw type becomes an
+The #229 fix above changes the generated diagram where a model reference
+uses one of these spellings: a Pydantic / dataclass column with the raw type becomes an
 edge, and a SQLModel / SQLAlchemy relationship gains its edge unless a foreign
 key already draws it. In `--format json`, the Pydantic / dataclass field moves
 from `fields` to `relationships`, a relationship's `target` becomes the class
@@ -51,6 +60,12 @@ mapping collections and `WriteOnlyMapped` / `DynamicMapped` (previously only
 the diagram and gate CI on `--check` (or the `erdify-check` pre-commit hook),
 the check fails once after upgrading: regenerate the diagram and commit it. See
 [Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
+
+The #230 fix adds an edge for each further reference to an already-referenced
+model, and can change which side of a bidirectional pair names the edge when a
+model declares several references back. With `--no-relationships`, PlantUML,
+Mermaid and HTML output lose all edges, and PlantUML loses its
+`' Relationships` section (#232).
 
 ## [1.2.0] - 2026-11-06
 

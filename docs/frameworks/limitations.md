@@ -146,6 +146,18 @@ Django is the exception: its relationship fields are calls, so string targets
 (`"Author"`, `"catalog.Author"`, `"self"`) and direct class references are all
 resolved from the call argument.
 
+## Both sides of a relationship
+
+A relationship declared on both models (`User.posts` and `Post.user`) is drawn
+once. erdify does not read `back_populates`, so it pairs the two sides by
+cardinality: each edge of the model declared first absorbs one reference
+declared back from the other model, preferring the inverse cardinality (a
+`list[Post]` on `User` pairs with a `User` reference on `Post`) and an
+attribute named after the class (`Post.user` for `User`). Every other reference gets its own edge, so `Post.author` beside
+`Post.user` is a second edge. When the two sides are ambiguous, the wrong
+reference may be the one folded away. A foreign-key column already draws the
+edge between two models, so their declared relationships are not drawn again.
+
 ## Keyless models
 
 Pydantic models and dataclasses have no keys to read. Without `--infer-keys`,
