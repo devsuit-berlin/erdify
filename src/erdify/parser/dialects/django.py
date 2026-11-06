@@ -215,18 +215,13 @@ class DjangoDialect(Dialect):
         parents = self._concrete_parents(class_node)
         explicit: Dict[str, str] = {}
         if parents:
-            merge_order = self.classes.merge_order(class_node)
-            own = self.table_classes(class_node, merge_order)
-            for class_name in merge_order:  # root first, so the model's own body wins
-                if class_name not in own:
-                    continue
-                for attr, field_type, call in self._django_field_calls(
-                    self.classes.all[class_name]
-                ):
-                    if field_type == "OneToOneField" and self._has_true_kw(call, "parent_link"):
-                        target = self._resolve_django_relationship_target(call, class_node.name)
-                        if target is not None:
-                            explicit[target] = attr
+            # Effective declarations: a link removed (`place = None`) or
+            # overridden by a plain field in a subclass no longer counts.
+            for attr, (field_type, call, _) in self._own_declarations(class_node).items():
+                if field_type == "OneToOneField" and self._has_true_kw(call, "parent_link"):
+                    target = self._resolve_django_relationship_target(call, class_node.name)
+                    if target is not None:
+                        explicit[target] = attr
         links = [(parent, explicit.get(parent, f"{parent.lower()}_ptr")) for parent in parents]
         self._links_cache[class_node.name] = links
         return links

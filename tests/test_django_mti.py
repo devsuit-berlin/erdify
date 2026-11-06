@@ -590,3 +590,38 @@ class Club(models.Model):
         )
         assert 'Club }o--|| Person : "owner_id"' in out
         assert 'Club }o--o{ Person : "members"' in out
+
+
+class TestOverriddenLinks:
+    SRC = """
+class Place(models.Model):
+    pass
+
+
+class LinkBase(models.Model):
+    place = models.OneToOneField(Place, on_delete=models.CASCADE, parent_link=True)
+
+    class Meta:
+        abstract = True
+
+
+class Restaurant(LinkBase, Place):
+    place = None
+
+
+class Bistro(LinkBase, Place):
+    place = models.CharField(max_length=10)
+"""
+
+    def test_removed_explicit_link_falls_back_to_the_implicit_ptr(self, tmp_path: Path):
+        entities = _parse(tmp_path, self.SRC)
+        assert _cols(entities["Restaurant"]) == [
+            ("place_ptr_id", "int", True, True, False, "place.id"),
+        ]
+
+    def test_overridden_explicit_link_falls_back_to_the_implicit_ptr(self, tmp_path: Path):
+        entities = _parse(tmp_path, self.SRC)
+        assert _cols(entities["Bistro"]) == [
+            ("place_ptr_id", "int", True, True, False, "place.id"),
+            ("place", "str", False, False, False, None),
+        ]
