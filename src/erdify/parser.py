@@ -227,6 +227,7 @@ class ASTDatabaseParser:
         self._all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
         self._mro_cache: Dict[str, List[str] | None] = {}
         self._target_column_cache: Dict[Tuple[str, str | None], Tuple[str, str]] = {}
+        self._dataclass_cache: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]] = {}
         self._file_trees: Dict[Path, ast.Module] = {}
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
@@ -264,6 +265,7 @@ class ASTDatabaseParser:
         # Second pass: process enum and model classes
         self._mro_cache = {}
         self._target_column_cache = {}
+        self._dataclass_cache = {}
         for class_node in self._all_classes.values():
             if self._is_enum_class(class_node):
                 self._parse_enum_class(class_node)
@@ -1016,13 +1018,13 @@ class ASTDatabaseParser:
             name: self._class_members(
                 self._all_classes[name],
                 model_kind,
-                self._django_self_owner(name, merge_order) if model_kind == "django" else name,
+                self._django_self_owner(name, merge_order) if model_kind == "django" else None,
             )
             for name in dfs_order
         }
         order_fields, order_rels = self._listing_order(class_node, set(), members, model_kind)
         if model_kind == "dataclass" and self._mro(class_node.name) is not None:
-            fields, rels = self._dataclass_fields(class_node.name, members, {})
+            fields, rels = self._dataclass_fields(class_node.name, members)
         else:
             fields, rels = self._merge_members(merge_order, members, model_kind)
         return self._reorder(fields, order_fields), self._reorder(rels, order_rels)
@@ -1031,27 +1033,32 @@ class ASTDatabaseParser:
         """The model a Django ``"self"`` relation declared in class ``name`` points at.
 
         A concrete model's own fields point at that model, also when a child
-        inherits them (multi-table inheritance). An abstract base's fields are
-        copied into the first concrete model that inherits it, so ``"self"``
-        points there (#226).
+        inherits them (multi-table inheritance). An abstract base's or a plain
+        mixin's fields are copied into the first concrete model that inherits
+        it, so ``"self"`` points there (#226).
         """
-        if not self._meta_flag(self._all_classes[name], "abstract"):
+        if self._is_concrete_django_model(name):
             return name
         for candidate in merge_order:  # root first, so the nearest concrete heir wins
-            node = self._all_classes[candidate]
             if (
                 candidate != name
-                and not self._meta_flag(node, "abstract")
-                and name in self._dfs_order(node, set())
+                and self._is_concrete_django_model(candidate)
+                and name in (self._mro(candidate) or ())
             ):
                 return candidate
         return name
 
+    def _is_concrete_django_model(self, name: str) -> bool:
+        """A Django model with its own table: a ``models.Model`` subclass, not abstract.
+
+        A plain mixin or an abstract base has no table, so a ``"self"``
+        relation declared there belongs to the concrete model that copies it.
+        """
+        node = self._all_classes[name]
+        return self._inherits_django_model(node) and not self._meta_flag(node, "abstract")
+
     def _dataclass_fields(
-        self,
-        name: str,
-        members: Dict[str, _ClassMembers],
-        memo: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]],
+        self, name: str, members: Dict[str, _ClassMembers]
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """The members of a dataclass entity: ``dataclasses.fields()`` plus mixins.
 
@@ -1060,7 +1067,7 @@ class ASTDatabaseParser:
         ignores but erdify has always shown, fill in only attributes no
         dataclass declares (the first such mixin in the MRO wins).
         """
-        fields, rels = self._effective_dataclass_fields(name, members, memo)
+        fields, rels = self._effective_dataclass_fields(name, members)
         fields, rels = dict(fields), dict(rels)
         for base in self._mro(name) or [name]:
             if self._is_dataclass(self._all_classes[base]):
@@ -1075,10 +1082,7 @@ class ASTDatabaseParser:
         return fields, rels
 
     def _effective_dataclass_fields(
-        self,
-        name: str,
-        members: Dict[str, _ClassMembers],
-        memo: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]],
+        self, name: str, members: Dict[str, _ClassMembers]
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """A class's ``__dataclass_fields__``, as the stdlib computes it.
 
@@ -1086,23 +1090,23 @@ class ASTDatabaseParser:
         reversed MRO, then its own annotations. So in ``Child(Left, Middle)``
         an attribute ``Left`` merely inherits still overrides one ``Middle``
         redeclares. An undecorated class has no fields of its own: it exposes
-        those of the first decorated class in its MRO.
+        those of the first decorated class in its MRO. Cached per parse; a
+        class's own members do not depend on the entity being built.
         """
+        memo = self._dataclass_cache
         if name in memo:
             return memo[name]
         mro = self._mro(name) or [name]
         if not self._is_dataclass(self._all_classes[name]):
             owner = next((c for c in mro if self._is_dataclass(self._all_classes[c])), None)
             result = (
-                self._effective_dataclass_fields(owner, members, memo)
-                if owner is not None
-                else ({}, {})
+                self._effective_dataclass_fields(owner, members) if owner is not None else ({}, {})
             )
             memo[name] = result
             return result
         synthetic: Dict[str, _ClassMembers] = {}
         for base in mro[:0:-1]:
-            base_fields, base_rels = self._effective_dataclass_fields(base, members, memo)
+            base_fields, base_rels = self._effective_dataclass_fields(base, members)
             synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels])
         synthetic[name] = members[name]
         result = self._merge_members([*mro[:0:-1], name], synthetic, "dataclass")
@@ -1166,7 +1170,7 @@ class ASTDatabaseParser:
         return result
 
     def _class_members(
-        self, class_node: ast.ClassDef, model_kind: str, concrete: str
+        self, class_node: ast.ClassDef, model_kind: str, concrete: str | None = None
     ) -> _ClassMembers:
         """A single class body's fields, relationships, and declared attribute names."""
         fields, rels = self._extract_class_fields(class_node, model_kind, concrete)
@@ -1228,15 +1232,15 @@ class ASTDatabaseParser:
         ]
 
     def _extract_class_fields(
-        self, class_node: ast.ClassDef, model_kind: str, concrete: str
+        self, class_node: ast.ClassDef, model_kind: str, concrete: str | None = None
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """Extract fields and relationships from a class definition.
 
-        ``concrete`` is the entity being built; a Django ``"self"`` reference
-        in an inherited body resolves to it, not to the declaring base.
+        ``concrete`` (Django only, default: the class itself) is the model a
+        ``"self"`` relation in this body points at (:meth:`_django_self_owner`).
         """
         if model_kind == "django":
-            return self._extract_django_fields(class_node, concrete)
+            return self._extract_django_fields(class_node, concrete or class_node.name)
 
         fields: Dict[str, FieldInfo] = {}
         relationships: Dict[str, _Rel] = {}
@@ -1425,14 +1429,14 @@ class ASTDatabaseParser:
         """Uncached body of :meth:`_django_target_column`."""
 
         # The winning declaration of each attribute, resolved like the fields (#228).
-        declared: Dict[str, Tuple[str, ast.Call]] = {}
+        declared: Dict[str, Tuple[str, ast.Call, str]] = {}
         for class_name in self._merge_order(node):
             class_node = self._all_classes[class_name]
             for attr in self._django_removed_names(class_node):
                 declared.pop(attr, None)
             for attr, field_type, call in self._django_field_calls(class_node):
                 declared.pop(attr, None)
-                declared[attr] = (field_type, call)
+                declared[attr] = (field_type, call, class_name)
 
         if to_field is not None:
             attr = to_field
@@ -1444,14 +1448,18 @@ class ASTDatabaseParser:
             if attr not in declared:
                 return default
         else:
-            pks = [a for a, (_, call) in declared.items() if self._has_true_kw(call, "primary_key")]
+            pks = [
+                a for a, (_, call, _) in declared.items() if self._has_true_kw(call, "primary_key")
+            ]
             if not pks:
                 return default
             attr = pks[-1]
 
-        field_type, call = declared[attr]
+        field_type, call, declaring = declared[attr]
         if field_type in ("ForeignKey", "OneToOneField"):
-            ref = self._resolve_django_relationship_target(call, target)
+            # "self" binds like on the entity side (#226).
+            owner = self._django_self_owner(declaring, self._merge_order(node))
+            ref = self._resolve_django_relationship_target(call, owner)
             if ref is None:
                 return f"{attr}_id", default[1]
             _, ref_type = self._django_target_column(

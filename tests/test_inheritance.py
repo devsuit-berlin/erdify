@@ -335,8 +335,8 @@ class TestDeepDiamonds:
     def test_stacked_diamonds_parse_quickly(self, tmp_path: Path):
         """The MRO is memoized; stacked diamonds must not blow up exponentially.
 
-        Unmemoized, 29 stacked diamonds would take on the order of 2**29 steps,
-        so the generous bound only catches a regression, never a slow runner.
+        Memoized, this takes milliseconds; unmemoized, 29 stacked diamonds take on
+        the order of 2**29 steps. The bound leaves ample room for slow runners.
         """
         lines = [
             "from pydantic import BaseModel",
@@ -358,7 +358,7 @@ class TestDeepDiamonds:
             ]
         start = time.perf_counter()
         entities = _parse(tmp_path, "\n".join(lines))
-        assert time.perf_counter() - start < 30
+        assert time.perf_counter() - start < 10
         assert len(entities["L29"].fields) == 1 + 3 * 29
 
 
@@ -707,3 +707,51 @@ class Child(AuditMixin):
 """
         child = _parse(tmp_path, src)["Child"]
         assert [f.name for f in child.fields] == ["created", "id"]
+
+
+class TestDjangoSelfOwnerEdgeCases:
+    def test_plain_mixin_self_binds_to_the_model(self, tmp_path: Path):
+        """A ``"self"`` FK in a non-Model mixin points at the model that uses it."""
+        src = """
+from django.db import models
+
+
+class TreeMixin:
+    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+
+
+class Node(TreeMixin, models.Model):
+    pass
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Node", "parent_id").foreign_table == "node.id"
+
+    def test_target_column_binds_self_like_the_entity(self, tmp_path: Path):
+        """``to_field`` through an inherited ``"self"`` FK follows the same owner."""
+        src = """
+from django.db import models
+
+
+class TreeBase(models.Model):
+    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+
+    class Meta:
+        abstract = True
+
+
+class Node(TreeBase):
+    pass
+
+
+class SpecialNode(Node):
+    uid = models.UUIDField(primary_key=True)
+
+
+class Ref(models.Model):
+    x = models.ForeignKey(SpecialNode, on_delete=models.CASCADE, to_field="parent")
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "SpecialNode", "parent_id").foreign_table == "node.id"
+        fk = _field(entities, "Ref", "x_id")
+        assert fk.foreign_table == "special_node.parent_id"
+        assert fk.type_str == "int"
