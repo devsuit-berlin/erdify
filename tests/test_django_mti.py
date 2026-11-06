@@ -174,10 +174,11 @@ class Place(models.Model):
 
 
 class Restaurant(Place):
-    place = models.OneToOneField(Place, on_delete=models.CASCADE, parent_link=True)
     seats = models.IntegerField()
+    place = models.OneToOneField(Place, on_delete=models.CASCADE, parent_link=True)
 """,
         )
+        # Declared after `seats`, the promoted link is still listed first.
         assert _cols(entities["Restaurant"]) == [
             ("place_id", "int", True, True, False, "place.id"),
             ("seats", "int", False, False, False, None),
@@ -533,3 +534,20 @@ def test_shared_abstract_ancestors_are_walked_once(tmp_path: Path):
     layers.append("class Leaf(L29):\n    pass\n")
     entities = _parse(tmp_path, "\n\n".join(layers))
     assert [f.name for f in entities["Leaf"].fields] == ["id"]
+
+
+def test_concrete_parent_under_shared_abstract_ancestors(tmp_path: Path):
+    """Stacked abstract diamonds over a concrete model yield one link, quickly."""
+    layers = [
+        "class Root(models.Model):\n    pass\n",
+        "class L0(Root):\n    class Meta:\n        abstract = True\n",
+    ]
+    for i in range(1, 30):
+        layers.append(
+            f"class A{i}(L{i - 1}):\n    class Meta:\n        abstract = True\n\n\n"
+            f"class B{i}(L{i - 1}):\n    class Meta:\n        abstract = True\n\n\n"
+            f"class L{i}(A{i}, B{i}):\n    class Meta:\n        abstract = True\n"
+        )
+    layers.append("class Leaf(L29):\n    pass\n")
+    entities = _parse(tmp_path, "\n\n".join(layers))
+    assert [f.name for f in entities["Leaf"].fields] == ["root_ptr_id"]

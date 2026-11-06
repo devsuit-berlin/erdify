@@ -175,12 +175,15 @@ class DjangoDialect(Dialect):
             if base in stack:
                 continue
             concrete = self._concrete_model(base, stack)
-            if concrete is not None:
-                parents.append(concrete)
-                continue
+            found = [concrete] if concrete is not None else []
             base_node = self.classes.all[base]
-            if self._inherits_django_model(base_node) and self._meta_flag(base_node, "abstract"):
-                parents.extend(self._base_parents(base_node, stack + (base,)))
+            if (
+                concrete is None
+                and self._inherits_django_model(base_node)
+                and self._meta_flag(base_node, "abstract")
+            ):
+                found = self._base_parents(base_node, stack + (base,))
+            parents.extend(p for p in found if p not in parents)  # each parent once
         self._base_parents_cache[class_node.name] = parents
         return parents
 
@@ -237,7 +240,8 @@ class DjangoDialect(Dialect):
         """
         has_pk = any(f.is_primary_key for f in entity.fields)
         added: List[FieldInfo] = []
-        for parent, attr in self._parent_links(class_node):
+        links = self._parent_links(class_node)
+        for parent, attr in links:
             is_pk = not has_pk
             has_pk = True
             declared = next((f for f in entity.fields if f.name == f"{attr}_id"), None)
@@ -258,7 +262,7 @@ class DjangoDialect(Dialect):
                     foreign_table=f"{self._django_target_table(parent)}.{column}",
                 )
             )
-        if added:
+        if links:
             fields = added + entity.fields
             entity.fields = [f for f in fields if f.is_primary_key] + [
                 f for f in fields if not f.is_primary_key
