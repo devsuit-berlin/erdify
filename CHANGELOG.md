@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `EntityInfo.nullable_relationships` lists the attributes of `"one"`
+  relationships whose reference is optional, and each JSON relationship has a
+  `nullable` key. `EntityInfo.relationships` keeps its `(target, type,
+  attribute)` shape
+  ([#223](https://github.com/devsuit-berlin/erdify/issues/223)).
+
+### Fixed
+
+- A Django `OneToOneField` is now modeled as the unique `<name>_id` foreign-key
+  column it creates, like `ForeignKey`, and follows `null=`: it is drawn
+  `|o--||`, or `|o--o|` with `null=True`, instead of always `||--||`. It now
+  renders the same as the equivalent `ForeignKey(unique=True)`. A Pydantic or
+  dataclass reference typed as optional (`user: User | None`,
+  `Optional[User]`) is drawn `}o--o|` instead of `}o--||`
+  ([#223](https://github.com/devsuit-berlin/erdify/issues/223)).
+- A Django `ForeignKey` / `OneToOneField` column now references the target's
+  actual primary key (including one inherited from an abstract base) or its
+  `to_field=` column, and takes that column's type. Previously `foreign_table`
+  always named `<table>.id`, a column that may not exist
+  ([#226](https://github.com/devsuit-berlin/erdify/issues/226)).
+- Inherited fields and relationships now resolve like Python's MRO: when two
+  bases declare the same attribute, the first base wins (previously the last),
+  and in a diamond hierarchy a sibling base's redeclaration replaces the one
+  from the shared root instead of leaving a stale edge or column. Field order
+  is unchanged
+  ([#228](https://github.com/devsuit-berlin/erdify/issues/228)).
+
+### Output changes
+
+The fixes above change the generated diagram for any Django model with a
+`OneToOneField` (an `<name>_id FK,UK` column replaces the relationship, and the
+edge label becomes `<name>_id`), any Pydantic / dataclass model with an
+optional model reference, and any model whose bases declare the same attribute
+differently. `--format json` changes accordingly: `OneToOneField` moves from
+`relationships` to `fields`, `foreign_table` names the referenced column for
+Django foreign keys to a non-`id` key, and relationships gain `nullable`. If
+you commit the diagram and gate CI on `--check` (or the `erdify-check`
+pre-commit hook), the check fails once after upgrading: regenerate the diagram
+and commit it. See
+[Stability & Versioning](https://erdify.devsuit.io/stability/#diagram-output).
+
 ## [1.1.1] - 2026-11-05
 
 ### Fixed

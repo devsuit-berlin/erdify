@@ -88,6 +88,8 @@ Notes:
   is a 1:1 rendered `|o--||` (NOT NULL FK) or `|o--o|` (nullable FK), and so
   is a foreign key that is its table's only primary-key column (shared
   primary key).
+- A Pydantic / dataclass reference typed as optional (`user: User | None`,
+  `Optional[User]`) is drawn `}o--o|`, a required one (`user: User`) `}o--||`.
 - A unique non-primary-key column is marked `UK` in the entity block,
   alongside `PK`/`FK`.
 - Mermaid has no enum construct, so each used enum is rendered as an entity block
@@ -115,7 +117,9 @@ point for downstream tools that want erdify's model without re-parsing source.
          "nullable": false, "foreign_table": null, "index": false, "unique": false,
          "default": null}
       ],
-      "relationships": [{"target": "User", "type": "one", "attribute": "user"}]
+      "relationships": [
+        {"target": "User", "type": "one", "attribute": "user", "nullable": false}
+      ]
     }
   ],
   "enums": [{"name": "Status", "values": ["DRAFT", "PUBLISHED"]}]
@@ -163,8 +167,9 @@ Relationship:
 | Key | Type | Description |
 |---|---|---|
 | `target` | string | Name of the related entity. |
-| `type` | string | One of `one`, `many`, `one_to_one`, `many_to_many`. |
+| `type` | string | One of `one`, `many`, `one_to_one`, `many_to_many`. Django `ForeignKey` / `OneToOneField` are foreign-key columns, not relationships, so the parsers no longer emit `one_to_one`; it remains valid for a hand-built `EntityInfo`. |
 | `attribute` | string | Attribute name on this entity. |
+| `nullable` | boolean | The reference is optional (`user: User \| None`); only set for `one` relationships of Pydantic / dataclass models. |
 
 Enum:
 

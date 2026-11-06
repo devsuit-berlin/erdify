@@ -43,7 +43,7 @@ class TestJsonFormat:
             "unique",
             "default",
         }
-        assert set(post["relationships"][0]) == {"target", "type", "attribute"}
+        assert set(post["relationships"][0]) == {"target", "type", "attribute", "nullable"}
         assert set(data["enums"][0]) == {"name", "values"}
 
     def test_valid_json_with_entities(self, sample_models_dir: Path):

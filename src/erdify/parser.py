@@ -39,8 +39,13 @@ DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToMa
 
 _V = TypeVar("_V")
 
+# A relationship while parsing: (target, type, attribute, nullable). The
+# public EntityInfo.relationships keeps (target, type, attribute); the flag
+# goes to EntityInfo.nullable_relationships.
+_Rel = Tuple[str, str, str, bool]
+
 # A class body's (fields, relationships, declared attribute names).
-_ClassMembers = Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]], List[str]]
+_ClassMembers = Tuple[Dict[str, FieldInfo], Dict[str, _Rel], List[str]]
 
 #: Conservative Django field -> Python type map for readable, source-consistent
 #: output. Ambiguous/lossy fields (JSONField, FileField, ImageField, custom or
@@ -387,6 +392,10 @@ class ASTDatabaseParser:
             entity.relationships = [
                 rel for rel in entity.relationships if rel[0] not in excluded_names
             ]
+            kept = {attr for _, _, attr in entity.relationships}
+            entity.nullable_relationships = [
+                attr for attr in entity.nullable_relationships if attr in kept
+            ]
 
     #: Enum base class names recognized by erdify (stdlib Enum + Django choices).
     _ENUM_BASES = frozenset({"Enum", "TextChoices", "IntegerChoices"})
@@ -642,7 +651,7 @@ class ASTDatabaseParser:
 
         # Collect fields from this class and all base classes (recursively)
         fields_dict: Dict[str, FieldInfo] = {}
-        relationships_dict: Dict[str, Tuple[str, str, str]] = {}
+        relationships_dict: Dict[str, _Rel] = {}
 
         # Recursively collect fields from all ancestors
         base_fields, base_rels = self._collect_fields(class_node, source)
@@ -650,7 +659,10 @@ class ASTDatabaseParser:
         relationships_dict.update(base_rels)
 
         entity.fields = list(fields_dict.values())
-        entity.relationships = list(relationships_dict.values())
+        entity.relationships = [(t, kind, attr) for t, kind, attr, _ in relationships_dict.values()]
+        entity.nullable_relationships = [
+            attr for _, _, attr, nullable in relationships_dict.values() if nullable
+        ]
 
         # Single-column UniqueConstraint / unique Index in __table_args__ (#218).
         # Constraints name the *database* column, which mapped_column("col", ...)
@@ -980,7 +992,7 @@ class ASTDatabaseParser:
 
     def _collect_fields(
         self, class_node: ast.ClassDef, model_kind: str
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """Collect the fields and relationships of a class and all its ancestors.
 
         Which declaration of an attribute wins follows the MRO
@@ -1015,7 +1027,7 @@ class ASTDatabaseParser:
     @staticmethod
     def _merge_members(
         order: List[str], members: Dict[str, _ClassMembers], model_kind: str
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """Merge class members in ``order``; a later class overrides an earlier one.
 
         A redeclared attribute replaces whatever an earlier class stored for it,
@@ -1023,7 +1035,7 @@ class ASTDatabaseParser:
         FK column ``owner_id`` (#224), or a column vs. a model reference.
         """
         fields: Dict[str, FieldInfo] = {}
-        rels: Dict[str, Tuple[str, str, str]] = {}
+        rels: Dict[str, _Rel] = {}
         for class_name in order:
             class_fields, class_rels, declared = members[class_name]
             for attr in declared:
@@ -1058,13 +1070,13 @@ class ASTDatabaseParser:
 
     def _extract_class_fields(
         self, class_node: ast.ClassDef, model_kind: str
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """Extract fields and relationships from a class definition."""
         if model_kind == "django":
             return self._extract_django_fields(class_node)
 
         fields: Dict[str, FieldInfo] = {}
-        relationships: Dict[str, Tuple[str, str, str]] = {}
+        relationships: Dict[str, _Rel] = {}
 
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
@@ -1105,7 +1117,7 @@ class ASTDatabaseParser:
 
     def _extract_django_fields(
         self, class_node: ast.ClassDef
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, Tuple[str, str, str]]]:
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """Extract fields and relationships from a Django model.
 
         Django fields are plain assignments (``name = models.CharField(...)``),
@@ -1113,17 +1125,18 @@ class ASTDatabaseParser:
         ManyToManyField) become relationships; every other ``*Field`` is a column.
         """
         fields: Dict[str, FieldInfo] = {}
-        relationships: Dict[str, Tuple[str, str, str]] = {}
+        relationships: Dict[str, _Rel] = {}
 
         for name, field_type, call in self._django_field_calls(class_node):
-            if field_type == "ForeignKey" or (
-                field_type == "OneToOneField" and self._has_true_kw(call, "primary_key")
-            ):
-                # A ForeignKey is a real `<name>_id` column in the DB; model it as
-                # such (like SQLAlchemy) so it renders consistently across sources.
-                # A OneToOneField(primary_key=True) is that column *as the PK*
-                # (shared primary key), so Django adds no implicit `id` (#224).
-                fk = self._parse_django_fk_column(name, call, class_node.name)
+            if field_type in ("ForeignKey", "OneToOneField"):
+                # Both are a real `<name>_id` column in the DB; model them as such
+                # (like SQLAlchemy) so they render consistently across sources and
+                # follow `null=` (#223). A OneToOneField is that column made unique,
+                # or the PK itself with primary_key=True (shared primary key), in
+                # which case Django adds no implicit `id` (#224).
+                fk = self._parse_django_fk_column(
+                    name, call, class_node.name, one_to_one=field_type == "OneToOneField"
+                )
                 if fk:
                     fields[fk.name] = fk
             elif field_type in DJANGO_RELATIONSHIP_FIELDS:
@@ -1160,22 +1173,25 @@ class ASTDatabaseParser:
         )
 
     def _parse_django_fk_column(
-        self, name: str, call: ast.Call, current_class: str
+        self, name: str, call: ast.Call, current_class: str, *, one_to_one: bool = False
     ) -> FieldInfo | None:
-        """Model a Django ``ForeignKey`` as the ``<name>_id`` column it creates in the DB."""
+        """Model a ``ForeignKey`` / ``OneToOneField`` as the ``<name>_id`` column it creates.
+
+        A ``OneToOneField`` is a ``ForeignKey(unique=True)``.
+        """
         target = self._resolve_django_relationship_target(call, current_class)
         if target is None:
             return None
 
         is_nullable = False
-        is_unique = False
+        is_unique = one_to_one
         is_primary_key = False
         for keyword in call.keywords:
             if not isinstance(keyword.value, ast.Constant):
                 continue
             if keyword.arg == "null":
                 is_nullable = bool(keyword.value.value)
-            elif keyword.arg == "unique":
+            elif keyword.arg == "unique" and not one_to_one:
                 is_unique = bool(keyword.value.value)
             elif keyword.arg == "primary_key":
                 is_primary_key = bool(keyword.value.value)
@@ -1346,26 +1362,22 @@ class ASTDatabaseParser:
 
     def _parse_django_relationship(
         self, name: str, field_type: str, call: ast.Call, current_class: str
-    ) -> Tuple[str, str, str] | None:
-        """Parse a Django relationship field into a (target, rel_type, attr) tuple.
+    ) -> _Rel | None:
+        """Parse a Django ``ManyToManyField`` into a relationship tuple.
 
-        ``ManyToManyField(through=...)`` is skipped - that M:N is drawn through
-        the through-model's own foreign keys, exactly like SQLAlchemy ``secondary=``.
+        ``ForeignKey`` / ``OneToOneField`` are FK columns instead (see
+        :meth:`_parse_django_fk_column`). ``ManyToManyField(through=...)`` is
+        skipped - that M:N is drawn through the through-model's own foreign
+        keys, exactly like SQLAlchemy ``secondary=``.
         """
+        if field_type != "ManyToManyField":
+            return None
         target = self._resolve_django_relationship_target(call, current_class)
         if target is None:
             return None
-
-        if field_type == "ManyToManyField":
-            if any(keyword.arg == "through" for keyword in call.keywords):
-                return None
-            rel_type = "many_to_many"
-        elif field_type == "OneToOneField":
-            rel_type = "one_to_one"
-        else:  # ForeignKey
-            rel_type = "one"
-
-        return (target, rel_type, name)
+        if any(keyword.arg == "through" for keyword in call.keywords):
+            return None
+        return (target, "many_to_many", name, False)
 
     def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
         """Resolve a relationship field's target from its first positional or ``to=`` arg."""
@@ -1543,7 +1555,7 @@ class ASTDatabaseParser:
 
         return None
 
-    def _parse_relationship(self, node: ast.AnnAssign) -> Tuple[str, str, str] | None:
+    def _parse_relationship(self, node: ast.AnnAssign) -> _Rel | None:
         """Parse a relationship from an annotated assignment.
 
         A relationship that declares ``link_model=`` (SQLModel) or ``secondary=``
@@ -1565,9 +1577,9 @@ class ASTDatabaseParser:
         rel_type = "many" if ("list[" in type_str or "List[" in type_str) else "one"
         target = self._clean_target(type_str)
 
-        return (target, rel_type, field_name)
+        return (target, rel_type, field_name, False)
 
-    def _parse_model_reference(self, node: ast.AnnAssign) -> Tuple[str, str, str] | None:
+    def _parse_model_reference(self, node: ast.AnnAssign) -> _Rel | None:
         """Treat a field typed as another known model as a relationship.
 
         Used for Pydantic/dataclass models, which express relationships as plain
@@ -1583,7 +1595,10 @@ class ASTDatabaseParser:
 
         target_class = self._all_classes.get(target)
         if target_class is not None and self._classify_source(target_class) is not None:
-            return (target, rel_type, node.target.id)
+            # `user: User | None` is an optional reference (#223); matches how
+            # _parse_field reads a column's nullability from its annotation.
+            nullable = rel_type == "one" and ("None" in type_str or "Optional" in type_str)
+            return (target, rel_type, node.target.id, nullable)
         return None
 
     @staticmethod

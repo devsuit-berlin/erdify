@@ -33,7 +33,7 @@ class TestMermaidRelationships:
     def test_one_to_one_edge(self, django_models_dir: Path):
         entities, enums = parse_models_directory(django_models_dir)
         out = generate_mermaid(entities, enums)
-        assert 'Profile ||--|| Author : "author"' in out
+        assert 'Profile |o--|| Author : "author_id"' in out
 
     def test_many_to_many_edge(self, django_models_dir: Path):
         entities, enums = parse_models_directory(django_models_dir)

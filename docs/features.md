@@ -18,7 +18,7 @@ framework is detected and a worked example, see the
 | Indexes | ✅ | `Field(index=True)` — detected and emitted in `--format json`; not drawn in the PlantUML/Mermaid diagram |
 | Enums | ✅ | Python `Enum` classes |
 | Relationships | ✅ | `Relationship()` |
-| Inheritance | ✅ | Mixin classes supported |
+| Inheritance | ✅ | Mixin classes supported; a redeclared attribute resolves like Python's MRO |
 | Link Tables | ✅ | Many-to-many detection (structural) |
 | Custom Table Names | ✅ | `__tablename__` attribute |
 | Exclude Patterns | ✅ | `--exclude` glob on class/table name |

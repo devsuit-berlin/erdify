@@ -30,11 +30,19 @@ class Book(models.Model):
         db_table = "catalog_book"
 ```
 
-A `ForeignKey(null=True)` is drawn optional on the referenced side (`}o--o|`),
-and a `ForeignKey(unique=True)` is drawn 1:1 (`|o--||`). A `unique=True`
-column is marked `UK`. A `ForeignKey(primary_key=True)` or
-`OneToOneField(primary_key=True)` (shared primary key) makes `<name>_id` the
-table's primary key (no implicit `id` is added) and is drawn 1:1 as well.
+`ForeignKey` and `OneToOneField` are modeled as the `<name>_id` column they
+create in the database. A `ForeignKey(null=True)` is drawn optional on the
+referenced side (`}o--o|`). A `OneToOneField` is a unique foreign key, so it is
+marked `UK` and drawn 1:1 like `ForeignKey(unique=True)`: `|o--||`, or
+`|o--o|` with `null=True`. A `unique=True` column is marked `UK`. A
+`ForeignKey(primary_key=True)` or `OneToOneField(primary_key=True)` (shared
+primary key) makes `<name>_id` the table's primary key (no implicit `id` is
+added) and is drawn 1:1 as well.
+
+The column references the target's primary key, including one inherited from
+an abstract base, or the `to_field=` column, and takes that column's type
+(`foreign_table` in [JSON output](../usage/output-formats.md#json)). A target
+outside the parsed files is assumed to have the implicit `id`.
 
 Relationship targets are resolved by class name, including `"self"` and
 `"app.Model"` string references. A `ManyToManyField(through=LinkModel)` is drawn

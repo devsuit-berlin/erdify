@@ -379,3 +379,26 @@ def test_plantuml_pk_and_unique_omits_uk():
     out = generate_plantuml(entities)
     assert "primary_key(id) : varchar" in out
     assert "UK" not in out
+
+
+def test_declared_relationship_glyphs():
+    """Hand-built IR: every declared relationship type, incl. an optional "one" (#223)."""
+    entities = {
+        "A": EntityInfo(
+            name="A",
+            table_name="a",
+            relationships=[
+                ("B", "one_to_one", "b"),
+                ("C", "one", "c"),
+                ("D", "one", "d"),
+                ("E", "many", "es"),
+            ],
+            nullable_relationships=["d"],
+        ),
+        **{n: EntityInfo(name=n, table_name=n.lower()) for n in "BCDE"},
+    }
+    out = generate_mermaid(entities)
+    assert 'A ||--|| B : "b"' in out
+    assert 'A }o--|| C : "c"' in out
+    assert 'A }o--o| D : "d"' in out
+    assert 'A ||--o{ E : "es"' in out

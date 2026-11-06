@@ -601,15 +601,17 @@ class Settings(models.Model):
         ]
         assert 'Settings |o--|| Account : "owner_id"' in generate_mermaid(entities)
 
-    def test_one_to_one_without_pk_is_unchanged(self, tmp_path: Path):
-        """A plain OneToOneField is still a declared relationship (tracked in #223)."""
+    def test_one_to_one_without_pk_is_a_unique_fk_column(self, tmp_path: Path):
+        """A plain OneToOneField is a unique ``<name>_id`` column next to ``id`` (#223)."""
         src = self.SRC.replace(
             "models.ForeignKey(Account, on_delete=models.CASCADE, primary_key=True, null=True)",
             "models.OneToOneField(Account, on_delete=models.CASCADE)",
         )
         entities = _parse(tmp_path, src)
-        assert [f.name for f in entities["Settings"].fields] == ["id"]
-        assert entities["Settings"].relationships == [("Account", "one_to_one", "owner")]
+        assert [f.name for f in entities["Settings"].fields] == ["id", "owner_id"]
+        assert entities["Settings"].relationships == []
+        owner = _field(entities, "Settings", "owner_id")
+        assert owner.is_foreign_key and owner.is_unique and not owner.is_primary_key
 
 
 class TestDjangoInheritedOverride:
@@ -653,11 +655,23 @@ class Settings(OwnedBase):
                 ["id", "owner_id"],
                 [],
             ),
-            (  # FK column -> relationship
+            (  # FK column -> 1:1 FK column to another target
                 "models.ForeignKey(Account, on_delete=models.CASCADE)",
                 "models.OneToOneField(Other, on_delete=models.CASCADE)",
+                ["id", "owner_id"],
+                [],
+            ),
+            (  # M:N relationship -> FK column
+                "models.ManyToManyField(Account)",
+                "models.ForeignKey(Other, on_delete=models.CASCADE)",
+                ["id", "owner_id"],
+                [],
+            ),
+            (  # FK column -> M:N relationship
+                "models.ForeignKey(Account, on_delete=models.CASCADE)",
+                "models.ManyToManyField(Other)",
                 ["id"],
-                [("Other", "one_to_one", "owner")],
+                [("Other", "many_to_many", "owner")],
             ),
         ],
     )
@@ -773,3 +787,147 @@ class B(models.Model):
         entities = _parse(tmp_path, src)
         assert _field(entities, "A", "b_id").foreign_table == "b.a_id"
         assert _field(entities, "B", "a_id").foreign_table == "a.b_id"
+
+    def test_pk_with_unresolvable_target(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class A(models.Model):
+    b = models.OneToOneField(get_model(), on_delete=models.CASCADE, primary_key=True)
+
+
+class C(models.Model):
+    a = models.ForeignKey(A, on_delete=models.CASCADE)
+"""
+        assert _field(_parse(tmp_path, src), "C", "a_id").foreign_table == "a.b_id"
+
+
+class TestDeclaredRelationshipNullability:
+    """#223: 1:1 Django fields and keyless model references follow nullability."""
+
+    DJANGO = """
+from django.db import models
+
+
+class Account(models.Model):
+    pass
+
+
+class Profile(models.Model):
+    account = {decl}
+"""
+
+    @pytest.mark.parametrize(
+        ("decl", "glyph"),
+        [
+            ("models.OneToOneField(Account, on_delete=models.CASCADE, null=True)", "|o--o|"),
+            ("models.OneToOneField(Account, on_delete=models.CASCADE)", "|o--||"),
+            # unique=False cannot turn a OneToOneField into N:1.
+            ("models.OneToOneField(Account, on_delete=models.CASCADE, unique=False)", "|o--||"),
+            (
+                "models.ForeignKey(Account, on_delete=models.CASCADE, unique=True, null=True)",
+                "|o--o|",
+            ),
+        ],
+    )
+    def test_django_one_to_one(self, tmp_path: Path, decl: str, glyph: str):
+        entities = _parse(tmp_path, self.DJANGO.format(decl=decl))
+        out = generate_mermaid(entities)
+        assert f'Profile {glyph} Account : "account_id"' in out
+        assert entities["Profile"].relationships == []
+        assert _field(entities, "Profile", "account_id").is_unique
+
+    def test_django_one_to_one_matches_unique_foreign_key(self, tmp_path: Path):
+        """Two spellings of the same schema produce the same output."""
+        o2o = generate_json(
+            _parse(
+                tmp_path,
+                self.DJANGO.format(
+                    decl="models.OneToOneField(Account, on_delete=models.CASCADE, null=True)"
+                ),
+            )
+        )
+        fk = generate_json(
+            _parse(
+                tmp_path,
+                self.DJANGO.format(
+                    decl="models.ForeignKey("
+                    "Account, on_delete=models.CASCADE, unique=True, null=True)"
+                ),
+            )
+        )
+        assert o2o == fk
+
+    KEYLESS = """
+{header}
+
+
+class User({base}):
+    id: int
+
+
+class Post({base}):
+    id: int
+    user: User | None
+    tags: list[User] | None
+"""
+
+    @pytest.mark.parametrize(
+        ("header", "base"),
+        [
+            ("from pydantic import BaseModel", "BaseModel"),
+            ("from dataclasses import dataclass\n\n\n@dataclass", ""),
+        ],
+    )
+    def test_keyless_optional_reference(self, tmp_path: Path, header: str, base: str):
+        src = self.KEYLESS.format(header=header, base=base)
+        if not base:  # each dataclass needs its own decorator
+            src = src.replace("\n\nclass Post", "\n\n@dataclass\nclass Post").replace(
+                "class User()", "class User"
+            )
+            src = src.replace("class Post()", "class Post")
+        entities = _parse(tmp_path, src)
+        post = entities["Post"]
+        assert post.nullable_relationships == ["user"]
+        out = generate_mermaid(entities)
+        assert 'Post }o--o| User : "user"' in out
+
+    @pytest.mark.parametrize("annotation", ["User", "Optional[User]"])
+    def test_keyless_annotations(self, tmp_path: Path, annotation: str):
+        src = f"""
+from typing import Optional
+
+from pydantic import BaseModel
+
+
+class User(BaseModel):
+    id: int
+
+
+class Post(BaseModel):
+    id: int
+    user: {annotation}
+"""
+        entities = _parse(tmp_path, src)
+        nullable = annotation != "User"
+        assert entities["Post"].nullable_relationships == (["user"] if nullable else [])
+        glyph = "}o--o|" if nullable else "}o--||"
+        assert f'Post {glyph} User : "user"' in generate_mermaid(entities)
+        assert f'Post {glyph} User : "user"' in generate_plantuml(entities)
+
+    def test_json_nullable_key(self, tmp_path: Path):
+        src = self.KEYLESS.format(header="from pydantic import BaseModel", base="BaseModel")
+        doc = json.loads(generate_json(_parse(tmp_path, src)))
+        post = next(e for e in doc["entities"] if e["name"] == "Post")
+        assert {r["attribute"]: r["nullable"] for r in post["relationships"]} == {
+            "user": True,
+            "tags": False,
+        }
+
+    def test_exclude_drops_nullable_entry(self, tmp_path: Path):
+        src = self.KEYLESS.format(header="from pydantic import BaseModel", base="BaseModel")
+        (tmp_path / "models.py").write_text(src)
+        entities, _ = parse_models_directory(tmp_path, exclude_patterns=["User"])
+        assert entities["Post"].relationships == []
+        assert entities["Post"].nullable_relationships == []
