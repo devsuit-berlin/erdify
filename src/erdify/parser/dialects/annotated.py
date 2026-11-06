@@ -7,7 +7,7 @@ and in which of these member kinds they accept.
 """
 
 import ast
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from ...config import FieldInfo
 from ..annotations import (
@@ -40,6 +40,7 @@ class AnnotatedDialect(Dialect):
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 field_name = node.target.id
+                node = self._with_aliases_expanded(node)
 
                 # Skip special attributes
                 if field_name.startswith("_"):
@@ -72,23 +73,33 @@ class AnnotatedDialect(Dialect):
 
         return fields, relationships
 
+    def _with_aliases_expanded(self, node: ast.AnnAssign) -> ast.AnnAssign:
+        """``node`` with column type aliases in its annotation expanded (#241)."""
+        annotation = expand_aliases(node.annotation, self.ctx.aliases)
+        if annotation is node.annotation:
+            return node
+        expanded = ast.AnnAssign(
+            target=node.target, annotation=annotation, value=node.value, simple=node.simple
+        )
+        return ast.copy_location(expanded, node)
+
     def _parse_field(self, node: ast.AnnAssign) -> FieldInfo | None:
         """Parse a field from an annotated assignment."""
         if not isinstance(node.target, ast.Name):
             return None
 
         field_name = node.target.id
-        annotation = expand_aliases(node.annotation, self.ctx.aliases)
-        type_str, is_nullable = column_type(annotation)
+        type_str, is_nullable = column_type(node.annotation)
 
-        # Field() (SQLModel) / mapped_column() (SQLAlchemy), bare or qualified
-        # (e.g. orm.mapped_column): the ones in the Annotated metadata (#241),
-        # then the assigned one, which wins on conflicts as in SQLAlchemy.
-        calls = [
-            call
-            for call in column_metadata(annotation)
-            if is_call_to(call, "Field") or is_call_to(call, "mapped_column")
-        ]
+        # As in SQLAlchemy, the first mapped_column() in the Annotated metadata
+        # (#241) is merged with the assigned Field() (SQLModel) / mapped_column()
+        # (SQLAlchemy), bare or qualified (e.g. orm.mapped_column): what the
+        # assigned call sets wins, except that primary_key=True from either
+        # sticks. SQLModel ignores Field() keys in Annotated metadata.
+        metadata_calls = [
+            call for call in column_metadata(node.annotation) if is_call_to(call, "mapped_column")
+        ][:1]
+        calls: List[ast.Call] = list(metadata_calls)
         if node.value is not None and (
             is_call_to(node.value, "Field") or is_call_to(node.value, "mapped_column")
         ):
@@ -102,7 +113,7 @@ class AnnotatedDialect(Dialect):
         for call in calls:
             for keyword in call.keywords:
                 if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
-                    is_primary_key = bool(keyword.value.value)
+                    is_primary_key = is_primary_key or bool(keyword.value.value)
                 elif keyword.arg == "foreign_key" and isinstance(keyword.value, ast.Constant):
                     is_foreign_key = True
                     foreign_table = str(keyword.value.value)
@@ -137,6 +148,12 @@ class AnnotatedDialect(Dialect):
 
         # Extract default value
         default_value = self._extract_default_value(node)
+        for call in reversed(metadata_calls):  # the assigned value's default wins
+            if default_value is not None:
+                break
+            default_value = self._extract_default_value(
+                ast.AnnAssign(target=node.target, annotation=node.annotation, value=call, simple=1)
+            )
 
         # A primary key is never NULL in the database. SQLModel's idiomatic
         # `id: int | None = Field(default=None, primary_key=True)` only means

@@ -5,7 +5,6 @@ nullability (#236), and call / wrapper recognition.
 """
 
 import ast
-import copy
 from typing import Callable, List, Mapping, NamedTuple, Tuple, TypeGuard
 
 from .common import _Rel
@@ -156,31 +155,74 @@ def column_type(node: ast.expr) -> Tuple[str, bool]:
 def expand_aliases(
     node: ast.expr, aliases: Mapping[str, ast.expr], stack: Tuple[str, ...] = ()
 ) -> ast.expr:
-    """``node`` with each ``Annotated`` type alias replaced by its definition (#241).
+    """``node`` with each column type alias replaced by its definition (#241).
 
     ``id: Mapped[intpk]`` with ``intpk = Annotated[int, mapped_column(...)]``
     reads as ``Mapped[Annotated[int, mapped_column(...)]]``, also when quoted
-    (``Mapped["intpk"]``). An alias referring to itself is left as is.
+    (``Mapped["intpk"]``). Only type positions are expanded: ``Annotated``
+    metadata, ``Literal`` values and call arguments (``ForeignKey("user.id")``)
+    are left alone, and so is a subscripted (generic) alias such as
+    ``Pk[int]``. An alias referring to itself is left as is. ``node`` itself
+    is never modified.
     """
-    if not aliases:
+    if not aliases or not _mentions_alias(node, aliases):
         return node
+    if isinstance(node, ast.Name):
+        if node.id in aliases and node.id not in stack:
+            return expand_aliases(aliases[node.id], aliases, stack + (node.id,))
+        return node
+    if isinstance(node, ast.Constant):
+        parsed = parse_quoted(node)
+        if parsed is None:
+            return node
+        expanded = expand_aliases(parsed, aliases, stack)
+        return expanded if expanded is not parsed else node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return ast.BinOp(
+            left=expand_aliases(node.left, aliases, stack),
+            op=node.op,
+            right=expand_aliases(node.right, aliases, stack),
+        )
+    if isinstance(node, ast.Subscript):
+        name, args = subscript_parts(node)
+        if (
+            not args
+            or name == "Literal"
+            or (isinstance(node.value, ast.Name) and node.value.id in aliases)
+        ):
+            return node
+        # Annotated: only the type is a type position, not the metadata.
+        parts: List[ast.expr] = [expand_aliases(args[0], aliases, stack)] + (
+            args[1:]
+            if name == "Annotated"
+            else [expand_aliases(a, aliases, stack) for a in args[1:]]
+        )
+        slice_: ast.expr = (
+            ast.Tuple(elts=parts, ctx=ast.Load()) if isinstance(node.slice, ast.Tuple) else parts[0]
+        )
+        return ast.Subscript(value=node.value, slice=slice_, ctx=node.ctx)
+    return node
 
-    class _Expand(ast.NodeTransformer):
-        def visit_Name(self, name: ast.Name) -> ast.expr:
-            if name.id in aliases and name.id not in stack:
-                return expand_aliases(copy.deepcopy(aliases[name.id]), aliases, stack + (name.id,))
-            return name
 
-        def visit_Constant(self, constant: ast.Constant) -> ast.expr:
-            parsed = parse_quoted(constant)
-            if parsed is None:
-                return constant
-            expanded = expand_aliases(parsed, aliases, stack)
-            return expanded if ast.dump(expanded) != ast.dump(parsed) else constant
+def _mentions_alias(node: ast.expr, aliases: Mapping[str, ast.expr]) -> bool:
+    """Whether an alias name, or any string (a possible quoted alias), occurs in ``node``."""
+    return any(
+        (isinstance(sub, ast.Name) and sub.id in aliases)
+        or (isinstance(sub, ast.Constant) and isinstance(sub.value, str))
+        for sub in ast.walk(node)
+    )
 
-    result = _Expand().visit(copy.deepcopy(node))
-    assert isinstance(result, ast.expr)
-    return result
+
+def defines_column_alias(value: ast.expr) -> bool:
+    """``Annotated[X, ..., mapped_column(...), ...]``: an alias carrying column settings.
+
+    Other ``Annotated`` aliases (e.g. Pydantic's ``PositiveInt = Annotated[int,
+    Gt(0)]``) keep their name as the displayed type.
+    """
+    if not isinstance(value, ast.Subscript):
+        return False
+    name, args = subscript_parts(value)
+    return name == "Annotated" and any(is_call_to(arg, "mapped_column") for arg in args[1:])
 
 
 def column_metadata(node: ast.expr) -> List[ast.expr]:
