@@ -83,11 +83,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fields (plus those of its abstract bases) and a `<parent>_ptr_id` one-to-one
   link to the parent, which is its primary key unless it declares one. An
   explicit `OneToOneField(parent_link=True)` replaces the implicit link, and a
-  foreign key to the subclass references the link column. Previously the
-  parent's fields were copied into the subclass as if the parent were
-  abstract, and a foreign key to it referenced a column that does not exist.
-  Proxy models (`class Meta: proxy = True`) have no table and are no longer
-  drawn ([#233](https://github.com/devsuit-berlin/erdify/issues/233)).
+  foreign key to the subclass references the link column (a `to_field=` naming
+  a parent's field references the parent's table). Previously the parent's
+  fields were copied into the subclass as if the parent were abstract, and a
+  foreign key to it referenced a column that does not exist. Proxy models
+  (`class Meta: proxy = True`) have no table and are no longer drawn; a
+  relation to a proxy points at the model it stands for
+  ([#233](https://github.com/devsuit-berlin/erdify/issues/233)).
 
 ### Output changes
 
@@ -118,10 +120,11 @@ SQLAlchemy models, with their edges, that were previously not detected. In
 accordingly.
 
 The #233 fix changes every Django model that subclasses a concrete model: its
-copied parent columns, implicit `id` and inherited relationships are replaced
-by a `<parent>_ptr_id` primary key drawn 1:1 to the parent (`|o--||`), and
-foreign keys to it now reference that column. Proxy models disappear from the
-diagram.
+copied parent columns and inherited relationships are replaced by a
+`<parent>_ptr_id` link drawn 1:1 to the parent (`|o--||`), which also replaces
+the implicit `id` primary key unless the model declares its own. Foreign keys
+to such a model now reference its primary-key column. Proxy models disappear
+from the diagram, and edges to them now end at the proxied model.
 
 ## [1.2.0] - 2026-11-06
 

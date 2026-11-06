@@ -195,9 +195,10 @@ class Restaurant(Place):
     code = models.CharField(max_length=5, primary_key=True)
 """,
         )
+        # The declared primary key is listed first.
         assert _cols(entities["Restaurant"]) == [
-            ("place_ptr_id", "int", False, True, True, "place.id"),
             ("code", "str", True, False, False, None),
+            ("place_ptr_id", "int", False, True, True, "place.id"),
         ]
 
 
@@ -228,11 +229,11 @@ class Pizzeria(Restaurant):
             tmp_path,
             """
 class Place(models.Model):
-    pass
+    place_no = models.AutoField(primary_key=True)
 
 
 class Business(models.Model):
-    pass
+    business_no = models.AutoField(primary_key=True)
 
 
 class Shop(Place, Business):
@@ -240,8 +241,8 @@ class Shop(Place, Business):
 """,
         )
         assert _cols(entities["Shop"]) == [
-            ("place_ptr_id", "int", True, True, False, "place.id"),
-            ("business_ptr_id", "int", False, True, True, "business.id"),
+            ("place_ptr_id", "int", True, True, False, "place.place_no"),
+            ("business_ptr_id", "int", False, True, True, "business.business_no"),
         ]
 
 
@@ -300,3 +301,145 @@ class Leaf(Loop):
 """,
         )
         assert _cols(entities["Leaf"]) == [("id", "int", True, False, False, None)]
+
+
+class TestProxyTargets:
+    """A relation to a proxy targets the concrete model it stands for."""
+
+    SRC = """
+class Person(models.Model):
+    uid = models.UUIDField(primary_key=True)
+
+
+class OrderedPerson(Person):
+    class Meta:
+        proxy = True
+
+
+class SortedPerson(OrderedPerson):
+    class Meta:
+        proxy = True
+
+
+class Note(models.Model):
+    who = models.ForeignKey(OrderedPerson, on_delete=models.CASCADE)
+    by = models.ForeignKey("SortedPerson", on_delete=models.CASCADE)
+    readers = models.ManyToManyField(OrderedPerson)
+"""
+
+    def test_foreign_keys_reference_the_concrete_model(self, tmp_path: Path):
+        note = _parse(tmp_path, self.SRC)["Note"]
+        assert (_field(note, "who_id").foreign_table, _field(note, "who_id").type_str) == (
+            "person.uid",
+            "UUID",
+        )
+        assert _field(note, "by_id").foreign_table == "person.uid"
+
+    def test_many_to_many_targets_the_concrete_model(self, tmp_path: Path):
+        note = _parse(tmp_path, self.SRC)["Note"]
+        assert note.relationships == [("Person", "many_to_many", "readers")]
+
+    def test_edges_are_drawn(self, tmp_path: Path):
+        out = generate_mermaid(_parse(tmp_path, self.SRC))
+        assert 'Note }o--|| Person : "who_id"' in out
+        assert 'Note }o--|| Person : "by_id"' in out
+
+
+class TestToFieldOnInheritedColumns:
+    SRC = """
+class Place(models.Model):
+    slug = models.SlugField(unique=True)
+
+
+class Restaurant(Place):
+    seats = models.IntegerField()
+
+
+class Ref(models.Model):
+    by_slug = models.ForeignKey(Restaurant, on_delete=models.CASCADE, to_field="slug")
+    by_ptr = models.ForeignKey(Restaurant, on_delete=models.CASCADE, to_field="place_ptr")
+    by_ptr_id = models.ForeignKey(Restaurant, on_delete=models.CASCADE, to_field="place_ptr_id")
+    by_own = models.ForeignKey(Restaurant, on_delete=models.CASCADE, to_field="seats")
+"""
+
+    def test_parent_column_is_referenced_in_the_parent_table(self, tmp_path: Path):
+        fk = _field(_parse(tmp_path, self.SRC)["Ref"], "by_slug_id")
+        assert (fk.foreign_table, fk.type_str) == ("place.slug", "str")
+
+    def test_implicit_link_as_to_field(self, tmp_path: Path):
+        ref = _parse(tmp_path, self.SRC)["Ref"]
+        for name in ("by_ptr_id", "by_ptr_id_id"):
+            fk = _field(ref, name)
+            assert (fk.foreign_table, fk.type_str) == ("restaurant.place_ptr_id", "int")
+
+    def test_own_column(self, tmp_path: Path):
+        fk = _field(_parse(tmp_path, self.SRC)["Ref"], "by_own_id")
+        assert (fk.foreign_table, fk.type_str) == ("restaurant.seats", "int")
+
+
+class TestAbstractLinks:
+    def test_explicit_link_on_abstract_base(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Place(models.Model):
+    pass
+
+
+class LinkBase(models.Model):
+    place = models.OneToOneField(Place, on_delete=models.CASCADE, parent_link=True)
+
+    class Meta:
+        abstract = True
+
+
+class Restaurant(LinkBase, Place):
+    seats = models.IntegerField()
+""",
+        )
+        assert _cols(entities["Restaurant"]) == [
+            ("place_id", "int", True, True, False, "place.id"),
+            ("seats", "int", False, False, False, None),
+        ]
+
+    def test_explicit_link_with_primary_key(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Place(models.Model):
+    pass
+
+
+class Restaurant(Place):
+    place = models.OneToOneField(
+        Place, on_delete=models.CASCADE, parent_link=True, primary_key=True
+    )
+""",
+        )
+        assert _cols(entities["Restaurant"]) == [("place_id", "int", True, True, False, "place.id")]
+
+    def test_abstract_base_of_a_concrete_model_passes_its_link_on(self, tmp_path: Path):
+        """Django gives an abstract subclass of a concrete model its parent link."""
+        entities = _parse(
+            tmp_path,
+            """
+class Place(models.Model):
+    name = models.CharField(max_length=50)
+
+
+class Venue(Place):
+    capacity = models.IntegerField()
+
+    class Meta:
+        abstract = True
+
+
+class Stadium(Venue):
+    roof = models.BooleanField()
+""",
+        )
+        assert _cols(entities["Stadium"]) == [
+            ("place_ptr_id", "int", True, True, False, "place.id"),
+            ("capacity", "int", False, False, False, None),
+            ("roof", "bool", False, False, False, None),
+        ]

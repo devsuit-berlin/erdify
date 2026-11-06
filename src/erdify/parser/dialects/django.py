@@ -63,6 +63,8 @@ class DjangoDialect(Dialect):
     def __init__(self, ctx: ParseContext):
         super().__init__(ctx)
         self._target_column_cache: Dict[Tuple[str, str | None], Tuple[str, str]] = {}
+        self._parents_cache: Dict[str, List[str]] = {}
+        self._links_cache: Dict[str, List[Tuple[str, str]]] = {}
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         return self._inherits_django_model(class_node)
@@ -141,21 +143,43 @@ class DjangoDialect(Dialect):
             )
 
     def _concrete_parents(self, class_node: ast.ClassDef) -> List[str]:
-        """The concrete models ``class_node`` directly subclasses, in base order.
+        """The concrete models ``class_node`` inherits a table link to, in base order.
 
-        Each one gets a parent link. A proxy base stands for the concrete model
-        it proxies, as in Django.
+        Each direct concrete base gets a parent link. A proxy base stands for
+        the concrete model it proxies, and an abstract base passes on its own
+        concrete parents, as in Django. A proxy has no table, so no links.
         """
+        cached = self._parents_cache.get(class_node.name)
+        if cached is not None:
+            return cached
+        parents: List[str] = []
+        if not self._meta_flag(class_node, "proxy"):
+            for parent in self._base_parents(class_node, (class_node.name,)):
+                if parent not in parents:
+                    parents.append(parent)
+        self._parents_cache[class_node.name] = parents
+        return parents
+
+    def _base_parents(self, class_node: ast.ClassDef, stack: Tuple[str, ...]) -> List[str]:
+        """The concrete parents contributed by ``class_node``'s direct bases."""
         parents: List[str] = []
         for base in self.classes.local_bases(class_node):
-            concrete = self._concrete_model(base, ())
-            if concrete is not None and concrete not in parents:
+            if base in stack:
+                continue
+            concrete = self._concrete_model(base, stack)
+            if concrete is not None:
                 parents.append(concrete)
+                continue
+            base_node = self.classes.all[base]
+            if self._inherits_django_model(base_node) and self._meta_flag(base_node, "abstract"):
+                parents.extend(self._base_parents(base_node, stack + (base,)))
         return parents
 
     def _concrete_model(self, name: str, stack: Tuple[str, ...]) -> str | None:
         """``name`` if it is a concrete model, the model a proxy stands for, else None."""
-        if name in stack or not self._is_concrete_django_model(name):
+        if name in stack or name not in self.classes.all:
+            return None
+        if not self._is_concrete_django_model(name):
             return None
         node = self.classes.all[name]
         if not self._meta_flag(node, "proxy"):
@@ -169,25 +193,38 @@ class DjangoDialect(Dialect):
     def _parent_links(self, class_node: ast.ClassDef) -> List[Tuple[str, str]]:
         """``(parent, link attribute)`` per concrete parent, in base order.
 
-        The link is a ``OneToOneField(parent, parent_link=True)`` the model
-        declares itself, else the implicit ``<parent model name>_ptr``.
+        The link is a ``OneToOneField(parent, parent_link=True)`` declared in
+        the model or one of its abstract bases (the model's own wins), else
+        the implicit ``<parent model name>_ptr``.
         """
+        cached = self._links_cache.get(class_node.name)
+        if cached is not None:
+            return cached
+        parents = self._concrete_parents(class_node)
         explicit: Dict[str, str] = {}
-        for attr, field_type, call in self._django_field_calls(class_node):
-            if field_type == "OneToOneField" and self._has_true_kw(call, "parent_link"):
-                target = self._resolve_django_relationship_target(call, class_node.name)
-                if target is not None:
-                    explicit.setdefault(target, attr)
-        return [
-            (parent, explicit.get(parent, f"{parent.lower()}_ptr"))
-            for parent in self._concrete_parents(class_node)
-        ]
+        if parents:
+            merge_order = self.classes.merge_order(class_node)
+            own = self.table_classes(class_node, merge_order)
+            for class_name in merge_order:  # root first, so the model's own body wins
+                if class_name not in own:
+                    continue
+                for attr, field_type, call in self._django_field_calls(
+                    self.classes.all[class_name]
+                ):
+                    if field_type == "OneToOneField" and self._has_true_kw(call, "parent_link"):
+                        target = self._resolve_django_relationship_target(call, class_node.name)
+                        if target is not None:
+                            explicit[target] = attr
+        links = [(parent, explicit.get(parent, f"{parent.lower()}_ptr")) for parent in parents]
+        self._links_cache[class_node.name] = links
+        return links
 
     def _add_parent_links(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
         """Add a one-to-one link column per concrete parent (multi-table inheritance).
 
         Like Django, the first link becomes the primary key unless the model
-        declares one; the others are unique one-to-one columns.
+        declares one; the others are unique one-to-one columns. The primary
+        key is listed first.
         """
         has_pk = any(f.is_primary_key for f in entity.fields)
         added: List[FieldInfo] = []
@@ -212,7 +249,11 @@ class DjangoDialect(Dialect):
                     foreign_table=f"{self._django_target_table(parent)}.{column}",
                 )
             )
-        entity.fields[0:0] = added
+        if added:
+            fields = added + entity.fields
+            entity.fields = [f for f in fields if f.is_primary_key] + [
+                f for f in fields if not f.is_primary_key
+            ]
 
     def _inherits_django_model(
         self, class_node: ast.ClassDef, visited: set[str] | None = None
@@ -263,8 +304,8 @@ class DjangoDialect(Dialect):
     def _django_self_owner(self, name: str, merge_order: List[str]) -> str:
         """The model a Django ``"self"`` relation declared in class ``name`` points at.
 
-        A concrete model's own fields point at that model, also when a child
-        inherits them (multi-table inheritance). An abstract base's or a plain
+        A concrete model's own fields point at that model (a multi-table child
+        does not copy them, #233). An abstract base's or a plain
         mixin's fields are copied into the first concrete model that inherits
         it, so ``"self"`` points there (#226).
         """
@@ -401,6 +442,9 @@ class DjangoDialect(Dialect):
         # so Django adds no implicit `id` (#224). A PK is never NULL, and its
         # uniqueness is tracked by is_primary_key, not is_unique.
         to_field = self._django_to_field(call)
+        # A to_field column of a multi-table parent lives in the parent's table.
+        if to_field is not None:
+            target = self._column_owner(target, to_field, ()) or target
         column, type_str = self._django_target_column(target, to_field, ())
         return FieldInfo(
             name=f"{name}_id",
@@ -411,6 +455,38 @@ class DjangoDialect(Dialect):
             is_unique=is_unique and not is_primary_key,
             foreign_table=f"{self._django_target_table(target)}.{column}",
         )
+
+    def _column_owner(self, model: str, to_field: str, stack: Tuple[str, ...]) -> str | None:
+        """The model whose table holds column ``to_field`` of ``model``, if any.
+
+        That is ``model`` itself, or the multi-table parent declaring it.
+        """
+        node = self.classes.all.get(model)
+        if node is None or model in stack:
+            return None
+        if to_field in self._own_column_names(node):
+            return model
+        for parent in self._concrete_parents(node):
+            owner = self._column_owner(parent, to_field, stack + (model,))
+            if owner is not None:
+                return owner
+        return None
+
+    def _own_column_names(self, node: ast.ClassDef) -> Set[str]:
+        """Field names (and FK attnames) stored in the model's own table."""
+        names: Set[str] = set()
+        merge_order = self.classes.merge_order(node)
+        own = self.table_classes(node, merge_order)
+        for class_name in merge_order:
+            if class_name not in own:
+                continue
+            for attr, field_type, _ in self._django_field_calls(self.classes.all[class_name]):
+                names.add(attr)
+                if field_type in ("ForeignKey", "OneToOneField"):
+                    names.add(f"{attr}_id")
+        for _, link in self._parent_links(node):
+            names.update((link, f"{link}_id"))
+        return names
 
     @staticmethod
     def _django_to_field(call: ast.Call) -> str | None:
@@ -482,6 +558,13 @@ class DjangoDialect(Dialect):
                 if relation is not None and relation[0] in ("ForeignKey", "OneToOneField"):
                     attr = attr[: -len("_id")]
             if attr not in declared:
+                # The implicit parent link (`place_ptr` / `place_ptr_id`), #233.
+                for parent, link in self._parent_links(node):
+                    if link not in declared and attr in (link, f"{link}_id"):
+                        _, ref_type = self._django_target_column(
+                            parent, None, stack + ((target, to_field),)
+                        )
+                        return f"{link}_id", ref_type
                 return default
         else:
             pks = [
@@ -504,7 +587,7 @@ class DjangoDialect(Dialect):
         field_type, call, declaring = declared[attr]
         if field_type in ("ForeignKey", "OneToOneField"):
             # "self" binds like on the entity side (#226).
-            owner = self._django_self_owner(declaring, self.classes.merge_order(node))
+            owner = self._django_self_owner(declaring, merge_order)
             ref = self._resolve_django_relationship_target(call, owner)
             if ref is None:
                 return f"{attr}_id", default[1]
@@ -624,13 +707,23 @@ class DjangoDialect(Dialect):
         return (target, "many_to_many", name, False)
 
     def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
-        """Resolve a relationship field's target from its first positional or ``to=`` arg."""
+        """Resolve a relationship field's target from its first positional or ``to=`` arg.
+
+        A proxy model has no table, so a relation to it targets the concrete
+        model it proxies, as in Django.
+        """
+        target = None
         if call.args:
-            return self._resolve_django_target(call.args[0], current_class)
-        for keyword in call.keywords:
-            if keyword.arg == "to":
-                return self._resolve_django_target(keyword.value, current_class)
-        return None
+            target = self._resolve_django_target(call.args[0], current_class)
+        else:
+            for keyword in call.keywords:
+                if keyword.arg == "to":
+                    target = self._resolve_django_target(keyword.value, current_class)
+                    break
+        if target is not None and target in self.classes.all:
+            if self._meta_flag(self.classes.all[target], "proxy"):
+                return self._concrete_model(target, ()) or target
+        return target
 
     @staticmethod
     def _resolve_django_target(node: ast.expr, current_class: str) -> str | None:
