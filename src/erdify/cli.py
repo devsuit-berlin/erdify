@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-relationships",
         action="store_true",
-        help="Skip relationship lines in output",
+        help="Draw no relationship lines (edges) in any format, foreign-key edges included",
     )
     parser.add_argument(
         "--format",

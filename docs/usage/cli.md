@@ -70,7 +70,8 @@ options:
                         (CharField, TextField) instead of mapped Python types
                         (str, int, datetime)
   --no-enums            Skip enum definitions in output
-  --no-relationships    Skip relationship lines in output
+  --no-relationships    Draw no relationship lines (edges) in any format,
+                        foreign-key edges included
   --format FMT [FMT ...]
                         Output format(s): plantuml (.puml), mermaid (.mmd),
                         json (.json), html (.html). Default: plantuml. With -o

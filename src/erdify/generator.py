@@ -23,16 +23,27 @@ class _ERGenerator:
     the relationship logic and only differ in entity/enum block formatting.
     """
 
+    #: The cardinality a relationship's inverse side declares: a 1:N collection
+    #: (``many``) is mirrored by an N:1 reference (``one``), and so on.
+    _INVERSE_KIND = {
+        "one": "many",
+        "many": "one",
+        "one_to_one": "one_to_one",
+        "many_to_many": "many_to_many",
+    }
+
     def __init__(
         self,
         entities: Dict[str, EntityInfo],
         enums: Dict[str, EnumInfo] | None = None,
         *,
         title: str = "Database ERD",
+        include_relationships: bool = True,
     ):
         self.entities = entities
         self.enums = enums or {}
         self.title = title
+        self.include_relationships = include_relationships
 
     def _get_used_enums(self) -> "set[str]":
         """Get set of enum names used by entity fields."""
@@ -166,31 +177,78 @@ class _ERGenerator:
 
         return lines
 
-    def _generate_relationship_list_lines(
-        self, entity: EntityInfo
-    ) -> "List[Tuple[str, frozenset[str]]]":
-        """Generate lines from an entity's declared relationships.
+    @staticmethod
+    def _snake_case(name: str) -> str:
+        """``OrderItem`` -> ``order_item``, ``HTTPRequest`` -> ``http_request``.
 
-        Returns (line, pair) tuples where pair is the frozenset of the two
-        connected entity names, so callers can skip already-connected pairs.
+        The usual attribute name for a reference to a class; an acronym stays
+        one word.
         """
-        results: List[Tuple[str, frozenset[str]]] = []
-        for target_name, rel_type, attr in entity.relationships:
-            target = self.entities.get(target_name)
-            if not target:
+        return re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", name).lower()
+
+    @staticmethod
+    def _declared_line(entity: EntityInfo, target: str, rel_type: str, attr: str) -> str:
+        """The edge for one declared relationship of ``entity``."""
+        if rel_type == "many":
+            return f'{entity.name} ||--o{{ {target} : "{attr}"'
+        if rel_type == "one_to_one":
+            return f'{entity.name} ||--|| {target} : "{attr}"'
+        if rel_type == "many_to_many":
+            return f'{entity.name} }}o--o{{ {target} : "{attr}"'
+        if attr in entity.nullable_relationships:  # optional "one" (#223)
+            return f'{entity.name} }}o--o| {target} : "{attr}"'
+        return f'{entity.name} }}o--|| {target} : "{attr}"'  # "one"
+
+    def _declared_relationship_lines(self, connected: "set[frozenset[str]]") -> List[str]:
+        """Edges for declared relationships between pairs not in ``connected``.
+
+        Every declared attribute gets its own edge (#230), except the inverse
+        side of a bidirectional relationship (e.g. ``User.posts`` and
+        ``Post.user``), which describes the same edge and is collapsed into the
+        side declared first. The IR does not record ``back_populates``, so each
+        edge of the first side absorbs at most one relationship declared back
+        from the other side: the first one with the inverse cardinality
+        (``many`` for ``one`` and vice versa), preferring an attribute named
+        after the class it points at (``Post.user`` for ``User``), else the
+        first one left. A self-reference has no "other side", so there only an
+        N:1 / 1:N inverse (``parent`` / ``children``) is absorbed; two references
+        of the same cardinality (``friends`` / ``blocked``, both M:N) stay two
+        edges.
+        """
+        rels = [
+            (entity, target, rel_type, attr)
+            for entity in self.entities.values()
+            for target, rel_type, attr in entity.relationships
+            if target in self.entities and frozenset((entity.name, target)) not in connected
+        ]
+        by_direction: Dict[Tuple[str, str], List[int]] = {}
+        for i, (entity, target, _, _) in enumerate(rels):
+            by_direction.setdefault((entity.name, target), []).append(i)
+        first_side: Dict[frozenset[str], str] = {}
+        absorbed: set[int] = set()
+        for i, (entity, target, rel_type, _) in enumerate(rels):
+            if i in absorbed:
                 continue
-            if rel_type == "many":
-                line = f'{entity.name} ||--o{{ {target.name} : "{attr}"'
-            elif rel_type == "one_to_one":
-                line = f'{entity.name} ||--|| {target.name} : "{attr}"'
-            elif rel_type == "many_to_many":
-                line = f'{entity.name} }}o--o{{ {target.name} : "{attr}"'
-            elif attr in entity.nullable_relationships:  # optional "one" (#223)
-                line = f'{entity.name} }}o--o| {target.name} : "{attr}"'
-            else:  # "one"
-                line = f'{entity.name} }}o--|| {target.name} : "{attr}"'
-            results.append((line, frozenset((entity.name, target.name))))
-        return results
+            if first_side.setdefault(frozenset((entity.name, target)), entity.name) != entity.name:
+                continue  # the other side's leftovers: drawn as they are
+            if target == entity.name and self._INVERSE_KIND[rel_type] == rel_type:
+                continue  # two M:N / 1:1 self-references are two relationships
+            inverse = [
+                j
+                for j in by_direction.get((target, entity.name), ())
+                if j > i and j not in absorbed
+            ]
+            exact = [j for j in inverse if rels[j][2] == self._INVERSE_KIND[rel_type]]
+            named = [j for j in exact if rels[j][3] == self._snake_case(entity.name)]
+            if exact:
+                absorbed.add((named or exact)[0])
+            elif inverse and target != entity.name:
+                absorbed.add(inverse[0])
+        return [
+            self._declared_line(entity, target, rel_type, attr)
+            for i, (entity, target, rel_type, attr) in enumerate(rels)
+            if i not in absorbed
+        ]
 
     def _relationship_lines(self) -> List[str]:
         """Resolve every relationship line, de-duplicated and ordered.
@@ -198,7 +256,11 @@ class _ERGenerator:
         Order: direct foreign-key edges, then many-to-many through link tables,
         then declared relationships for pairs not already connected (so keyless
         models get edges without duplicating SQLModel/SQLAlchemy foreign keys).
+        Empty when the generator was built with ``include_relationships=False``
+        (``--no-relationships``, #232).
         """
+        if not self.include_relationships:
+            return []
         link_table_map = self._build_link_table_map()
         lines: List[str] = []
         seen: set[str] = set()
@@ -224,13 +286,10 @@ class _ERGenerator:
             if entity_a and entity_b:
                 connected_pairs.add(frozenset((entity_a.name, entity_b.name)))
 
-        for entity in self.entities.values():
-            for rel, pair in self._generate_relationship_list_lines(entity):
-                if pair in connected_pairs or rel in seen:
-                    continue
+        for rel in self._declared_relationship_lines(connected_pairs):
+            if rel not in seen:
                 lines.append(rel)
                 seen.add(rel)
-                connected_pairs.add(pair)
 
         return lines
 
@@ -244,6 +303,8 @@ class PlantUMLGenerator(_ERGenerator):
         entities: Entity name to EntityInfo, as returned by the parsers.
         enums: Optional enum name to EnumInfo.
         title: Diagram title.
+        include_relationships: Draw relationship lines (``False`` omits the
+            whole ``' Relationships`` section).
     """
 
     def generate(self) -> str:
@@ -284,11 +345,12 @@ class PlantUMLGenerator(_ERGenerator):
             lines.extend(self._generate_entity(entity))
             lines.append("")
 
-        lines.append("' Relationships")
-        lines.append("")
-        lines.extend(self._relationship_lines())
+        if self.include_relationships:
+            lines.append("' Relationships")
+            lines.append("")
+            lines.extend(self._relationship_lines())
+            lines.append("")
 
-        lines.append("")
         lines.append("@enduml")
 
         return "\n".join(lines)
@@ -358,6 +420,7 @@ class MermaidGenerator(_ERGenerator):
         entities: Entity name to EntityInfo, as returned by the parsers.
         enums: Optional enum name to EnumInfo.
         title: Accepted for a uniform API; Mermaid ``erDiagram`` has no title.
+        include_relationships: Draw relationship lines.
     """
 
     def generate(self) -> str:
@@ -465,6 +528,7 @@ def generate_plantuml(
         entities=entities,
         enums=enums if include_enums else None,
         title=title,
+        include_relationships=include_relationships,
     )
     return generator.generate()
 
@@ -494,6 +558,7 @@ def generate_mermaid(
         entities=entities,
         enums=enums if include_enums else None,
         title=title,
+        include_relationships=include_relationships,
     )
     return generator.generate()
 

@@ -648,3 +648,25 @@ def test_output_and_model_files_are_utf8_under_ascii_locale(tmp_path):
     assert "Café" in out_file.read_text(encoding="utf-8")
     check = subprocess.run(base + ["--check"], capture_output=True, env=env)
     assert check.returncode == 0, check.stderr.decode("utf-8", "replace")
+
+
+@pytest.mark.parametrize("fmt", ["plantuml", "mermaid", "html"])
+def test_cli_no_relationships_hides_edges(tmp_path: Path, capsys, fmt: str):
+    """--no-relationships drops every edge, FK-backed ones included (#232)."""
+    (tmp_path / "models.py").write_text(
+        "from django.db import models\n\n\n"
+        "class A(models.Model):\n    pass\n\n\n"
+        "class B(models.Model):\n"
+        "    a = models.ForeignKey(A, on_delete=models.CASCADE)\n",
+        encoding="utf-8",
+    )
+    argv = ["erdify", str(tmp_path), "--format", fmt]
+    with patch.object(sys, "argv", argv):
+        assert main() == 0
+    assert '"a_id"' in capsys.readouterr().out
+
+    with patch.object(sys, "argv", [*argv, "--no-relationships"]):
+        assert main() == 0
+    out = capsys.readouterr().out
+    assert '"a_id"' not in out
+    assert "a_id" in out  # the FK column itself is still listed
