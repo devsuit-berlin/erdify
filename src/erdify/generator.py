@@ -199,8 +199,16 @@ class _ERGenerator:
             return f'{entity.name} }}o--o| {target} : "{attr}"'
         return f'{entity.name} }}o--|| {target} : "{attr}"'  # "one"
 
-    def _declared_relationship_lines(self, connected: "set[frozenset[str]]") -> List[str]:
-        """Edges for declared relationships between pairs not in ``connected``.
+    def _declared_relationship_lines(
+        self, fk_pairs: "set[frozenset[str]]", link_pairs: "set[frozenset[str]]"
+    ) -> List[str]:
+        """Edges for declared relationships between pairs no column already connects.
+
+        A pair joined by a foreign-key column (``fk_pairs``) or a link table
+        (``link_pairs``) already has its edge, which an ORM relationship such
+        as ``relationship()`` merely mirrors. A many-to-many never mirrors a
+        foreign-key column, so only a link table suppresses it: e.g. a Django
+        ``ManyToManyField`` to the parent of a multi-table child (#233).
 
         Every declared attribute gets its own edge (#230), except the inverse
         side of a bidirectional relationship (e.g. ``User.posts`` and
@@ -215,11 +223,14 @@ class _ERGenerator:
         of the same cardinality (``friends`` / ``blocked``, both M:N) stay two
         edges.
         """
+        connected = fk_pairs | link_pairs
         rels = [
             (entity, target, rel_type, attr)
             for entity in self.entities.values()
             for target, rel_type, attr in entity.relationships
-            if target in self.entities and frozenset((entity.name, target)) not in connected
+            if target in self.entities
+            and frozenset((entity.name, target))
+            not in (link_pairs if rel_type == "many_to_many" else connected)
         ]
         by_direction: Dict[Tuple[str, str], List[int]] = {}
         for i, (entity, target, _, _) in enumerate(rels):
@@ -279,14 +290,14 @@ class _ERGenerator:
                         lines.append(rel)
                         seen.add(rel)
 
-        connected_pairs = self._connected_pairs()
+        link_pairs: set[frozenset[str]] = set()
         for table_a, table_b in link_table_map:
             entity_a = self._entity_by_table(table_a)
             entity_b = self._entity_by_table(table_b)
             if entity_a and entity_b:
-                connected_pairs.add(frozenset((entity_a.name, entity_b.name)))
+                link_pairs.add(frozenset((entity_a.name, entity_b.name)))
 
-        for rel in self._declared_relationship_lines(connected_pairs):
+        for rel in self._declared_relationship_lines(self._connected_pairs(), link_pairs):
             if rel not in seen:
                 lines.append(rel)
                 seen.add(rel)

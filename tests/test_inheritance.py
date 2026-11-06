@@ -534,7 +534,7 @@ class Leaf(TreeBase):
 
 
 class TestDjangoConcreteParentSelfReference:
-    """``"self"`` on a concrete parent keeps pointing at the parent (multi-table)."""
+    """``"self"`` on a concrete parent stays on the parent's table (multi-table, #233)."""
 
     def test_concrete_parent(self, tmp_path: Path):
         src = """
@@ -551,8 +551,10 @@ class Child(Parent):
 """
         entities = _parse(tmp_path, src)
         assert _field(entities, "Parent", "parent_id").foreign_table == "parent.id"
-        assert _field(entities, "Child", "parent_id").foreign_table == "parent.id"
-        assert entities["Child"].relationships == [("Parent", "many_to_many", "peers")]
+        assert entities["Parent"].relationships == [("Parent", "many_to_many", "peers")]
+        # The child's table holds only its own field and the parent link.
+        assert [f.name for f in entities["Child"].fields] == ["parent_ptr_id", "extra"]
+        assert entities["Child"].relationships == []
 
     def test_abstract_base_under_concrete_parent(self, tmp_path: Path):
         """An abstract base's ``"self"`` binds to the first concrete model that copies it."""
@@ -576,7 +578,7 @@ class SpecialNode(Node):
 """
         entities = _parse(tmp_path, src)
         assert _field(entities, "Node", "parent_id").foreign_table == "node.id"
-        assert _field(entities, "SpecialNode", "parent_id").foreign_table == "node.id"
+        assert [f.name for f in entities["SpecialNode"].fields] == ["node_ptr_id", "extra"]
 
 
 class TestDataclassFieldMerge:
@@ -743,17 +745,13 @@ class Node(TreeBase):
     pass
 
 
-class SpecialNode(Node):
-    uid = models.UUIDField(primary_key=True)
-
-
 class Ref(models.Model):
-    x = models.ForeignKey(SpecialNode, on_delete=models.CASCADE, to_field="parent")
+    x = models.ForeignKey(Node, on_delete=models.CASCADE, to_field="parent")
 """
         entities = _parse(tmp_path, src)
-        assert _field(entities, "SpecialNode", "parent_id").foreign_table == "node.id"
+        assert _field(entities, "Node", "parent_id").foreign_table == "node.id"
         fk = _field(entities, "Ref", "x_id")
-        assert fk.foreign_table == "special_node.parent_id"
+        assert fk.foreign_table == "node.parent_id"
         assert fk.type_str == "int"
 
 

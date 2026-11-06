@@ -78,6 +78,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   qualified `orm.Mapped[...]`, or when its own body only declares
   `WriteOnlyMapped[...]` / `DynamicMapped[...]` relationships (its columns
   coming from a mixin); previously such a class was skipped ([#236](https://github.com/devsuit-berlin/erdify/issues/236)).
+- Django multi-table inheritance is modeled like Django creates it: a model
+  that subclasses a *concrete* model gets its own table with only its own
+  fields (plus those of its abstract bases) and a `<parent>_ptr_id` one-to-one
+  link to the parent, which is its primary key unless it declares one. An
+  explicit `OneToOneField(parent_link=True)` replaces the implicit link, and a
+  foreign key to the subclass references the link column (a `to_field=` naming
+  a parent's field references the parent's table). Previously the parent's
+  fields were copied into the subclass as if the parent were abstract, and a
+  foreign key to it referenced a column that does not exist. Proxy models
+  (`class Meta: proxy = True`) have no table and are no longer drawn; a
+  relation to a proxy points at the model it stands for
+  ([#233](https://github.com/devsuit-berlin/erdify/issues/233)).
+- A Django `ManyToManyField` between two models that a foreign key also
+  connects (e.g. `parent = ForeignKey("self")` beside
+  `peers = ManyToManyField("self")`, or the new parent link of #233) is now
+  drawn; previously the foreign key hid it.
+- A Django string reference names its model case-insensitively, as in Django:
+  `ManyToManyField("catalog.tag")` now draws its edge to `Tag`, and a
+  lower-case `parent_link` reference is matched to its parent.
 
 ### Output changes
 
@@ -106,6 +125,15 @@ quoted names), and adds
 SQLAlchemy models, with their edges, that were previously not detected. In
 `--format json`, the affected columns' `type` and `nullable` change
 accordingly.
+
+The #233 fix changes every Django model that subclasses a concrete model: its
+copied parent columns and inherited relationships are replaced by a
+`<parent>_ptr_id` link drawn 1:1 to the parent (`|o--||`), which also replaces
+the implicit `id` primary key unless the model declares its own. Foreign keys
+to such a model now reference its primary-key column. Proxy models disappear
+from the diagram, and edges to them now end at the proxied model. A
+`ManyToManyField` between two models that a foreign key also connects now
+gets its `}o--o{` edge.
 
 ## [1.2.0] - 2026-11-06
 
