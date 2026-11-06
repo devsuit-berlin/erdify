@@ -2,7 +2,9 @@
 
 Only the text between the markers is replaced; every other byte of the file is
 preserved. Matching is lenient (tolerates whitespace and future attributes) so
-the single-region format stays forward-compatible.
+the single-region format stays forward-compatible: keep accepting attributes
+inside the markers, so that named regions (``<!-- erdify:start id=auth -->``,
+considered in #90) could be added later without breaking existing files.
 """
 
 import re
