@@ -46,6 +46,8 @@ class _AnnotationRef(NamedTuple):
     target: str
     many: bool
     nullable: bool
+    #: Named through a module (``schemas.User``); only trusted in relationship().
+    qualified: bool = False
 
 
 # A relationship while parsing: (target, type, attribute, nullable). The
@@ -934,10 +936,7 @@ class ASTDatabaseParser:
         """Check whether an expression is a call to ``func_name`` (Name or attribute)."""
         if not isinstance(value, ast.Call):
             return False
-        func = value.func
-        return (isinstance(func, ast.Name) and func.id == func_name) or (
-            isinstance(func, ast.Attribute) and func.attr == func_name
-        )
+        return ASTDatabaseParser._expr_name(value.func) == func_name
 
     def _local_bases(self, class_node: ast.ClassDef) -> List[str]:
         """Names of the direct bases that are classes parsed from the input."""
@@ -1188,7 +1187,16 @@ class ASTDatabaseParser:
         if model_kind == "django":
             declared = self._django_declared_names(class_node)
         else:
-            declared = [*fields, *rels]
+            # Every annotated attribute shadows an inherited one, also when it
+            # yields neither a field nor a relationship (e.g. a relationship()
+            # whose annotation names no single class, or link_model=).
+            declared = [
+                node.target.id
+                for node in class_node.body
+                if isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and not node.target.id.startswith("_")
+            ]
         return fields, rels, declared
 
     @staticmethod
@@ -1211,8 +1219,11 @@ class ASTDatabaseParser:
                 # Same key and kind: update() below replaces it in place.
                 elif attr in class_fields:
                     rels.pop(attr, None)
+                elif attr in class_rels:
+                    fields.pop(attr, None)
                 else:
                     fields.pop(attr, None)
+                    rels.pop(attr, None)
             fields.update(class_fields)
             rels.update(class_rels)
         return fields, rels
@@ -1265,13 +1276,12 @@ class ASTDatabaseParser:
                     continue
 
                 # Check for an explicit relationship call (SQLModel/SQLAlchemy)
-                is_relationship = False
-                if node.value and isinstance(node.value, ast.Call):
-                    if isinstance(node.value.func, ast.Name) and node.value.func.id in (
-                        "Relationship",  # SQLModel
-                        "relationship",  # SQLAlchemy
-                    ):
-                        is_relationship = True
+                # SQLModel Relationship() / SQLAlchemy relationship(), also
+                # module-qualified (orm.relationship, sqlmodel.Relationship).
+                is_relationship = node.value is not None and (
+                    self._is_call_to(node.value, "Relationship")
+                    or self._is_call_to(node.value, "relationship")
+                )
 
                 if is_relationship:
                     rel = self._parse_relationship(node)
@@ -1609,11 +1619,7 @@ class ASTDatabaseParser:
             if value == "self":
                 return current_class
             return value.split(".")[-1]
-        if isinstance(node, ast.Name):
-            return node.id
-        if isinstance(node, ast.Attribute):
-            return node.attr
-        return None
+        return ASTDatabaseParser._expr_name(node)
 
     def _parse_field(self, node: ast.AnnAssign, model_kind: str) -> FieldInfo | None:
         """Parse a field from an annotated assignment."""
@@ -1796,7 +1802,9 @@ class ASTDatabaseParser:
             return None
 
         ref = self._annotation_reference(node.annotation)
-        if ref is None:
+        # A qualified name (`other_service.User`) may be an external class that
+        # merely shares a model's name; only an explicit relationship() trusts it.
+        if ref is None or ref.qualified:
             return None
         target_class = self._all_classes.get(ref.target)
         if target_class is not None and self._classify_source(target_class) is not None:
@@ -1812,7 +1820,22 @@ class ASTDatabaseParser:
     _TRANSPARENT_WRAPPERS = frozenset({"Mapped", "WriteOnlyMapped", "DynamicMapped", "Annotated"})
     #: Single-argument collections of a model: a "many" reference.
     _MANY_CONTAINERS = frozenset(
-        {"list", "List", "set", "Set", "frozenset", "FrozenSet", "Sequence", "MutableSequence"}
+        {
+            "list",
+            "List",
+            "set",
+            "Set",
+            "frozenset",
+            "FrozenSet",
+            "AbstractSet",
+            "MutableSet",
+            "Sequence",
+            "MutableSequence",
+            "Collection",
+            "Iterable",
+            "deque",
+            "Deque",
+        }
     )
     #: Mappings whose *value* is the model (e.g. SQLAlchemy keyed-dict collections).
     _MANY_MAPPINGS = frozenset({"dict", "Dict", "Mapping", "MutableMapping"})
@@ -1828,8 +1851,10 @@ class ASTDatabaseParser:
 
     @staticmethod
     def _is_none(node: ast.expr) -> bool:
-        """``None``, also as the string forward reference ``"None"``."""
-        return isinstance(node, ast.Constant) and node.value in (None, "None")
+        """``None``, also as ``"None"`` or ``NoneType`` (``types.NoneType``)."""
+        if isinstance(node, ast.Constant):
+            return node.value in (None, "None", "NoneType")
+        return ASTDatabaseParser._expr_name(node) == "NoneType"
 
     @classmethod
     def _annotation_reference(cls, node: ast.expr, many: bool = False) -> _AnnotationRef | None:
@@ -1840,8 +1865,9 @@ class ASTDatabaseParser:
         ``Union[X, None]``, string forward references (also ``"None"``),
         ``Mapped`` / ``WriteOnlyMapped`` / ``DynamicMapped`` / ``Annotated``
         wrappers, ``typing.``-qualified forms, module-qualified classes
-        (``schemas.User``), and collections: ``list`` / ``set`` / ``Sequence``
-        and friends, ``tuple[X, ...]`` and a mapping's value type. Returns None
+        (``schemas.User``, flagged ``qualified``), and collections: ``list``,
+        ``set``, ``Sequence`` and friends, ``tuple[X, ...]`` and a mapping's
+        value type. Returns None
         when the annotation does not name exactly one class, such as
         ``Union[User, int]`` or ``tuple[User, int]``.
         """
@@ -1853,9 +1879,10 @@ class ASTDatabaseParser:
             except (SyntaxError, ValueError):  # ValueError: NUL byte on Python 3.11
                 return None
             return cls._annotation_reference(parsed, many)
-        if isinstance(node, (ast.Name, ast.Attribute)):
-            name = cls._expr_name(node)
-            return _AnnotationRef(name, many, False) if name else None
+        if isinstance(node, ast.Name):
+            return _AnnotationRef(node.id, many, False)
+        if isinstance(node, ast.Attribute):
+            return _AnnotationRef(node.attr, many, False, qualified=True)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
             return cls._union_reference(cls._union_operands(node), many)
         if not isinstance(node, ast.Subscript):

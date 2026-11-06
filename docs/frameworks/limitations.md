@@ -134,10 +134,13 @@ bare = relationship("Coach")                          # ignored
 The annotation must name **exactly one class**, possibly optional (`X | None`,
 `Optional[X]`, `Union[X, None]`), wrapped (`Mapped`, `WriteOnlyMapped`,
 `DynamicMapped`, `Annotated`), or in a collection (`list`, `set`, `Sequence`,
-`tuple[X, ...]`, a mapping's value). A union of several classes
-(`Mapped[Union["Cat", "Dog"]]`) or a type alias defined elsewhere names no
-single class, so nothing is drawn for it. A module-qualified name
-(`schemas.User`) resolves by its last part.
+`Iterable`, `tuple[X, ...]`, a mapping's value). A union of several classes
+(`Mapped[Union["Cat", "Dog"]]`) names no single class, so nothing is drawn for
+it. A type alias (`Mapped[ChildList]`) is taken as a class name, so it draws an
+edge only if a model of that name exists. A module-qualified name
+(`schemas.User`) resolves by its last part inside `relationship()` /
+`Relationship()`; on a plain Pydantic / dataclass field it stays a column,
+because it may be an external class that shares a model's name.
 
 Django is the exception: its relationship fields are calls, so string targets
 (`"Author"`, `"catalog.Author"`, `"self"`) and direct class references are all

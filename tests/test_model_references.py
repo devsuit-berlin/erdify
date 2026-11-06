@@ -67,15 +67,17 @@ class TestKeylessReferences:
             ("list[Optional[list[User]]]", "many", False),
             ('Union["User", "None"]', "one", True),  # string "None"
             ('User | "None"', "one", True),
-            ("schemas.User", "one", False),  # module-qualified class
-            ('"schemas.User"', "one", False),
-            ("Optional[schemas.User]", "one", True),
             ("set[User]", "many", False),
             ("Set[User]", "many", False),
             ("frozenset[User]", "many", False),
             ("Sequence[User]", "many", False),
             ("tuple[User, ...]", "many", False),
             ("dict[str, User]", "many", False),
+            ("AbstractSet[User]", "many", False),
+            ("Iterable[User]", "many", False),
+            ("deque[User]", "many", False),
+            ("Union[User, NoneType]", "one", True),
+            ("User | types.NoneType", "one", True),
             ("Annotated[User, None]", "one", False),  # metadata None is not optional
             ("typing.Annotated[User | None, 1]", "one", True),
             ('" User "', "one", False),  # whitespace around a forward reference
@@ -93,6 +95,11 @@ class TestKeylessReferences:
             "Union[User, int]",  # not a single model
             "User | int",
             "int | None",
+            # A qualified name may be an external class sharing a model's name;
+            # only an explicit relationship() trusts it.
+            "schemas.User",
+            '"schemas.User"',
+            "Optional[schemas.User]",
             "tuple[User, int]",  # fixed-length tuple of mixed types
             "dict[User, int]",  # the model is the key, not the value
             "Optional[int]",
@@ -227,3 +234,58 @@ class TestSQLModelRelationship:
         member = _parse(tmp_path, SQLMODEL.format(annotation=annotation))["Member"]
         assert member.relationships == [("Team", "one", "team")]
         assert member.nullable_relationships == (["team"] if nullable else [])
+
+
+class TestRedeclaration:
+    def test_unresolvable_redeclaration_shadows_the_inherited_relationship(self, tmp_path: Path):
+        """A subclass relationship() naming no single class still replaces the parent's."""
+        src = """
+from typing import Union
+
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "user"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Team(Base):
+    __tablename__ = "team"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class OwnedMixin:
+    owner: Mapped["User"] = relationship()
+
+
+class Project(OwnedMixin, Base):
+    __tablename__ = "project"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner: Mapped[Union["User", "Team"]] = relationship()
+"""
+        entities = _parse(tmp_path, src)
+        assert entities["Project"].relationships == []
+        edges = [line for line in generate_mermaid(entities).splitlines() if "--" in line]
+        assert not any(line.strip().startswith("Project ") for line in edges)
+
+
+class TestQualifiedRelationshipCall:
+    @pytest.mark.parametrize("call", ["orm.relationship()", "sqlalchemy.orm.relationship()"])
+    def test_module_qualified_relationship(self, tmp_path: Path, call: str):
+        src = SQLALCHEMY.replace("= relationship()", f"= {call}").replace(
+            "from sqlalchemy.orm import (",
+            "from sqlalchemy import orm\nfrom sqlalchemy.orm import (",
+        )
+        member = _parse(tmp_path, src.format(annotation='Mapped[Optional["Team"]]'))["Member"]
+        assert member.relationships == [("Team", "one", "team")]
+        assert member.nullable_relationships == ["team"]
+
+    def test_module_qualified_sqlmodel_relationship(self, tmp_path: Path):
+        src = SQLMODEL.replace("= Relationship()", "= sqlmodel.Relationship()")
+        member = _parse(tmp_path, src.format(annotation='Optional["Team"]'))["Member"]
+        assert member.relationships == [("Team", "one", "team")]

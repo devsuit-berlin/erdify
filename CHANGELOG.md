@@ -17,10 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - wrappers: Pydantic's `Annotated[User | None, Field(...)]`, and
     SQLAlchemy's `WriteOnlyMapped[...]` / `DynamicMapped[...]` besides
     `Mapped[...]`;
-  - module-qualified classes: `schemas.User`, `"models.Team"`;
-  - collections: `set`, `frozenset`, `Sequence`, `tuple[User, ...]` and a
-    mapping's value type (`dict[str, User]`, SQLAlchemy keyed-dict
-    collections) besides `list`, nested lists included.
+  - module-qualified classes in `relationship()` / `Relationship()`
+    (`Mapped["models.Team"]`), and module-qualified calls
+    (`orm.relationship()`, `sqlmodel.Relationship()`);
+  - collections: `set`, `frozenset`, `Sequence`, `Iterable`, `deque`,
+    `tuple[User, ...]` and a mapping's value type (`dict[str, User]`,
+    SQLAlchemy keyed-dict collections) besides `list`, nested lists included;
+  - `NoneType` as the optional part (`Union[User, NoneType]`).
 
   For Pydantic and dataclass models, such a field was rendered as a column
   with its raw type (e.g. `Union_User_None` in Mermaid) and no edge; it is now
@@ -28,7 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `relationship()`, the relationship's target was garbled (e.g.
   `Union[Team,`), so no edge was drawn; it now names the class. A
   `relationship()` whose annotation names no single class (e.g.
-  `Mapped[Union["A", "B"]]`) is no longer listed with a garbled target.
+  `Mapped[Union["A", "B"]]`) is no longer listed with a garbled target, and
+  still replaces a relationship of the same name inherited from a base. A
+  module-qualified name on a plain Pydantic / dataclass field
+  (`ext: other_service.User`) stays a column, since it may be an external
+  class that merely shares a model's name.
 
 ### Output changes
 
