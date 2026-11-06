@@ -12,7 +12,7 @@ framework is detected and a worked example, see the
 | -------- | -------- | ------- |
 | Primary Keys | ✅ | `Field(primary_key=True)` |
 | Foreign Keys | ✅ | `Field(foreign_key="table.column")` |
-| Nullable Fields | ✅ | `str \| None`, `Optional[str]`, explicit `nullable=` (overrides the annotation), Django `null=True`; a nullable FK, or an optional model reference (`user: User \| None`), is drawn optional (`}o--o\|`). A primary key is never nullable, so SQLModel's `id: int \| None = Field(default=None, primary_key=True)` renders as a plain PK |
+| Nullable Fields | ✅ | `str \| None`, `None \| str`, `Optional[str]`, `Union[str, None]` (also inside `Mapped[...]` / `Annotated[...]`), explicit `nullable=` (overrides the annotation), Django `null=True`; a nullable FK, or an optional model reference (`user: User \| None`), is drawn optional (`}o--o\|`). A primary key is never nullable, so SQLModel's `id: int \| None = Field(default=None, primary_key=True)` renders as a plain PK |
 | Unique Columns | ✅ | `Field(unique=True)`, `mapped_column(unique=True)`, Django `unique=True` (and every `OneToOneField`), or a single-column `UniqueConstraint` / `Index(..., unique=True)` in `__table_args__`; marked `UK`, and a unique FK is drawn 1:1 (`\|o--\|\|`). An FK that is its table's only primary-key column (shared primary key, incl. Django `ForeignKey` / `OneToOneField(primary_key=True)`) is drawn 1:1 too |
 | Default Values | ✅ | `Field(default=value)` |
 | Indexes | ✅ | `Field(index=True)` — detected and emitted in `--format json`; not drawn in the PlantUML/Mermaid diagram |
@@ -26,7 +26,7 @@ framework is detected and a worked example, see the
 | File Discovery | ✅ | `--include` globs (`models/` packages, custom filenames) |
 | Markdown Embed | ✅ | `--inject` into Markdown between `erdify:start`/`erdify:end` markers |
 | SQLModel | ✅ | `Field()` / `Relationship()` |
-| SQLAlchemy 2.0 | ✅ | `Mapped[...]` / `mapped_column()` |
+| SQLAlchemy 2.0 | ✅ | `Mapped[...]` (also qualified, `orm.Mapped[...]`, and `WriteOnlyMapped` / `DynamicMapped`) / `mapped_column()` |
 | Django ORM | ✅ | `models.Model`, `ForeignKey` / `OneToOneField` / `ManyToManyField` |
 | Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships; `--base-classes` adds bases defined outside the scan (e.g. django-ninja's `Schema`) |
 | Dataclass | ✅ | `@dataclass`, nested refs as relationships |

@@ -46,6 +46,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removes every edge from PlantUML, Mermaid and HTML output, foreign-key edges
   included; previously only `--format json` honored it
   ([#232](https://github.com/devsuit-berlin/erdify/issues/232)).
+- A column's nullability and displayed type are now read from the
+  annotation's syntax tree, like model references since #229
+  ([#236](https://github.com/devsuit-berlin/erdify/issues/236)):
+  - a type whose *name* contains `None` or `Optional` (`Mapped[OptionalSettings]`,
+    `NoneableJSON`, `Literal["None"]`) is no longer marked nullable;
+  - `None | X`, `Union[X, None]` and `typing.Optional[X]` now display as `X`
+    (previously the raw spelling), and a union of several types drops only its
+    `None` member (`int | str | None` → `int | str`);
+  - `Annotated[...]` and a qualified `orm.Mapped[...]` are unwrapped like
+    `Mapped[...]`, and a quoted annotation (`"int | None"`) is read like the
+    unquoted one.
+- A SQLAlchemy model is now detected when its columns are annotated with a
+  qualified `orm.Mapped[...]`, or when its only annotated members are
+  `WriteOnlyMapped[...]` / `DynamicMapped[...]` relationships; previously such
+  a class was skipped ([#236](https://github.com/devsuit-berlin/erdify/issues/236)).
 
 ### Output changes
 
@@ -65,6 +80,13 @@ The #230 fix adds an edge for each further reference to an already-referenced
 model; existing edges are unchanged. With `--no-relationships`, PlantUML,
 Mermaid and HTML output lose all edges, and PlantUML loses its
 `' Relationships` section (#232).
+
+The #236 fix drops the `nullable` / `?` marker from columns whose type merely
+has `None` or `Optional` in its name, shortens the displayed type of the
+optional spellings and `Annotated` / qualified `Mapped` columns listed above,
+and adds SQLAlchemy models that were previously not detected. In
+`--format json`, the affected columns' `type` and `nullable` change
+accordingly.
 
 ## [1.2.0] - 2026-11-06
 

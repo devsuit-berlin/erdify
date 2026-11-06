@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass, replace
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Dict, List, Mapping, NamedTuple, Tuple, TypeGuard, TypeVar
+from typing import Callable, Dict, List, Mapping, NamedTuple, Tuple, TypeGuard, TypeVar
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 
@@ -617,21 +617,16 @@ class ASTDatabaseParser:
                 return True
         return False
 
-    @staticmethod
-    def _is_mapped_annotation(annotation: ast.expr) -> bool:
-        """Check if an annotation is a SQLAlchemy Mapped[...] subscript."""
+    #: SQLAlchemy 2.0 annotation wrappers that mark a mapped attribute.
+    _MAPPED_WRAPPERS = frozenset({"Mapped", "WriteOnlyMapped", "DynamicMapped"})
+
+    @classmethod
+    def _is_mapped_annotation(cls, annotation: ast.expr) -> bool:
+        """``Mapped[...]`` (or ``WriteOnlyMapped`` / ``DynamicMapped``), bare or qualified."""
         return (
             isinstance(annotation, ast.Subscript)
-            and isinstance(annotation.value, ast.Name)
-            and annotation.value.id == "Mapped"
+            and cls._expr_name(annotation.value) in cls._MAPPED_WRAPPERS
         )
-
-    @staticmethod
-    def _unwrap_mapped(type_str: str) -> str:
-        """Strip a SQLAlchemy Mapped[...] wrapper, returning the inner type string."""
-        if type_str.startswith("Mapped[") and type_str.endswith("]"):
-            return type_str[len("Mapped[") : -1]
-        return type_str
 
     def _parse_table_class(self, class_node: ast.ClassDef, source: str) -> None:
         """Parse a table class and all its inherited fields."""
@@ -1629,10 +1624,7 @@ class ASTDatabaseParser:
             return None
 
         field_name = node.target.id
-        type_str = self._unwrap_mapped(ast.unparse(node.annotation))
-
-        # Check if nullable
-        is_nullable = "None" in type_str or "Optional" in type_str
+        type_str, is_nullable = self._column_type(node.annotation)
 
         # Parse Field() / mapped_column() parameters
         is_primary_key = False
@@ -1695,12 +1687,6 @@ class ASTDatabaseParser:
             is_nullable = False
             if default_value == "None":
                 default_value = None
-
-        # Clean up type string: drop the optional wrapper without mangling
-        # generic args (e.g. list[str] must keep its closing bracket).
-        type_str = type_str.replace(" | None", "").strip()
-        if type_str.startswith("Optional[") and type_str.endswith("]"):
-            type_str = type_str[len("Optional[") : -1]
 
         return FieldInfo(
             name=field_name,
@@ -1874,6 +1860,52 @@ class ASTDatabaseParser:
                 return False
             return cls._is_none(parsed)
         return cls._expr_name(node) == "NoneType"
+
+    @classmethod
+    def _column_type(cls, node: ast.expr) -> Tuple[str, bool]:
+        """A column's displayed type and whether its annotation admits ``None``.
+
+        Walks the syntax tree like :meth:`_annotation_reference` (#236): the
+        ``Mapped`` / ``Annotated`` wrappers (bare or qualified) are unwrapped,
+        and ``X | None``, ``None | X``, ``Optional[X]`` and ``Union[X, None]``
+        all give ``X`` and nullable. A union of several other types keeps them,
+        minus ``None``, in its own spelling. A quoted annotation is read like
+        the unquoted one. Matching on the tree means a class merely *named*
+        ``OptionalSettings`` or ``NoneableJSON`` is not nullable.
+        """
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            try:
+                parsed = ast.parse(node.value.strip(), mode="eval").body
+            except (SyntaxError, ValueError):  # ValueError: NUL byte on Python 3.11
+                return node.value, False
+            return cls._column_type(parsed)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            return cls._column_union(cls._union_operands(node), " | ".join)
+        if isinstance(node, ast.Subscript):
+            name = cls._expr_name(node.value)
+            args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+            if args and name in ("Mapped", "Annotated"):
+                return cls._column_type(args[0])
+            if name == "Optional" and len(args) == 1:
+                return cls._column_type(args[0])[0], True
+            if name == "Union" and args:
+                prefix = ast.unparse(node.value)
+                return cls._column_union(args, lambda parts: f"{prefix}[{', '.join(parts)}]")
+        return ast.unparse(node), False
+
+    @classmethod
+    def _column_union(
+        cls, options: List[ast.expr], spell: Callable[[List[str]], str]
+    ) -> Tuple[str, bool]:
+        """A union column type without its ``None`` members; ``spell`` joins the rest."""
+        rest = [option for option in options if not cls._is_none(option)]
+        nullable = len(rest) < len(options)
+        if not rest:  # a bare `None` annotation
+            return "None", True
+        if len(rest) == 1:
+            type_str, inner_nullable = cls._column_type(rest[0])
+            return type_str, nullable or inner_nullable
+        return spell([ast.unparse(option) for option in rest]), nullable
 
     @classmethod
     def _annotation_reference(cls, node: ast.expr, many: bool = False) -> _AnnotationRef | None:
