@@ -328,3 +328,98 @@ class Account(Base):
         entities, _ = parse_models_directory(tmp_path)
         code = _field(entities, "code")
         assert (code.is_primary_key, code.is_unique) == (False, False)
+
+
+class TestCopilotRound1:
+    def test_import_under_alias_name_shadows_it(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+intpk = Annotated[int, mapped_column(primary_key=True)]
+from uuid import UUID as intpk
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[intpk]
+""",
+        )
+        assert _flags(_field(entities, "token")) == ("intpk", False, False, False, None)
+
+    def test_import_of_the_alias_itself_keeps_it(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+intpk = Annotated[int, mapped_column(primary_key=True)]
+from .types import intpk
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[intpk]
+""",
+        )
+        assert _field(entities, "id").is_primary_key
+
+    @pytest.mark.parametrize("rebinding", ["intpk = other = str", "intpk, other = str, int"])
+    def test_chained_or_unpacking_rebinding(self, tmp_path: Path, rebinding: str):
+        entities = _parse(
+            tmp_path,
+            f"""
+intpk = Annotated[int, mapped_column(primary_key=True)]
+{rebinding}
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    col: Mapped[intpk]
+""",
+        )
+        assert _field(entities, "col").type_str == "intpk"
+
+    def test_other_frameworks_ignore_mapped_column_metadata(self, tmp_path: Path):
+        (tmp_path / "models.py").write_text(
+            "from dataclasses import dataclass\n"
+            "from typing import Annotated\n"
+            "from sqlalchemy.orm import mapped_column\n\n"
+            "intpk = Annotated[int, mapped_column(primary_key=True)]\n\n\n"
+            "@dataclass\n"
+            "class Dto:\n"
+            "    id: intpk\n"
+            '    status: Annotated[str, mapped_column(default="new")]\n',
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        fields = {f.name: f for f in entities["Dto"].fields}
+        assert (fields["id"].type_str, fields["id"].is_primary_key) == ("intpk", False)
+        assert fields["status"].default_value is None
+
+    def test_unrenderable_assigned_default_is_not_replaced(self, tmp_path: Path):
+        entities = _parse(
+            tmp_path,
+            """
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[Annotated[str, mapped_column(default="new")]] = mapped_column(
+        default=make_status
+    )
+""",
+        )
+        assert _field(entities, "status").default_value is None
+
+
+def test_assigned_plain_default_wins_over_metadata(tmp_path: Path):
+    """MappedAsDataclass allows `= "x"` as the default; it wins over the metadata one."""
+    entities = _parse(
+        tmp_path,
+        """
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[Annotated[str, mapped_column(default="new")]] = "x"
+""",
+    )
+    assert _field(entities, "status").default_value == "'x'"

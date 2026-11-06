@@ -40,7 +40,8 @@ class AnnotatedDialect(Dialect):
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 field_name = node.target.id
-                node = self._with_aliases_expanded(node)
+                if self.reads_annotated_columns:
+                    node = self._with_aliases_expanded(node)
 
                 # Skip special attributes
                 if field_name.startswith("_"):
@@ -73,6 +74,15 @@ class AnnotatedDialect(Dialect):
 
         return fields, relationships
 
+    @staticmethod
+    def _declares_default(value: ast.expr | None) -> bool:
+        """Whether the assigned value sets a default, even one that cannot be shown."""
+        if value is None:
+            return False
+        if not is_call_to(value, "mapped_column"):
+            return True  # `x: Mapped[str] = "a"` (MappedAsDataclass)
+        return any(kw.arg in ("default", "default_factory") for kw in value.keywords)
+
     def _with_aliases_expanded(self, node: ast.AnnAssign) -> ast.AnnAssign:
         """``node`` with column type aliases in its annotation expanded (#241)."""
         annotation = expand_aliases(node.annotation, self.ctx.aliases)
@@ -96,9 +106,15 @@ class AnnotatedDialect(Dialect):
         # (SQLAlchemy), bare or qualified (e.g. orm.mapped_column): what the
         # assigned call sets wins, except that primary_key=True from either
         # sticks. SQLModel ignores Field() keys in Annotated metadata.
-        metadata_calls = [
-            call for call in column_metadata(node.annotation) if is_call_to(call, "mapped_column")
-        ][:1]
+        metadata_calls = (
+            [
+                call
+                for call in column_metadata(node.annotation)
+                if is_call_to(call, "mapped_column")
+            ][:1]
+            if self.reads_annotated_columns
+            else []
+        )
         calls: List[ast.Call] = list(metadata_calls)
         if node.value is not None and (
             is_call_to(node.value, "Field") or is_call_to(node.value, "mapped_column")
@@ -148,8 +164,8 @@ class AnnotatedDialect(Dialect):
 
         # Extract default value
         default_value = self._extract_default_value(node)
-        for call in reversed(metadata_calls):  # the assigned value's default wins
-            if default_value is not None:
+        for call in metadata_calls:  # only when nothing assigned declares a default
+            if self._declares_default(node.value):
                 break
             default_value = self._extract_default_value(
                 ast.AnnAssign(target=node.target, annotation=node.annotation, value=call, simple=1)

@@ -76,6 +76,9 @@ class Dialect:
     #: typed as another model is a relationship, and an optional primary key
     #: really is optional.
     keyless: ClassVar[bool] = False
+    #: Reads SQLAlchemy column settings from ``Annotated`` metadata and column
+    #: type aliases (#241); only SQLAlchemy itself does.
+    reads_annotated_columns: ClassVar[bool] = False
 
     def __init__(self, ctx: ParseContext):
         self.ctx = ctx

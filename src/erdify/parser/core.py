@@ -251,14 +251,17 @@ class ASTDatabaseParser:
 
         ``X = Annotated[..., mapped_column(...)]`` and ``X: TypeAlias = ...``.
         A class of the same name wins. A name defined differently in two
-        places, or also bound to something else at module level, is ambiguous
-        and not used. A PEP 695 ``type X = ...`` alias is not read: SQLAlchemy
-        does not take a ``mapped_column()`` from it.
+        places, or also bound to something else at module level (another
+        assignment, a chained or unpacking one, or an import under that name
+        other than of the alias itself), is ambiguous and not used. A PEP 695
+        ``type X = ...`` alias is not read: SQLAlchemy does not take a
+        ``mapped_column()`` from it.
         """
         found: Dict[str, ast.expr] = {}
         ambiguous: set[str] = set()
         for tree in self._file_trees.values():
             for node in tree.body:
+                ambiguous.update(self._other_module_bindings(node))
                 name, value = None, None
                 if (
                     isinstance(node, ast.Assign)
@@ -277,6 +280,31 @@ class ASTDatabaseParser:
                     ambiguous.add(name)
                 found[name] = value
         return {name: value for name, value in found.items() if name not in ambiguous}
+
+    @staticmethod
+    def _other_module_bindings(node: ast.stmt) -> List[str]:
+        """Names a module-level statement binds other than as a plain ``X = ...``.
+
+        Chained (``a = b = ...``) and unpacking (``a, b = ...``) assignments,
+        and imports under a different name (``import UUID as intpk``). An
+        import of the alias itself (``from .types import intpk``) keeps it.
+        """
+        if isinstance(node, ast.Assign) and not (
+            len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+        ):
+            return [
+                sub.id
+                for target in node.targets
+                for sub in ast.walk(target)
+                if isinstance(sub, ast.Name)
+            ]
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            return [
+                alias.asname
+                for alias in node.names
+                if alias.asname is not None and alias.asname != alias.name.split(".")[-1]
+            ]
+        return []
 
     def _classify_source(self, class_node: ast.ClassDef) -> str | None:
         """Classify which model framework a class belongs to (:meth:`ParseContext.classify`).

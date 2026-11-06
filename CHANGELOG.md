@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Column settings in `Annotated` metadata are read: a `mapped_column(...)`
-  inside `Mapped[Annotated[int, mapped_column(primary_key=True)]]` sets the
+- SQLAlchemy column settings in `Annotated` metadata are read: a
+  `mapped_column(...)` inside `Mapped[Annotated[int, mapped_column(primary_key=True)]]` sets the
   primary key, foreign key (`ForeignKey(...)`), `unique`, `index`, `nullable`
   and default. As in SQLAlchemy, the first one in the metadata is merged with
   an assigned `mapped_column()`: what the assigned call sets wins, except that
@@ -26,8 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`intpk = Annotated[int, mapped_column(primary_key=True)]`, also
   `X: TypeAlias = ...`) are resolved from any scanned file, so
   `id: Mapped[intpk]` is a primary key typed `int` (was a plain column typed
-  `intpk`). Aliases without a `mapped_column()` keep their name, and a name
-  defined differently in two places is ignored
+  `intpk`). Aliases without a `mapped_column()` keep their name, a name
+  defined differently in two places (or rebound, e.g. by an import) is
+  ignored, and other frameworks (SQLModel, Pydantic, dataclasses), which do not
+  read `mapped_column()` metadata, are unaffected
   ([#241](https://github.com/devsuit-berlin/erdify/issues/241)).
 - Both sides of a relationship are drawn as one edge whose ends each show what
   their own side declares. A list on both sides is now `}o--o{` (was 1:N), and
