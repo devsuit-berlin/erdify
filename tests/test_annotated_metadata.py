@@ -1028,3 +1028,228 @@ class Account(Base):
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
         f = _field(entities, "id")
         assert (f.is_primary_key, f.index) == (True, False)
+
+
+class TestFallbackFixedPoint:
+    """#254: the by-name fallback includes aliases that depend on it."""
+
+    ALIAS = TestPythonScoping.ALIAS
+
+    def test_derived_alias_through_an_ambiguous_import(self, tmp_path: Path):
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "derived.py").write_text(
+            "from coltypes import intpk\nUserId = intpk\n", encoding="utf-8"
+        )
+        (tmp_path / "pkg" / "models.py").write_text(
+            "from typing import TYPE_CHECKING\n"
+            "if TYPE_CHECKING:\n    from .derived import UserId\n"
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[UserId]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_chain_of_fallback_dependencies(self, tmp_path: Path):
+        """Only the first link needs the fallback; the rest are imports of it."""
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "a.py").write_text(
+            "from coltypes import intpk\nA = intpk\n", encoding="utf-8"
+        )
+        (tmp_path / "pkg" / "b.py").write_text("from .a import A\nB = A\n", encoding="utf-8")
+        (tmp_path / "pkg" / "c.py").write_text("from .b import B\nC = B\n", encoding="utf-8")
+        (tmp_path / "pkg" / "models.py").write_text(
+            HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[C]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def _ambiguous_amb(self, tmp_path: Path) -> None:
+        """Two identical `amb` modules that both fit `pkg/*`: imports from it are ambiguous."""
+        (tmp_path / "pkg").mkdir(exist_ok=True)
+        for path in (tmp_path / "amb.py", tmp_path / "pkg" / "amb.py"):
+            path.write_text("", encoding="utf-8")
+
+    def test_long_chain_is_not_cut_off(self, tmp_path: Path):
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "l0.py").write_text(
+            "from coltypes import intpk\nX0 = intpk\n", encoding="utf-8"
+        )
+        for i in range(1, 15):
+            (tmp_path / "pkg" / f"l{i}.py").write_text(
+                f"from .l{i - 1} import X{i - 1}\nX{i} = X{i - 1}\n", encoding="utf-8"
+            )
+        (tmp_path / "pkg" / "models.py").write_text(
+            HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[X14]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _field(entities, "id").is_primary_key
+
+    def test_conflicting_cycle_is_deterministic(self, tmp_path: Path):
+        """The configuration that made a round-based fixed point oscillate."""
+        self._ambiguous_amb(tmp_path)
+        files = {
+            "f1.py": self.ALIAS.replace("intpk", "B"),
+            "f2.py": "from typing import Annotated\nfrom sqlalchemy.orm import mapped_column\n"
+            "from amb import A\nB = Annotated[A, mapped_column(index=True)]\n",
+            "f3.py": "from amb import B\nA = B\n",
+        }
+        for name, text in files.items():
+            (tmp_path / "pkg" / name).write_text(text, encoding="utf-8")
+        (tmp_path / "pkg" / "models.py").write_text(
+            HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+            "    a: Mapped[A]\n    b: Mapped[B]\n",
+            encoding="utf-8",
+        )
+        results = set()
+        for reverse in (False, True):
+            entities = _parse_in_order(tmp_path, reverse=reverse)
+            results.add(
+                tuple(_flags(_field(entities, n)) + (_field(entities, n).index,) for n in "ab")
+            )
+        assert len(results) == 1  # same output whatever the file order
+        (a, b) = next(iter(results))
+        assert a[1] is False and b[1] is False  # conflicting definitions: no false PK
+
+    def test_conflicting_cycle_through_an_explicit_import(self, tmp_path: Path):
+        """`from .f2 import B` must not get a primary key the fallback would reject."""
+        self.test_conflicting_cycle_is_deterministic(tmp_path)
+        (tmp_path / "pkg" / "models.py").write_text(
+            "from .f2 import B\n"
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n    b: Mapped[B]\n",
+            encoding="utf-8",
+        )
+        for reverse in (False, True):
+            b = _field(_parse_in_order(tmp_path, reverse=reverse), "b")
+            assert b.is_primary_key is False
+
+    def test_re_exports_of_an_ambiguous_alias(self, tmp_path: Path):
+        """Many `intpk = _intpk` re-exports agree with the source and stay fast."""
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        for i in range(12):
+            (tmp_path / "pkg" / f"re{i}.py").write_text(
+                "from coltypes import intpk as _intpk\nintpk = _intpk\n", encoding="utf-8"
+            )
+        (tmp_path / "pkg" / "models.py").write_text(
+            HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[intpk]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def test_ambiguous_import_of_a_class_name_is_not_an_alias(self, tmp_path: Path):
+        self._ambiguous_amb(tmp_path)
+        (tmp_path / "pkg" / "models.py").write_text(
+            "from amb import User\n"
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n    col: Mapped[User]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _field(entities, "col").type_str == "User"
+
+
+def _parse_in_order(root: Path, *, reverse: bool) -> dict[str, EntityInfo]:
+    """Parse ``root`` with the discovered files in sorted or reversed order."""
+    from unittest.mock import patch
+
+    from erdify.parser import core
+
+    real = core.discover_model_files
+
+    def discover(*args, **kwargs):
+        found = real(*args, **kwargs)
+        if reverse:
+            found.files.reverse()
+        return found
+
+    with patch.object(core, "discover_model_files", discover):
+        entities, _ = parse_models_directory(root, include_patterns=["**/*.py"])
+    return entities
+
+
+def test_self_referencing_definition_that_differs_conflicts(tmp_path: Path):
+    """`intpk = Annotated[_intpk, index]` over an ambiguous `intpk` is a different alias."""
+    alias = TestPythonScoping.ALIAS
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "coltypes.py").write_text(alias, encoding="utf-8")
+    (tmp_path / "pkg" / "coltypes.py").write_text(alias, encoding="utf-8")
+    (tmp_path / "pkg" / "indexed.py").write_text(
+        "from typing import Annotated\nfrom sqlalchemy.orm import mapped_column\n"
+        "from coltypes import intpk as _intpk\n"
+        "intpk = Annotated[_intpk, mapped_column(index=True)]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pkg" / "models.py").write_text(
+        HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[intpk]\n",
+        encoding="utf-8",
+    )
+    entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+    # Two different `intpk` definitions: the by-name fallback does not guess.
+    assert _field(entities, "id").type_str == "intpk"
+
+
+class TestAmbiguousImportCandidates:
+    """An ambiguous import consults only the modules it could name (#254 review)."""
+
+    ALIAS = TestPythonScoping.ALIAS
+
+    def _layout(self, tmp_path: Path, models: dict[str, str]) -> dict[str, EntityInfo]:
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "re0.py").write_text(
+            "from coltypes import intpk as _intpk\nintpk = _intpk\n", encoding="utf-8"
+        )
+        for name, text in models.items():
+            (tmp_path / "pkg" / name).write_text(text, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        return entities
+
+    @staticmethod
+    def _model(cls: str, head: str) -> str:
+        return (
+            head
+            + HEADER.replace("class User(Base):", f"class _{cls}User(Base):")
+            + f"\nclass {cls}(Base):\n    __tablename__ = '{cls.lower()}'\n    id: Mapped[intpk]\n"
+        )
+
+    @pytest.mark.parametrize("order", [("a.py", "b.py"), ("b.py", "a.py")])
+    def test_cold_explicit_import_of_a_re_export(self, tmp_path: Path, order: tuple[str, str]):
+        explicit, unbound = order
+        entities = self._layout(
+            tmp_path,
+            {
+                explicit: self._model("Explicit", "from .re0 import intpk\n"),
+                unbound: self._model("Unbound", ""),
+            },
+        )
+        for cls in ("Explicit", "Unbound"):
+            field = next(f for f in entities[cls].fields if f.name == "id")
+            assert (field.type_str, field.is_primary_key) == ("int", True)
+
+    def test_candidate_without_the_alias_makes_it_unknown(self, tmp_path: Path):
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text("intpk = int\n", encoding="utf-8")
+        (tmp_path / "pkg" / "models.py").write_text(
+            "from coltypes import intpk\n" + self._model("Account", ""),
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert next(f for f in entities["Account"].fields if f.name == "id").type_str == "intpk"

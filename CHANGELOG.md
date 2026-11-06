@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An ambiguous absolute import of a column type alias (several scanned
+  modules match) now uses the alias if every matching module defines the same
+  one, instead of looking the name up across all modules. So an alias built on
+  it (`UserId = intpk`) is found again, also through the by-name fallback for
+  names a module does not bind (e.g. imported under `TYPE_CHECKING`), and
+  re-exports of an ambiguous alias resolve in linear time
+  ([#254](https://github.com/devsuit-berlin/erdify/issues/254)).
+
+### Output changes
+
+Only SQLAlchemy models using a column type alias through an ambiguous
+absolute import can change. A derived alias built on it now carries its
+settings and underlying type instead of the alias name. Conversely, where the
+matching modules disagree (one of them does not define the alias, or defines
+a different one), the column now keeps the alias name and loses the type and
+settings 1.4.1 took from the other definition, since it is unknown which
+module the import names. Regenerate the diagram once if you gate CI on
+`--check`.
+
 ## [1.4.1] - 2026-11-06
 
 ### Fixed

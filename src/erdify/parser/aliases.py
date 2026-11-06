@@ -75,13 +75,18 @@ class AliasResolver:
         #: Cycle cut-offs so far; a result computed across one is not cached.
         self._cycles = 0
         self._views: Dict[Tuple[Path, int | None], Mapping[str, ast.expr]] = {}
-        self._fallback: Dict[str, ast.expr] | None = None
+        #: Name -> its by-name fallback alias (or None), once known (#254).
+        self._fallback: Dict[str, ast.expr | None] = {}
+        #: Name -> files whose last binding of it may be an alias (built once).
+        self._definers: Dict[str, List[Path]] | None = None
+        #: Candidate modules of each ambiguous absolute import.
+        self._ambiguous: Dict[Tuple[Path, str | None, int], List[Path]] = {}
         self._suffixes: Dict[Tuple[str, ...], List[Path]] | None = None
 
     def aliases_for(self, file: Path | None, line: int | None = None) -> Mapping[str, ast.expr]:
         """Alias name -> fully expanded ``Annotated[...]``, as seen at ``line`` of ``file``."""
         if file is None or file not in self._trees:
-            return MappingProxyType(dict(self._fallback_aliases()))
+            return MappingProxyType(self._all_fallbacks())
         key = (file, line)
         view = self._views.get(key)
         if view is not None:
@@ -91,10 +96,12 @@ class AliasResolver:
             value = self._resolve(file, name, line, ())
             if value is not None:
                 result[name] = value
-        for name, value in self._fallback_aliases().items():
+        for name in self._fallback_candidates():
             # A name bound before the class (also via `*`) never falls back.
             if name not in result and self._binding_at(file, name, line) is None:
-                result[name] = value
+                value = self._fallback_for(name)
+                if value is not None:
+                    result[name] = value
         view = MappingProxyType(result)
         self._views[key] = view
         return view
@@ -268,8 +275,8 @@ class AliasResolver:
     ) -> ast.expr | None:
         if binding.kind == "import":
             target = self._find_module(file, binding.module, binding.level)
-            if target is _AMBIGUOUS:  # several scanned modules match: by name
-                return self._fallback_aliases().get(binding.original)
+            if target is _AMBIGUOUS:  # several scanned modules match
+                return self._agreed_import(file, binding, stack)
             if target is None:  # not a scanned module (stdlib, third party)
                 return None
             return self._resolve(target, binding.original, None, stack)
@@ -331,6 +338,8 @@ class AliasResolver:
                 m for m in matches if m.name == "__init__.py" or m.with_suffix("") not in packages
             ]
             found = matches[0] if len(matches) == 1 else (_AMBIGUOUS if matches else None)
+            if found is _AMBIGUOUS:
+                self._ambiguous[key] = matches
         self._modules[key] = found
         return found
 
@@ -367,22 +376,72 @@ class AliasResolver:
         root = dotted[: len(dotted) - depth]
         return self._absolute(importer).parts[: len(root)] == root
 
-    def _fallback_aliases(self) -> Dict[str, ast.expr]:
-        """Aliases by name, for names a module does not bind (defined identically everywhere)."""
-        if self._fallback is not None:
-            return self._fallback
-        self._fallback = {}  # guards re-entry from an ambiguous import while computing
-        found: Dict[str, List[ast.expr]] = {}
-        for file in self._trees:
-            for name, bindings in self._history(file).items():
-                if bindings[-1].kind == "alias" and name not in self._classes:
-                    value = self._resolve(file, name, None, ())
-                    if value is not None:
-                        found.setdefault(name, []).append(value)
-        self._fallback = {
-            name: values[0]
-            for name, values in found.items()
-            if len({ast.dump(v) for v in values}) == 1
-        }
-        self._resolved.clear()  # may hold results computed without the fallback
-        return self._fallback
+    def _definer_index(self) -> Dict[str, List[Path]]:
+        """Name -> files whose last module-level binding of it may be an alias.
+
+        Built in one pass over the modules; resolving the values stays lazy.
+        """
+        if self._definers is None:
+            definers: Dict[str, List[Path]] = {}
+            for file in self._trees:
+                for name, bindings in self._history(file).items():
+                    if bindings[-1].kind == "alias" and name not in self._classes:
+                        definers.setdefault(name, []).append(file)
+            self._definers = dict(sorted(definers.items()))
+        return self._definers
+
+    def _fallback_candidates(self) -> List[str]:
+        """Names some scanned module ends up defining as a possible alias."""
+        return list(self._definer_index())
+
+    def _agreed_import(
+        self, file: Path, binding: _Binding, stack: Tuple[_Lookup, ...]
+    ) -> ast.expr | None:
+        """An ambiguous absolute import: the alias every matching module defines alike.
+
+        Only the modules the import could name are consulted (#254), never
+        other modules that merely define the same name.
+        """
+        candidates = self._ambiguous[(file, binding.module, binding.level)]
+        values = [self._resolve(m, binding.original, None, stack) for m in candidates]
+        if any(v is None for v in values):
+            return None  # one candidate defines no such alias: unknown which applies
+        return self._agreed([v for v in values if v is not None])
+
+    def _fallback_for(self, name: str) -> ast.expr | None:
+        """The alias ``name`` names wherever it is defined, if all definitions agree.
+
+        For a name a model module does not bind (e.g. imported under
+        ``TYPE_CHECKING``). Resolved on demand, per name, so an alias built on
+        another one (``UserId = intpk``) is included (#254).
+        """
+        if name in self._fallback:
+            return self._fallback[name]
+        result = None
+        if name not in self._classes:
+            values = [
+                value
+                for file in self._definitions_of(name)
+                if (value := self._resolve(file, name, None, ())) is not None
+            ]
+            result = self._agreed(values)
+        self._fallback[name] = result
+        return result
+
+    def _definitions_of(self, name: str) -> List[Path]:
+        """Files whose last module-level binding of ``name`` may be an alias."""
+        return self._definer_index().get(name, [])
+
+    @staticmethod
+    def _agreed(values: List[ast.expr]) -> ast.expr | None:
+        """The common value, if every definition gives the same one."""
+        return values[0] if values and len({ast.dump(v) for v in values}) == 1 else None
+
+    def _all_fallbacks(self) -> Dict[str, ast.expr]:
+        """Every by-name fallback alias (for a class whose file is unknown)."""
+        table: Dict[str, ast.expr] = {}
+        for name in self._fallback_candidates():
+            value = self._fallback_for(name)
+            if value is not None:
+                table[name] = value
+        return table
