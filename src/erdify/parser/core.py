@@ -7,10 +7,9 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from ..config import EntityInfo, EnumInfo
-from .common import is_enum_class, is_structural_link_table, to_snake_case
-from .dialects import DIALECTS, Dialect, ParseContext, core_association_tables
-from .dialects.keyless import model_derived_schema
+from ..config import EntityInfo, EnumInfo, is_structural_link_table
+from .common import is_enum_class, to_snake_case
+from .dialects import ParseContext
 from .discovery import discover_model_files
 from .inheritance import ClassIndex
 
@@ -111,8 +110,8 @@ class ASTDatabaseParser:
         self._enums: Dict[str, EnumInfo] = {}
         self._all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
         self._file_trees: Dict[Path, ast.Module] = {}
-        #: One instance per model kind, created for each parse run.
-        self._dialects: Dict[str, Dialect] = {}
+        #: Classes and dialects (with their caches); renewed for each parse run.
+        self._ctx = self._new_context()
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
         """Parse all model files under ``database_path``.
@@ -148,37 +147,25 @@ class ASTDatabaseParser:
 
         # Second pass: process enum and model classes. Dialects (and their
         # caches) are fresh for each run.
-        ctx = ParseContext(
-            classes=ClassIndex(self._all_classes),
-            infer_keys=self.infer_keys,
-            django_raw_types=self.django_raw_types,
-            base_classes=self.base_classes,
-            classify=self._classify_source,
-        )
-        self._dialects = {dialect.kind: dialect(ctx) for dialect in DIALECTS}
+        self._ctx = self._new_context()
         for class_node in self._all_classes.values():
             if is_enum_class(class_node):
                 self._parse_enum_class(class_node)
                 continue
             source = self._classify_source(class_node)
             if source is not None and (self.sources is None or source in self.sources):
-                derived = model_derived_schema(class_node) if source == "pydantic" else None
-                if derived is not None:
-                    holder, target = derived
-                    print(
-                        f"Warning: skipped {class_node.name} - its fields come from "
-                        f"{holder}.model ({target}), which erdify does not resolve. "
-                        "Drawing it would add an entity with no fields. "
-                        "See https://github.com/devsuit-berlin/erdify/issues/171",
-                        file=sys.stderr,
-                    )
+                reason = self._ctx.dialect(source).skip_reason(class_node)
+                if reason is not None:
+                    print(reason, file=sys.stderr)
                     continue
                 self._parse_table_class(class_node, source)
 
-        # Synthesize link entities from module-level Core Table(...) association
+        # Entities that are not classes, e.g. SQLAlchemy Core association
         # tables referenced by relationship(secondary=...) (#34).
-        if self.sources is None or "sqlalchemy" in self.sources:
-            for entity in core_association_tables(self._file_trees.values()):
+        for dialect in self._ctx.all_dialects():
+            if self.sources is not None and dialect.kind not in self.sources:
+                continue
+            for entity in dialect.extra_entities(self._file_trees.values()):
                 if entity.name not in self._entities:
                     self._entities[entity.name] = entity
 
@@ -243,22 +230,26 @@ class ASTDatabaseParser:
         if values:
             self._enums[class_node.name] = EnumInfo(name=class_node.name, values=values)
 
+    def _new_context(self) -> ParseContext:
+        """A parse context over the collected classes, with fresh dialects."""
+        return ParseContext(
+            classes=ClassIndex(self._all_classes),
+            infer_keys=self.infer_keys,
+            django_raw_types=self.django_raw_types,
+            base_classes=self.base_classes,
+        )
+
     def _classify_source(self, class_node: ast.ClassDef) -> str | None:
-        """Classify which model framework a class belongs to.
+        """Classify which model framework a class belongs to (:meth:`ParseContext.classify`).
 
         Returns one of ``MODEL_SOURCES``, or None if the class is not a
-        drawable entity. Dialects are tried in ``MODEL_SOURCES`` order; one
-        that detects the class but finds it not drawable (a Django abstract
-        base) ends the search.
+        drawable entity.
         """
-        for dialect in self._dialects.values():
-            if dialect.detect(class_node):
-                return dialect.kind if dialect.is_drawable(class_node) else None
-        return None
+        return self._ctx.classify(class_node)
 
     def _parse_table_class(self, class_node: ast.ClassDef, source: str) -> None:
         """Parse a table class and all its inherited fields."""
-        dialect = self._dialects[source]
+        dialect = self._ctx.dialect(source)
         table_name = dialect.table_name(class_node) or to_snake_case(class_node.name)
 
         # Get base classes

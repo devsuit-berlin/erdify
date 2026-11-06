@@ -4,12 +4,7 @@ import ast
 import re
 from typing import Dict, List, Tuple, TypeVar
 
-from ..config import FieldInfo, is_structural_link_table
-
-__all__ = ["MODEL_SOURCES", "is_structural_link_table"]
-
-#: Model frameworks erdify can recognize, in classification order.
-MODEL_SOURCES = ("sqlmodel", "sqlalchemy", "django", "dataclass", "pydantic")
+from ..config import FieldInfo
 
 _V = TypeVar("_V")
 

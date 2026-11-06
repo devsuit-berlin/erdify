@@ -3,9 +3,8 @@
 import ast
 from typing import Iterable, List
 
-from ...config import EntityInfo, FieldInfo
+from ...config import EntityInfo, FieldInfo, is_structural_link_table
 from ..annotations import is_call_to, is_mapped_annotation
-from ..common import is_structural_link_table
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
 
 
@@ -34,6 +33,10 @@ class SQLAlchemyDialect(AnnotatedDialect):
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         return has_tablename(class_node) and has_mapped_field(class_node)
+
+    def extra_entities(self, trees: Iterable[ast.Module]) -> List[EntityInfo]:
+        """Core association tables (:func:`core_association_tables`, #34)."""
+        return core_association_tables(trees)
 
 
 def core_association_tables(trees: Iterable[ast.Module]) -> List[EntityInfo]:

@@ -104,8 +104,10 @@ erdify/
 │   │   ├── discovery.py     # File discovery (include globs, exclude paths)
 │   │   ├── annotations.py   # Reading type annotations from the syntax tree
 │   │   ├── inheritance.py   # MRO, merge order, member merging (all frameworks)
-│   │   └── dialects/        # One class per framework (detection + class bodies)
-│   │       ├── base.py          # Dialect interface + ParseContext
+│   │   ├── common.py        # Shared types and small helpers
+│   │   └── dialects/        # One Dialect class per framework (detection + class bodies)
+│   │       ├── __init__.py      # DIALECTS registry (classification order) + MODEL_SOURCES
+│   │       ├── base.py          # Dialect interface, its hooks, ParseContext
 │   │       ├── annotated.py     # Shared reader for annotated class bodies
 │   │       ├── sqlalchemy.py    # SQLModel, SQLAlchemy ORM, Core association tables
 │   │       ├── keyless.py       # Pydantic, dataclass

@@ -289,7 +289,7 @@ class TestTypeStringCleanup:
 
         node = ast.parse(f"x: {annotation}").body[0]
         assert isinstance(node, ast.AnnAssign)
-        field = dialect._parse_field(node, "pydantic")
+        field = dialect._parse_field(node)
 
         assert field is not None
         assert field.type_str == expected_type

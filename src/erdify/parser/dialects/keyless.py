@@ -22,7 +22,7 @@ class DataclassDialect(AnnotatedDialect):
     """
 
     kind = "dataclass"
-    model_references = True
+    keyless = True
 
     def __init__(self, ctx: ParseContext):
         super().__init__(ctx)
@@ -111,7 +111,7 @@ class DataclassDialect(AnnotatedDialect):
             base_fields, base_rels = self._effective_dataclass_fields(base, members)
             synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels])
         synthetic[name] = members[name]
-        result = merge_members([*mro[:0:-1], name], synthetic, "dataclass")
+        result = merge_members([*mro[:0:-1], name], synthetic, self)
         memo[name] = result
         return result
 
@@ -120,10 +120,23 @@ class PydanticDialect(AnnotatedDialect):
     """A ``BaseModel`` subclass (directly or transitively), or of ``ctx.base_classes``."""
 
     kind = "pydantic"
-    model_references = True
+    keyless = True
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         return self._inherits_basemodel(class_node)
+
+    def skip_reason(self, class_node: ast.ClassDef) -> str | None:
+        """Skip a ninja-style ``ModelSchema``, whose fields come from a Django model."""
+        derived = model_derived_schema(class_node)
+        if derived is None:
+            return None
+        holder, target = derived
+        return (
+            f"Warning: skipped {class_node.name} - its fields come from "
+            f"{holder}.model ({target}), which erdify does not resolve. "
+            "Drawing it would add an entity with no fields. "
+            "See https://github.com/devsuit-berlin/erdify/issues/171"
+        )
 
     def _inherits_basemodel(
         self, class_node: ast.ClassDef, visited: set[str] | None = None

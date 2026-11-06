@@ -84,8 +84,35 @@ class DjangoDialect(Dialect):
     def self_owner(self, name: str, merge_order: List[str]) -> str:
         return self._django_self_owner(name, merge_order)
 
+    def drop_on_merge(
+        self,
+        fields: Dict[str, FieldInfo],
+        rels: Dict[str, _Rel],
+        attr: str,
+        class_fields: Dict[str, FieldInfo],
+        class_rels: Dict[str, _Rel],
+    ) -> None:
+        """Drop whatever earlier classes stored for a redeclared Django attribute.
+
+        A Django attribute is stored under a key that depends on its kind
+        (relationship ``owner`` vs. FK column ``owner_id``, #224), so all of
+        them go.
+        """
+        rels.pop(attr, None)
+        fields.pop(attr, None)
+        inherited_fk = fields.get(f"{attr}_id")
+        if inherited_fk is not None and inherited_fk.is_foreign_key:
+            del fields[f"{attr}_id"]
+
+    def drop_on_listing(
+        self, fields: Dict[str, FieldInfo], rels: Dict[str, _Rel], attr: str
+    ) -> None:
+        """A Django body's redeclaration moves the attribute to the body's position."""
+        self.drop_on_merge(fields, rels, attr, {}, {})
+
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
         """Add Django's implicit ``id`` primary key when no field declares one."""
+        super().finish(entity, class_node)
         # Django implicitly adds an `id` primary key (BigAutoField since Django 3.2)
         # when no field declares primary_key=True.
         if not any(f.is_primary_key for f in entity.fields):

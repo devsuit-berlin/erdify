@@ -1,9 +1,8 @@
 """AST-based parser for SQLModel, SQLAlchemy, Django, Pydantic and dataclass models.
 
-Public API: :class:`ASTDatabaseParser`, :func:`parse_models_directory`,
-:func:`scan_report` / :class:`ScanReport`, :class:`ModelParseError`,
-:data:`MODEL_SOURCES` and :data:`DEFAULT_EXCLUDE_DIRS`. The submodules are
-internal and may change in any release.
+Re-exports what :mod:`erdify` and the CLI use. The stable public surface is
+``erdify.__all__``; this package and its submodules are internal and may
+change in any release.
 """
 
 from .core import (
@@ -13,8 +12,8 @@ from .core import (
     parse_models_directory,
     scan_report,
 )
-from .discovery import DEFAULT_EXCLUDE_DIRS, _match_include, _translate_glob
-from .common import MODEL_SOURCES
+from .dialects import MODEL_SOURCES
+from .discovery import DEFAULT_EXCLUDE_DIRS, _match_include, _translate_glob  # noqa: F401
 
 __all__ = [
     "ASTDatabaseParser",
@@ -24,6 +23,4 @@ __all__ = [
     "ScanReport",
     "parse_models_directory",
     "scan_report",
-    "_match_include",
-    "_translate_glob",
 ]

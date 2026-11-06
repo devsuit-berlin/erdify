@@ -6,10 +6,33 @@ are listed in follows the pre-MRO recursive merge.
 """
 
 import ast
-from typing import Dict, List, Mapping, Tuple
+from typing import Dict, List, Mapping, Protocol, Tuple
 
 from ..config import FieldInfo
 from .common import _V, _ClassMembers, _Rel
+
+
+class RedeclarationRule(Protocol):
+    """What a class body's redeclared attribute removes from what its bases stored.
+
+    Implemented by every dialect (:class:`~.dialects.base.Dialect`); Django
+    overrides it because its storage key depends on the field kind.
+    """
+
+    def drop_on_merge(
+        self,
+        fields: Dict[str, FieldInfo],
+        rels: Dict[str, _Rel],
+        attr: str,
+        class_fields: Dict[str, FieldInfo],
+        class_rels: Dict[str, _Rel],
+    ) -> None:
+        """Drop what earlier classes stored for ``attr`` before a later class merges in."""
+
+    def drop_on_listing(
+        self, fields: Dict[str, FieldInfo], rels: Dict[str, _Rel], attr: str
+    ) -> None:
+        """Drop ``attr`` in the listing-order merge so the body's position wins."""
 
 
 class ClassIndex:
@@ -99,14 +122,15 @@ class ClassIndex:
         class_node: ast.ClassDef,
         visited: set[str],
         members: Dict[str, _ClassMembers],
-        model_kind: str,
+        rule: RedeclarationRule,
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """The keys, in listing order, of the recursive merge used before #228.
 
         Each base's whole subtree is merged in (left to right, each class once),
-        then the class body. Only a Django body's own redeclaration moves an
-        inherited attribute to the body's position; a sibling base never
-        displaces another sibling's attribute. Only the key order is used.
+        then the class body. Only a body's own redeclaration can move an
+        inherited attribute to the body's position (``rule.drop_on_listing``,
+        Django only); a sibling base never displaces another sibling's
+        attribute. Only the key order is used.
         """
         fields: Dict[str, FieldInfo] = {}
         rels: Dict[str, _Rel] = {}
@@ -114,15 +138,12 @@ class ClassIndex:
             return fields, rels
         visited.add(class_node.name)
         for base in self.local_bases(class_node):
-            base_fields, base_rels = self.listing_order(
-                self.all[base], visited, members, model_kind
-            )
+            base_fields, base_rels = self.listing_order(self.all[base], visited, members, rule)
             fields.update(base_fields)
             rels.update(base_rels)
         class_fields, class_rels, declared = members[class_node.name]
-        if model_kind == "django":
-            for attr in declared:
-                drop_django_redeclared(fields, rels, attr)
+        for attr in declared:
+            rule.drop_on_listing(fields, rels, attr)
         fields.update(class_fields)
         rels.update(class_rels)
         return fields, rels
@@ -136,43 +157,21 @@ def reorder(values: Dict[str, _V], order: Mapping[str, object]) -> Dict[str, _V]
 
 
 def merge_members(
-    order: List[str], members: Dict[str, _ClassMembers], model_kind: str
+    order: List[str], members: Dict[str, _ClassMembers], rule: RedeclarationRule
 ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
     """Merge class members in ``order``; a later class overrides an earlier one.
 
     A redeclared attribute replaces whatever an earlier class stored for it,
-    even under another key or kind: a Django relationship ``owner`` vs. its
-    FK column ``owner_id`` (#224), or a column vs. a model reference.
+    even under another key or kind (``rule.drop_on_merge``): a Django
+    relationship ``owner`` vs. its FK column ``owner_id`` (#224), or a column
+    vs. a model reference.
     """
     fields: Dict[str, FieldInfo] = {}
     rels: Dict[str, _Rel] = {}
     for class_name in order:
         class_fields, class_rels, declared = members[class_name]
         for attr in declared:
-            if model_kind == "django":
-                drop_django_redeclared(fields, rels, attr)
-            # Same key and kind: update() below replaces it in place.
-            elif attr in class_fields:
-                rels.pop(attr, None)
-            elif attr in class_rels:
-                fields.pop(attr, None)
-            else:
-                fields.pop(attr, None)
-                rels.pop(attr, None)
+            rule.drop_on_merge(fields, rels, attr, class_fields, class_rels)
         fields.update(class_fields)
         rels.update(class_rels)
     return fields, rels
-
-
-def drop_django_redeclared(fields: Dict[str, FieldInfo], rels: Dict[str, _Rel], attr: str) -> None:
-    """Drop whatever earlier classes stored for a redeclared Django attribute.
-
-    A Django attribute is stored under a key that depends on its kind
-    (relationship ``owner`` vs. FK column ``owner_id``, #224), so all of
-    them go.
-    """
-    rels.pop(attr, None)
-    fields.pop(attr, None)
-    inherited_fk = fields.get(f"{attr}_id")
-    if inherited_fk is not None and inherited_fk.is_foreign_key:
-        del fields[f"{attr}_id"]

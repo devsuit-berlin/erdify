@@ -58,23 +58,26 @@ parser/    ──►  config.py (IR)  ──►  generator.py
                 FieldInfo
 ```
 
-- **`parser/`** — the Python model frontend. `import erdify.parser` re-exports
-  the public API; the submodules are internal.
+- **`parser/`** — the Python model frontend. `erdify.parser` re-exports what
+  `erdify` and the CLI use; the package and its submodules are internal (the
+  stable surface is `erdify.__all__`).
   - `core.py`: `parse_models_directory()` and `ASTDatabaseParser`, which runs
     the passes: collect every class, classify it, build entities, add Core
     association tables, apply `--exclude`.
   - `discovery.py`: finds model files (glob `include_patterns`, default
     `models.py`; prunes `DEFAULT_EXCLUDE_DIRS` *during* the walk for speed).
-  - `dialects/`: one `Dialect` per framework (`base.py` has the interface and
-    `ParseContext`). Every class is classified into exactly one of
+  - `dialects/`: one `Dialect` per framework (`base.py` has the interface, its
+    hooks and `ParseContext`). Every class is classified into exactly one of
     `MODEL_SOURCES` (`sqlmodel`, `sqlalchemy`, `django`, `dataclass`,
-    `pydantic`) by trying the dialects **in that order**. The dialect of the
+    `pydantic`) by trying the dialects of the `DIALECTS` registry **in that
+    order**; `MODEL_SOURCES` is derived from it. Shared code never checks a
+    framework name: a framework differs only through its `Dialect` hooks. The dialect of the
     concrete model reads its body *and every ancestor's*: a mixin is read the
     way the model that inherits it is. SQLModel, SQLAlchemy, Pydantic and
     dataclass share `annotated.py` (annotated class bodies); Django has its own.
   - `inheritance.py`: `ClassIndex` (MRO, merge order, listing order) and member
-    merging, shared by all dialects; a dialect adjusts it via hooks (`merge`,
-    `self_owner`, `declared_names`).
+    merging, shared by all dialects; dialects adjust it through the `Dialect`
+    hooks in `dialects/base.py` (`merge`, `drop_on_merge`, `self_owner`, …).
   - `annotations.py`: pure helpers that read annotations from the syntax tree
     (model references, column type and nullability).
 
@@ -120,9 +123,9 @@ The public Python API is whatever `src/erdify/__init__.py` re-exports.
 - Google-style docstrings on public modules, classes, and functions.
 - Releases are tag-driven: pushing a `vX.Y.Z` tag publishes to PyPI; the version
   is single-sourced from package metadata via `importlib.metadata`.
-- New framework parsing → add a `Dialect` subclass under `parser/dialects/`,
-  register it in `DIALECTS` and `MODEL_SOURCES` (same order), add a fixture dir
-  under `tests/fixtures/` and wire it into the integration tests.
+- New framework parsing → add a `Dialect` subclass under `parser/dialects/` and
+  register it in `DIALECTS` (its position is its classification order), add a
+  fixture dir under `tests/fixtures/` and wire it into the integration tests.
 
 ## Keep everything in sync
 
