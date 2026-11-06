@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-06
+
 ### Fixed
 
 - An ambiguous absolute import of a column type alias (several scanned
@@ -1042,7 +1044,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/devsuit-berlin/erdify/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/devsuit-berlin/erdify/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/devsuit-berlin/erdify/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/devsuit-berlin/erdify/compare/v1.2.0...v1.3.0
