@@ -1280,10 +1280,14 @@ class ASTDatabaseParser:
                 declared[attr] = (field_type, call)
 
         if to_field is not None:
-            match = declared.get(to_field)
-            if match is None:
-                return default
             attr = to_field
+            # Django also accepts a relation's attname (`account_id` for `account`).
+            if attr not in declared and attr.endswith("_id"):
+                relation = declared.get(attr[: -len("_id")])
+                if relation is not None and relation[0] in ("ForeignKey", "OneToOneField"):
+                    attr = attr[: -len("_id")]
+            if attr not in declared:
+                return default
         else:
             pks = [a for a, (_, call) in declared.items() if self._has_true_kw(call, "primary_key")]
             if not pks:

@@ -822,6 +822,28 @@ class Note(models.Model):
         assert fk.foreign_table == "profile.account_id"
         assert fk.type_str == "str"
 
+    @pytest.mark.parametrize("to_field", ["account", "account_id"])
+    def test_to_field_relation_attname(self, tmp_path: Path, to_field: str):
+        """``to_field`` may name a relation by attribute or by its ``_id`` attname."""
+        src = f"""
+from django.db import models
+
+
+class Account(models.Model):
+    code = models.CharField(max_length=5, primary_key=True)
+
+
+class Profile(models.Model):
+    account = models.OneToOneField(Account, on_delete=models.CASCADE)
+
+
+class Note(models.Model):
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, to_field="{to_field}")
+"""
+        fk = _field(_parse(tmp_path, src), "Note", "profile_id")
+        assert fk.foreign_table == "profile.account_id"
+        assert fk.type_str == "str"
+
     def test_type_follows_choices_enum(self, tmp_path: Path):
         src = """
 from django.db import models
