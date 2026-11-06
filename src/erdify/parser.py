@@ -1115,6 +1115,29 @@ class ASTDatabaseParser:
         fields: Dict[str, FieldInfo] = {}
         relationships: Dict[str, Tuple[str, str, str]] = {}
 
+        for name, field_type, call in self._django_field_calls(class_node):
+            if field_type == "ForeignKey" or (
+                field_type == "OneToOneField" and self._has_true_kw(call, "primary_key")
+            ):
+                # A ForeignKey is a real `<name>_id` column in the DB; model it as
+                # such (like SQLAlchemy) so it renders consistently across sources.
+                # A OneToOneField(primary_key=True) is that column *as the PK*
+                # (shared primary key), so Django adds no implicit `id` (#224).
+                fk = self._parse_django_fk_column(name, call, class_node.name)
+                if fk:
+                    fields[fk.name] = fk
+            elif field_type in DJANGO_RELATIONSHIP_FIELDS:
+                rel = self._parse_django_relationship(name, field_type, call, class_node.name)
+                if rel:
+                    relationships[name] = rel
+            else:
+                fields[name] = self._parse_django_column(name, field_type, call)
+
+        return fields, relationships
+
+    def _django_field_calls(self, class_node: ast.ClassDef) -> List[Tuple[str, str, ast.Call]]:
+        """``(attribute, field class name, call)`` for each model field in a Django class body."""
+        calls: List[Tuple[str, str, ast.Call]] = []
         for node in class_node.body:
             if not isinstance(node, ast.Assign) or len(node.targets) != 1:
                 continue
@@ -1123,30 +1146,10 @@ class ASTDatabaseParser:
                 continue
             if not isinstance(node.value, ast.Call):
                 continue
-
             field_type = self._django_field_type(node.value)
-            if field_type is None:
-                continue
-
-            name = target.id
-            if field_type == "ForeignKey" or (
-                field_type == "OneToOneField" and self._has_true_kw(node.value, "primary_key")
-            ):
-                # A ForeignKey is a real `<name>_id` column in the DB; model it as
-                # such (like SQLAlchemy) so it renders consistently across sources.
-                # A OneToOneField(primary_key=True) is that column *as the PK*
-                # (shared primary key), so Django adds no implicit `id` (#224).
-                fk = self._parse_django_fk_column(name, node.value, class_node.name)
-                if fk:
-                    fields[fk.name] = fk
-            elif field_type in DJANGO_RELATIONSHIP_FIELDS:
-                rel = self._parse_django_relationship(name, field_type, node.value, class_node.name)
-                if rel:
-                    relationships[name] = rel
-            else:
-                fields[name] = self._parse_django_column(name, field_type, node.value)
-
-        return fields, relationships
+            if field_type is not None:
+                calls.append((target.id, field_type, node.value))
+        return calls
 
     @staticmethod
     def _has_true_kw(call: ast.Call, name: str) -> bool:
@@ -1180,15 +1183,74 @@ class ASTDatabaseParser:
         # ForeignKey(primary_key=True) makes `<name>_id` the table's primary key,
         # so Django adds no implicit `id` (#224). A PK is never NULL, and its
         # uniqueness is tracked by is_primary_key, not is_unique.
+        to_field = self._django_to_field(call)
+        column, type_str = self._django_target_column(target, to_field, ())
         return FieldInfo(
             name=f"{name}_id",
-            type_str=self._django_display_type("BigAutoField"),
+            type_str=type_str,
             is_primary_key=is_primary_key,
             is_foreign_key=True,
             is_nullable=is_nullable and not is_primary_key,
             is_unique=is_unique and not is_primary_key,
-            foreign_table=f"{self._django_target_table(target)}.id",
+            foreign_table=f"{self._django_target_table(target)}.{column}",
         )
+
+    @staticmethod
+    def _django_to_field(call: ast.Call) -> str | None:
+        """The literal ``to_field=`` of a Django relationship field, if any."""
+        for kw in call.keywords:
+            if (
+                kw.arg == "to_field"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                return kw.value.value
+        return None
+
+    def _django_target_column(
+        self, target: str, to_field: str | None, stack: Tuple[str, ...]
+    ) -> Tuple[str, str]:
+        """Return the ``(column, type)`` a Django FK to ``target`` references (#226).
+
+        That is the ``to_field`` column if given, else the target's primary key,
+        including one inherited from a base. A key that is itself a foreign key
+        is its ``<name>_id`` column, typed like the column *it* references. An
+        unknown target, field or cycle falls back to ``id`` / ``to_field`` with
+        Django's default ``BigAutoField`` type.
+        """
+        default = (to_field or "id", self._django_display_type("BigAutoField"))
+        node = self._all_classes.get(target)
+        if node is None or target in stack:
+            return default
+
+        # The winning declaration of each attribute, resolved like the fields (#228).
+        declared: Dict[str, Tuple[str, ast.Call]] = {}
+        for class_name in self._merge_order(node):
+            for attr, field_type, call in self._django_field_calls(self._all_classes[class_name]):
+                declared.pop(attr, None)
+                declared[attr] = (field_type, call)
+
+        if to_field is not None:
+            match = declared.get(to_field)
+            if match is None:
+                return default
+            attr = to_field
+        else:
+            pks = [a for a, (_, call) in declared.items() if self._has_true_kw(call, "primary_key")]
+            if not pks:
+                return default
+            attr = pks[-1]
+
+        field_type, call = declared[attr]
+        if field_type in ("ForeignKey", "OneToOneField"):
+            ref = self._resolve_django_relationship_target(call, target)
+            if ref is None:
+                return f"{attr}_id", default[1]
+            _, ref_type = self._django_target_column(
+                ref, self._django_to_field(call), stack + (target,)
+            )
+            return f"{attr}_id", ref_type
+        return attr, self._django_display_type(field_type)
 
     def _django_target_table(self, class_name: str) -> str:
         """Resolve a target class name to its table name (Meta.db_table or snake_case)."""

@@ -673,3 +673,103 @@ class Settings(OwnedBase):
         if "owner_id" in fields:
             fk = _field(entities, "Settings", "owner_id")
             assert fk.foreign_table and fk.foreign_table.startswith("other.")
+
+
+class TestDjangoForeignKeyTarget:
+    """#226: a Django FK column references the target's real PK or ``to_field``."""
+
+    SRC = """
+from django.db import models
+
+
+class Account(models.Model):
+    code = models.IntegerField(primary_key=True)
+    slug = models.CharField(max_length=10, unique=True)
+
+
+class Settings(models.Model):
+    owner = models.OneToOneField(Account, on_delete=models.CASCADE, primary_key=True)
+
+
+class Ref(models.Model):
+    acc = models.ForeignKey(Account, on_delete=models.CASCADE)
+    by_slug = models.ForeignKey(
+        Account, on_delete=models.CASCADE, to_field="slug", related_name="by_slug"
+    )
+    settings = models.ForeignKey(Settings, on_delete=models.CASCADE)
+
+
+class Plain(models.Model):
+    pass
+
+
+class ToPlain(models.Model):
+    plain = models.ForeignKey(Plain, on_delete=models.CASCADE)
+    external = models.ForeignKey("other_app.External", on_delete=models.CASCADE)
+    unknown_field = models.ForeignKey(Plain, on_delete=models.CASCADE, to_field="nope")
+
+
+class UuidBase(models.Model):
+    uid = models.UUIDField(primary_key=True)
+
+    class Meta:
+        abstract = True
+
+
+class Doc(UuidBase):
+    pass
+
+
+class Link(models.Model):
+    doc = models.ForeignKey(Doc, on_delete=models.CASCADE)
+"""
+
+    def _fk(self, tmp_path: Path, entity: str, name: str):
+        return _field(_parse(tmp_path, self.SRC), entity, name)
+
+    def test_explicit_pk(self, tmp_path: Path):
+        for entity, name in (("Settings", "owner_id"), ("Ref", "acc_id")):
+            fk = self._fk(tmp_path, entity, name)
+            assert fk.foreign_table == "account.code"
+            assert fk.type_str == "int"
+
+    def test_to_field(self, tmp_path: Path):
+        fk = self._fk(tmp_path, "Ref", "by_slug_id")
+        assert fk.foreign_table == "account.slug"
+        assert fk.type_str == "str"
+
+    def test_pk_that_is_a_foreign_key(self, tmp_path: Path):
+        assert self._fk(tmp_path, "Ref", "settings_id").foreign_table == "settings.owner_id"
+
+    def test_inherited_pk(self, tmp_path: Path):
+        entities = _parse(tmp_path, self.SRC)
+        fk = _field(entities, "Link", "doc_id")
+        assert fk.foreign_table == "doc.uid"
+        assert fk.type_str == _field(entities, "Doc", "uid").type_str
+
+    def test_implicit_id_and_unknown_targets_fall_back(self, tmp_path: Path):
+        entities = _parse(tmp_path, self.SRC)
+        assert _field(entities, "ToPlain", "plain_id").foreign_table == "plain.id"
+        assert _field(entities, "ToPlain", "external_id").foreign_table == "external.id"
+        assert _field(entities, "ToPlain", "unknown_field_id").foreign_table == "plain.nope"
+
+    def test_json(self, tmp_path: Path):
+        doc = json.loads(generate_json(_parse(tmp_path, self.SRC)))
+        settings = next(e for e in doc["entities"] if e["name"] == "Settings")
+        assert settings["fields"][0]["foreign_table"] == "account.code"
+
+    def test_cyclic_primary_keys_terminate(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class A(models.Model):
+    b = models.OneToOneField("B", on_delete=models.CASCADE, primary_key=True)
+
+
+class B(models.Model):
+    a = models.OneToOneField(A, on_delete=models.CASCADE, primary_key=True)
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "A", "b_id").foreign_table == "b.a_id"
+        assert _field(entities, "B", "a_id").foreign_table == "a.b_id"
