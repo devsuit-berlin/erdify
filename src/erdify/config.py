@@ -57,16 +57,16 @@ class EntityInfo:
         relationships: ``(target, type, attribute)`` tuples, where ``target`` is
             the related entity name and ``type`` is one of ``"one"``, ``"many"``,
             ``"one_to_one"``, ``"many_to_many"``.
-        nullable_relationships: Attribute names of ``"one"`` relationships whose
-            reference is optional (e.g. ``user: User | None``); drawn as
-            zero-or-one on the target side. Foreign-key columns carry their own
-            ``FieldInfo.is_nullable`` instead.
         is_link_table: A detected many-to-many join table (see
             :func:`is_structural_link_table`).
         base_classes: Names of the class's direct base classes.
         source: The model kind that produced the entity: one of ``MODEL_SOURCES``
             (``sqlmodel``, ``sqlalchemy``, ``django``, ``dataclass``,
             ``pydantic``) or ``sql`` for SQL DDL.
+        nullable_relationships: Attribute names of ``"one"`` relationships whose
+            reference is optional (e.g. ``user: User | None``); drawn as
+            zero-or-one on the target side. Foreign-key columns carry their own
+            ``FieldInfo.is_nullable`` instead.
     """
 
     name: str
@@ -75,10 +75,10 @@ class EntityInfo:
     relationships: List[Tuple[str, str, str]] = field(
         default_factory=list
     )  # (target, type, attribute_name)
-    nullable_relationships: List[str] = field(default_factory=list)
     is_link_table: bool = False
     base_classes: List[str] = field(default_factory=list)
     source: str = "sqlmodel"
+    nullable_relationships: List[str] = field(default_factory=list)
 
 
 def is_structural_link_table(fields: List[FieldInfo]) -> bool:

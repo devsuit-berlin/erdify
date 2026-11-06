@@ -270,3 +270,87 @@ class Item(Item, SQLModel, table=True):
 """
         entities = _parse(tmp_path, src)
         assert [f.name for f in entities["Item"].fields] == ["id"]
+
+
+class TestOrderWhenKindChanges:
+    def test_column_keeps_its_position(self, tmp_path: Path):
+        """An attribute that is a column in one base and a reference in another."""
+        src = """
+from pydantic import BaseModel
+
+
+class Addon(BaseModel):
+    id: int
+
+
+class A(BaseModel):
+    x: int
+    y: int
+
+
+class B(BaseModel):
+    x: Addon
+
+
+class C(A, B):
+    z: int
+"""
+        c = _parse(tmp_path, src)["C"]
+        assert [f.name for f in c.fields] == ["x", "y", "z"]
+        assert c.relationships == []
+
+
+class TestDjangoFieldRemoval:
+    def test_none_removes_inherited_field(self, tmp_path: Path):
+        """``owner = None`` removes a field inherited from an abstract base."""
+        src = """
+from django.db import models
+
+
+class Tag(models.Model):
+    pass
+
+
+class Base(models.Model):
+    owner = models.ForeignKey(Tag, on_delete=models.CASCADE)
+    note = models.CharField(max_length=10)
+
+    class Meta:
+        abstract = True
+
+
+class Item(Base):
+    owner = None
+"""
+        entities = _parse(tmp_path, src)
+        assert [f.name for f in entities["Item"].fields] == ["id", "note"]
+        assert "Item" not in generate_mermaid(entities).split("Tag {")[0].split("erDiagram")[1]
+
+
+class TestDeepDiamonds:
+    def test_stacked_diamonds_parse_quickly(self, tmp_path: Path):
+        """The MRO is memoized; stacked diamonds must not blow up exponentially."""
+        import time
+
+        lines = [
+            "from pydantic import BaseModel",
+            "",
+            "",
+            "class L0(BaseModel):",
+            "    f0: int",
+            "",
+        ]
+        for i in range(1, 30):
+            lines += [
+                f"class A{i}(L{i - 1}):",
+                f"    a{i}: int",
+                f"class B{i}(L{i - 1}):",
+                f"    b{i}: int",
+                f"class L{i}(A{i}, B{i}):",
+                f"    l{i}: int",
+                "",
+            ]
+        start = time.perf_counter()
+        entities = _parse(tmp_path, "\n".join(lines))
+        assert time.perf_counter() - start < 5
+        assert len(entities["L29"].fields) == 1 + 3 * 29

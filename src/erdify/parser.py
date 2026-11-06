@@ -225,6 +225,7 @@ class ASTDatabaseParser:
         self._entities: Dict[str, EntityInfo] = {}
         self._enums: Dict[str, EnumInfo] = {}
         self._all_classes: Dict[str, ast.ClassDef] = {}  # Store all class definitions
+        self._mro_cache: Dict[str, List[str] | None] = {}
         self._file_trees: Dict[Path, ast.Module] = {}
 
     def parse_all_models(self) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
@@ -260,6 +261,7 @@ class ASTDatabaseParser:
             raise ModelParseError(self._parse_errors)
 
         # Second pass: process enum and model classes
+        self._mro_cache = {}
         for class_node in self._all_classes.values():
             if self._is_enum_class(class_node):
                 self._parse_enum_class(class_node)
@@ -953,6 +955,8 @@ class ASTDatabaseParser:
         would reject the hierarchy (no consistent order) or it is cyclic, e.g.
         ``class User(User)`` extending a namesake.
         """
+        if name in self._mro_cache:
+            return self._mro_cache[name]
         if name in stack:
             return None
         bases = self._local_bases(self._all_classes[name])
@@ -960,6 +964,7 @@ class ASTDatabaseParser:
         for base in bases:
             base_mro = self._mro(base, stack + (name,))
             if base_mro is None:
+                self._mro_cache[name] = None
                 return None
             seqs.append(base_mro)
         seqs.append(list(bases))
@@ -972,10 +977,12 @@ class ASTDatabaseParser:
                 if not any(head in other[1:] for other in seqs):
                     break
             else:
+                self._mro_cache[name] = None
                 return None
             result.append(head)
             seqs = [[c for c in seq if c != head] for seq in seqs]
             seqs = [seq for seq in seqs if seq]
+        self._mro_cache[name] = result
         return result
 
     def _merge_order(self, class_node: ast.ClassDef) -> List[str]:
@@ -996,15 +1003,24 @@ class ASTDatabaseParser:
         """Collect the fields and relationships of a class and all its ancestors.
 
         Which declaration of an attribute wins follows the MRO
-        (:meth:`_merge_order`). The order they are listed in stays the
-        depth-first declaration order (:meth:`_dfs_order`), so resolving by MRO
-        does not reorder the output.
+        (:meth:`_merge_order`). The order they are listed in is unchanged from
+        the depth-first merge (:meth:`_dfs_order`), so resolving by MRO does not
+        reorder the output: an attribute keeps the position where it first
+        appears, except that a Django redeclaration moves it to the
+        redeclaring class, as before.
         """
         dfs_order = self._dfs_order(class_node, set())
         members = {
             name: self._class_members(self._all_classes[name], model_kind) for name in dfs_order
         }
-        order_fields, order_rels = self._merge_members(dfs_order, members, model_kind)
+        if model_kind == "django":
+            order_fields, order_rels = self._merge_members(dfs_order, members, model_kind)
+        else:
+            order_fields, order_rels = {}, {}
+            for name in dfs_order:
+                class_fields, class_rels, _ = members[name]
+                order_fields.update(class_fields)
+                order_rels.update(class_rels)
         fields, rels = self._merge_members(self._merge_order(class_node), members, model_kind)
         return self._reorder(fields, order_fields), self._reorder(rels, order_rels)
 
@@ -1055,15 +1071,20 @@ class ASTDatabaseParser:
         return fields, rels
 
     def _django_declared_names(self, class_node: ast.ClassDef) -> List[str]:
-        """Attribute names a Django model body declares as a model field."""
-        names: List[str] = []
+        """Attribute names a Django model body declares or removes.
+
+        A model field declares its name. ``name = None`` removes a field
+        inherited from an abstract base, as Django documents, so it also drops
+        whatever the bases stored under that name.
+        """
+        names = [name for name, _, _ in self._django_field_calls(class_node)]
         for node in class_node.body:
             if (
                 isinstance(node, ast.Assign)
                 and len(node.targets) == 1
                 and isinstance(node.targets[0], ast.Name)
-                and isinstance(node.value, ast.Call)
-                and self._django_field_type(node.value) is not None
+                and isinstance(node.value, ast.Constant)
+                and node.value.value is None
             ):
                 names.append(node.targets[0].id)
         return names
@@ -1121,8 +1142,9 @@ class ASTDatabaseParser:
         """Extract fields and relationships from a Django model.
 
         Django fields are plain assignments (``name = models.CharField(...)``),
-        not annotated. Relationship fields (ForeignKey/OneToOneField/
-        ManyToManyField) become relationships; every other ``*Field`` is a column.
+        not annotated. ``ForeignKey`` / ``OneToOneField`` become ``<name>_id``
+        foreign-key columns, ``ManyToManyField`` becomes a relationship, and
+        every other ``*Field`` is a column.
         """
         fields: Dict[str, FieldInfo] = {}
         relationships: Dict[str, _Rel] = {}
@@ -1139,8 +1161,8 @@ class ASTDatabaseParser:
                 )
                 if fk:
                     fields[fk.name] = fk
-            elif field_type in DJANGO_RELATIONSHIP_FIELDS:
-                rel = self._parse_django_relationship(name, field_type, call, class_node.name)
+            elif field_type == "ManyToManyField":
+                rel = self._parse_django_many_to_many(name, call, class_node.name)
                 if rel:
                     relationships[name] = rel
             else:
@@ -1266,7 +1288,7 @@ class ASTDatabaseParser:
                 ref, self._django_to_field(call), stack + (target,)
             )
             return f"{attr}_id", ref_type
-        return attr, self._django_display_type(field_type)
+        return attr, self._parse_django_column(attr, field_type, call).type_str
 
     def _django_target_table(self, class_name: str) -> str:
         """Resolve a target class name to its table name (Meta.db_table or snake_case)."""
@@ -1360,8 +1382,8 @@ class ASTDatabaseParser:
             return field_type
         return DJANGO_FIELD_TYPE_MAP.get(field_type, field_type)
 
-    def _parse_django_relationship(
-        self, name: str, field_type: str, call: ast.Call, current_class: str
+    def _parse_django_many_to_many(
+        self, name: str, call: ast.Call, current_class: str
     ) -> _Rel | None:
         """Parse a Django ``ManyToManyField`` into a relationship tuple.
 
@@ -1370,8 +1392,6 @@ class ASTDatabaseParser:
         skipped - that M:N is drawn through the through-model's own foreign
         keys, exactly like SQLAlchemy ``secondary=``.
         """
-        if field_type != "ManyToManyField":
-            return None
         target = self._resolve_django_relationship_target(call, current_class)
         if target is None:
             return None
@@ -1576,8 +1596,9 @@ class ASTDatabaseParser:
 
         rel_type = "many" if ("list[" in type_str or "List[" in type_str) else "one"
         target = self._clean_target(type_str)
+        nullable = rel_type == "one" and self._is_optional_annotation(node.annotation)
 
-        return (target, rel_type, field_name, False)
+        return (target, rel_type, field_name, nullable)
 
     def _parse_model_reference(self, node: ast.AnnAssign) -> _Rel | None:
         """Treat a field typed as another known model as a relationship.
@@ -1595,11 +1616,49 @@ class ASTDatabaseParser:
 
         target_class = self._all_classes.get(target)
         if target_class is not None and self._classify_source(target_class) is not None:
-            # `user: User | None` is an optional reference (#223); matches how
-            # _parse_field reads a column's nullability from its annotation.
-            nullable = rel_type == "one" and ("None" in type_str or "Optional" in type_str)
+            # `user: User | None` is an optional reference (#223).
+            nullable = rel_type == "one" and self._is_optional_annotation(node.annotation)
             return (target, rel_type, node.target.id, nullable)
         return None
+
+    @classmethod
+    def _is_optional_annotation(cls, node: ast.expr) -> bool:
+        """Whether an annotation admits ``None`` at its top level.
+
+        Recognizes ``X | None`` (either side), ``Optional[X]``,
+        ``Union[..., None]``, the same inside ``Mapped[...]``, and string
+        (forward-reference) annotations. A name that merely contains
+        "Optional" or "None" (``OptionalSettings``) is not optional.
+        """
+        if isinstance(node, ast.Constant):
+            if node.value is None:
+                return True
+            if isinstance(node.value, str):
+                try:
+                    parsed = ast.parse(node.value, mode="eval").body
+                except SyntaxError:
+                    return False
+                return cls._is_optional_annotation(parsed)
+            return False
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            return cls._is_optional_annotation(node.left) or cls._is_optional_annotation(node.right)
+        if isinstance(node, ast.Subscript):
+            func = node.value
+            name = (
+                func.id
+                if isinstance(func, ast.Name)
+                else func.attr
+                if isinstance(func, ast.Attribute)
+                else None
+            )
+            if name == "Optional":
+                return True
+            if name == "Mapped":
+                return cls._is_optional_annotation(node.slice)
+            if name == "Union":
+                args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+                return any(cls._is_optional_annotation(arg) for arg in args)
+        return False
 
     @staticmethod
     def _clean_target(type_str: str) -> str:

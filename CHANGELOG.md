@@ -20,9 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Django `OneToOneField` is now modeled as the unique `<name>_id` foreign-key
   column it creates, like `ForeignKey`, and follows `null=`: it is drawn
   `|o--||`, or `|o--o|` with `null=True`, instead of always `||--||`. It now
-  renders the same as the equivalent `ForeignKey(unique=True)`. A Pydantic or
-  dataclass reference typed as optional (`user: User | None`,
-  `Optional[User]`) is drawn `}o--o|` instead of `}o--||`
+  renders the same as the equivalent `ForeignKey(unique=True)`. A model
+  reference typed as optional (`user: User | None`, `Optional[User]`,
+  `Mapped[Optional["User"]]`) is drawn `}o--o|` instead of `}o--||` when no
+  foreign-key column draws that edge, as for Pydantic and dataclass models
   ([#223](https://github.com/devsuit-berlin/erdify/issues/223)).
 - A Django `ForeignKey` / `OneToOneField` column now references the target's
   actual primary key (including one inherited from an abstract base) or its
@@ -33,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bases declare the same attribute, the first base wins (previously the last),
   and in a diamond hierarchy a sibling base's redeclaration replaces the one
   from the shared root instead of leaving a stale edge or column. Field order
-  is unchanged
+  is unchanged. A Django `name = None`, which removes a field inherited from an
+  abstract base, now removes it from the diagram too
   ([#228](https://github.com/devsuit-berlin/erdify/issues/228)).
 
 ### Output changes
@@ -42,7 +44,9 @@ The fixes above change the generated diagram for any Django model with a
 `OneToOneField` (an `<name>_id FK,UK` column replaces the relationship, and the
 edge label becomes `<name>_id`), any Pydantic / dataclass model with an
 optional model reference, and any model whose bases declare the same attribute
-differently. `--format json` changes accordingly: `OneToOneField` moves from
+differently. Because a `OneToOneField` is now a foreign-key column, its edge is
+drawn even with `--no-relationships` (like `ForeignKey`), and a `ForeignKey`
+plus a `OneToOneField` to the same model now draw two edges instead of one. `--format json` changes accordingly: `OneToOneField` moves from
 `relationships` to `fields`, `foreign_table` names the referenced column for
 Django foreign keys to a non-`id` key, and relationships gain `nullable`. If
 you commit the diagram and gate CI on `--check` (or the `erdify-check`

@@ -802,6 +802,46 @@ class C(models.Model):
 """
         assert _field(_parse(tmp_path, src), "C", "a_id").foreign_table == "a.b_id"
 
+    def test_to_field_naming_a_foreign_key(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class Account(models.Model):
+    code = models.CharField(max_length=5, primary_key=True)
+
+
+class Profile(models.Model):
+    account = models.OneToOneField(Account, on_delete=models.CASCADE)
+
+
+class Note(models.Model):
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, to_field="account")
+"""
+        fk = _field(_parse(tmp_path, src), "Note", "profile_id")
+        assert fk.foreign_table == "profile.account_id"
+        assert fk.type_str == "str"
+
+    def test_type_follows_choices_enum(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class Status(models.TextChoices):
+    OPEN = "open"
+
+
+class State(models.Model):
+    code = models.CharField(max_length=5, primary_key=True, choices=Status.choices)
+
+
+class Ticket(models.Model):
+    state = models.ForeignKey(State, on_delete=models.CASCADE)
+"""
+        entities = _parse(tmp_path, src)
+        assert _field(entities, "Ticket", "state_id").type_str == "Status"
+        assert _field(entities, "State", "code").type_str == "Status"
+
 
 class TestDeclaredRelationshipNullability:
     """#223: 1:1 Django fields and keyless model references follow nullability."""
@@ -860,40 +900,52 @@ class Profile(models.Model):
         assert o2o == fk
 
     KEYLESS = """
-{header}
+from pydantic import BaseModel
 
 
-class User({base}):
+class User(BaseModel):
     id: int
 
 
-class Post({base}):
+class Post(BaseModel):
     id: int
     user: User | None
     tags: list[User] | None
 """
 
+    KEYLESS_DATACLASS = """
+from dataclasses import dataclass
+
+
+@dataclass
+class User:
+    id: int
+
+
+@dataclass
+class Post:
+    id: int
+    user: User | None
+    tags: list[User] | None
+"""
+
+    @pytest.mark.parametrize("src", [KEYLESS, KEYLESS_DATACLASS], ids=["pydantic", "dataclass"])
+    def test_keyless_optional_reference(self, tmp_path: Path, src: str):
+        entities = _parse(tmp_path, src)
+        assert entities["Post"].nullable_relationships == ["user"]
+        assert 'Post }o--o| User : "user"' in generate_mermaid(entities)
+
     @pytest.mark.parametrize(
-        ("header", "base"),
+        "annotation",
         [
-            ("from pydantic import BaseModel", "BaseModel"),
-            ("from dataclasses import dataclass\n\n\n@dataclass", ""),
+            "User",
+            "Optional[User]",
+            '"User | None"',
+            'Optional["User"]',
+            # A model whose *name* contains "Optional" is still required.
+            "OptionalUser",
         ],
     )
-    def test_keyless_optional_reference(self, tmp_path: Path, header: str, base: str):
-        src = self.KEYLESS.format(header=header, base=base)
-        if not base:  # each dataclass needs its own decorator
-            src = src.replace("\n\nclass Post", "\n\n@dataclass\nclass Post").replace(
-                "class User()", "class User"
-            )
-            src = src.replace("class Post()", "class Post")
-        entities = _parse(tmp_path, src)
-        post = entities["Post"]
-        assert post.nullable_relationships == ["user"]
-        out = generate_mermaid(entities)
-        assert 'Post }o--o| User : "user"' in out
-
-    @pytest.mark.parametrize("annotation", ["User", "Optional[User]"])
     def test_keyless_annotations(self, tmp_path: Path, annotation: str):
         src = f"""
 from typing import Optional
@@ -905,19 +957,24 @@ class User(BaseModel):
     id: int
 
 
+class OptionalUser(BaseModel):
+    id: int
+
+
 class Post(BaseModel):
     id: int
     user: {annotation}
 """
         entities = _parse(tmp_path, src)
-        nullable = annotation != "User"
+        nullable = annotation not in ("User", "OptionalUser")
+        target = "OptionalUser" if annotation == "OptionalUser" else "User"
         assert entities["Post"].nullable_relationships == (["user"] if nullable else [])
         glyph = "}o--o|" if nullable else "}o--||"
-        assert f'Post {glyph} User : "user"' in generate_mermaid(entities)
-        assert f'Post {glyph} User : "user"' in generate_plantuml(entities)
+        assert f'Post {glyph} {target} : "user"' in generate_mermaid(entities)
+        assert f'Post {glyph} {target} : "user"' in generate_plantuml(entities)
 
     def test_json_nullable_key(self, tmp_path: Path):
-        src = self.KEYLESS.format(header="from pydantic import BaseModel", base="BaseModel")
+        src = self.KEYLESS
         doc = json.loads(generate_json(_parse(tmp_path, src)))
         post = next(e for e in doc["entities"] if e["name"] == "Post")
         assert {r["attribute"]: r["nullable"] for r in post["relationships"]} == {
@@ -926,8 +983,99 @@ class Post(BaseModel):
         }
 
     def test_exclude_drops_nullable_entry(self, tmp_path: Path):
-        src = self.KEYLESS.format(header="from pydantic import BaseModel", base="BaseModel")
+        src = self.KEYLESS
         (tmp_path / "models.py").write_text(src)
         entities, _ = parse_models_directory(tmp_path, exclude_patterns=["User"])
         assert entities["Post"].relationships == []
         assert entities["Post"].nullable_relationships == []
+
+    def test_sqlalchemy_relationship_nullable_in_json(self, tmp_path: Path):
+        """``relationship()`` reads optionality from the annotation like model references."""
+        src = """
+from typing import List, Optional
+
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Team(Base):
+    __tablename__ = "team"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    members: Mapped[List["Member"]] = relationship(back_populates="team")
+
+
+class Member(Base):
+    __tablename__ = "member"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[Optional[int]] = mapped_column(ForeignKey("team.id"))
+    team: Mapped[Optional["Team"]] = relationship(back_populates="members")
+"""
+        entities = _parse(tmp_path, src)
+        assert entities["Member"].nullable_relationships == ["team"]
+        assert entities["Team"].nullable_relationships == []
+        doc = json.loads(generate_json(entities))
+        rels = {
+            (e["name"], r["attribute"]): r["nullable"]
+            for e in doc["entities"]
+            for r in e["relationships"]
+        }
+        assert rels == {("Team", "members"): False, ("Member", "team"): True}
+        # The FK column still draws the edge; the declared relationship adds none.
+        out = generate_mermaid(entities)
+        assert out.count("Member }o--o| Team") == 1
+
+    def test_inherited_reference_follows_mro_winner(self, tmp_path: Path):
+        src = """
+from pydantic import BaseModel
+
+
+class User(BaseModel):
+    id: int
+
+
+class Base(BaseModel):
+    user: User | None
+
+
+class Post(Base):
+    id: int
+    user: User
+"""
+        entities = _parse(tmp_path, src)
+        assert entities["Post"].nullable_relationships == []
+        assert 'Post }o--|| User : "user"' in generate_mermaid(entities)
+
+    def test_django_fk_and_one_to_one_to_same_target(self, tmp_path: Path):
+        """Both are FK columns now, so both edges are drawn."""
+        src = """
+from django.db import models
+
+
+class Account(models.Model):
+    pass
+
+
+class Profile(models.Model):
+    owner = models.ForeignKey(Account, on_delete=models.CASCADE)
+    primary = models.OneToOneField(Account, on_delete=models.CASCADE, related_name="+")
+"""
+        out = generate_mermaid(_parse(tmp_path, src))
+        assert 'Profile }o--|| Account : "owner_id"' in out
+        assert 'Profile |o--|| Account : "primary_id"' in out
+
+
+class TestEntityInfoPositional:
+    """New ``EntityInfo`` fields go last, so pre-1.2 positional calls keep working."""
+
+    def test_pre_1_2_positional_order(self):
+        from erdify import EntityInfo
+
+        e = EntityInfo("A", "a", [], [("B", "one", "b")], True, ["Base"], "django")
+        assert e.is_link_table is True
+        assert e.base_classes == ["Base"]
+        assert e.source == "django"
+        assert e.nullable_relationships == []
