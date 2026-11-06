@@ -1067,4 +1067,67 @@ class TestFallbackFixedPoint:
             encoding="utf-8",
         )
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _flags(_field(entities, "id")) == ("int", True, False, False, None)
+
+    def _ambiguous_amb(self, tmp_path: Path) -> None:
+        """Two identical `amb` modules that both fit `pkg/*`: imports from it are ambiguous."""
+        (tmp_path / "pkg").mkdir(exist_ok=True)
+        for path in (tmp_path / "amb.py", tmp_path / "pkg" / "amb.py"):
+            path.write_text("", encoding="utf-8")
+
+    def test_long_chain_is_not_cut_off(self, tmp_path: Path):
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "coltypes.py").write_text(self.ALIAS, encoding="utf-8")
+        (tmp_path / "pkg" / "l0.py").write_text(
+            "from coltypes import intpk\nX0 = intpk\n", encoding="utf-8"
+        )
+        for i in range(1, 15):
+            (tmp_path / "pkg" / f"l{i}.py").write_text(
+                f"from .l{i - 1} import X{i - 1}\nX{i} = X{i - 1}\n", encoding="utf-8"
+            )
+        (tmp_path / "pkg" / "models.py").write_text(
+            HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n    id: Mapped[X14]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
         assert _field(entities, "id").is_primary_key
+
+    def test_conflicting_cycle_is_deterministic(self, tmp_path: Path):
+        """The configuration that made a round-based fixed point oscillate."""
+        self._ambiguous_amb(tmp_path)
+        files = {
+            "f1.py": self.ALIAS.replace("intpk", "B"),
+            "f2.py": "from typing import Annotated\nfrom sqlalchemy.orm import mapped_column\n"
+            "from amb import A\nB = Annotated[A, mapped_column(index=True)]\n",
+            "f3.py": "from amb import B\nA = B\n",
+        }
+        for name, text in files.items():
+            (tmp_path / "pkg" / name).write_text(text, encoding="utf-8")
+        (tmp_path / "pkg" / "models.py").write_text(
+            HEADER + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+            "    a: Mapped[A]\n    b: Mapped[B]\n",
+            encoding="utf-8",
+        )
+        results = set()
+        for patterns in (["**/*.py"], ["pkg/*.py", "*.py"]):
+            entities, _ = parse_models_directory(tmp_path, include_patterns=patterns)
+            results.add(
+                tuple(_flags(_field(entities, n)) + (_field(entities, n).index,) for n in "ab")
+            )
+        assert len(results) == 1  # same output whatever the file order
+        (a, b) = next(iter(results))
+        assert a[1] is False and b[1] is False  # conflicting definitions: no false PK
+
+    def test_ambiguous_import_of_a_class_name_is_not_an_alias(self, tmp_path: Path):
+        self._ambiguous_amb(tmp_path)
+        (tmp_path / "pkg" / "models.py").write_text(
+            "from amb import User\n"
+            + HEADER
+            + "\nclass Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n    col: Mapped[User]\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+        assert _field(entities, "col").type_str == "User"

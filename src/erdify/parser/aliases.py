@@ -75,13 +75,15 @@ class AliasResolver:
         #: Cycle cut-offs so far; a result computed across one is not cached.
         self._cycles = 0
         self._views: Dict[Tuple[Path, int | None], Mapping[str, ast.expr]] = {}
-        self._fallback: Dict[str, ast.expr] | None = None
+        #: Name -> its by-name fallback alias (or None), once known (#254).
+        self._fallback: Dict[str, ast.expr | None] = {}
+        self._fallback_names: List[str] | None = None
         self._suffixes: Dict[Tuple[str, ...], List[Path]] | None = None
 
     def aliases_for(self, file: Path | None, line: int | None = None) -> Mapping[str, ast.expr]:
         """Alias name -> fully expanded ``Annotated[...]``, as seen at ``line`` of ``file``."""
         if file is None or file not in self._trees:
-            return MappingProxyType(dict(self._fallback_aliases()))
+            return MappingProxyType(self._all_fallbacks())
         key = (file, line)
         view = self._views.get(key)
         if view is not None:
@@ -91,10 +93,12 @@ class AliasResolver:
             value = self._resolve(file, name, line, ())
             if value is not None:
                 result[name] = value
-        for name, value in self._fallback_aliases().items():
+        for name in self._fallback_candidates():
             # A name bound before the class (also via `*`) never falls back.
             if name not in result and self._binding_at(file, name, line) is None:
-                result[name] = value
+                value = self._fallback_for(name, ())
+                if value is not None:
+                    result[name] = value
         view = MappingProxyType(result)
         self._views[key] = view
         return view
@@ -269,7 +273,7 @@ class AliasResolver:
         if binding.kind == "import":
             target = self._find_module(file, binding.module, binding.level)
             if target is _AMBIGUOUS:  # several scanned modules match: by name
-                return self._fallback_aliases().get(binding.original)
+                return self._fallback_for(binding.original, stack)
             if target is None:  # not a scanned module (stdlib, third party)
                 return None
             return self._resolve(target, binding.original, None, stack)
@@ -367,42 +371,50 @@ class AliasResolver:
         root = dotted[: len(dotted) - depth]
         return self._absolute(importer).parts[: len(root)] == root
 
-    #: Upper bound on fallback rounds; conflicting definitions could otherwise
-    #: keep changing the table (in practice it settles after a few rounds).
-    _FALLBACK_ROUNDS = 10
+    def _fallback_candidates(self) -> List[str]:
+        """Names some scanned module ends up defining as a possible alias."""
+        if self._fallback_names is None:
+            self._fallback_names = sorted(
+                {
+                    name
+                    for file in self._trees
+                    for name, bindings in self._history(file).items()
+                    if bindings[-1].kind == "alias" and name not in self._classes
+                }
+            )
+        return self._fallback_names
 
-    def _fallback_aliases(self) -> Dict[str, ast.expr]:
-        """Aliases by name, for names a module does not bind (defined identically everywhere).
+    def _fallback_for(self, name: str, stack: Tuple[_Lookup, ...]) -> ast.expr | None:
+        """The alias ``name`` names wherever it is defined, if all definitions agree.
 
-        Computed to a fixed point: an alias may itself depend on the fallback,
-        e.g. ``UserId = intpk`` where ``intpk`` comes through an ambiguous
-        import (#254), so rounds repeat until the table stops changing.
+        Used for a name a module does not bind and for an ambiguous import. It
+        is resolved on demand, per name, so an alias that itself depends on the
+        fallback (``UserId = intpk`` with ``intpk`` through an ambiguous
+        import, #254) is included. A dependency cycle is cut by the resolution
+        stack, and a result computed across a cut-off is not cached.
         """
-        if self._fallback is not None:
-            return self._fallback
-        table: Dict[str, ast.expr] = {}
-        for _ in range(self._FALLBACK_ROUNDS):
-            self._fallback = table  # what ambiguous imports see during this round
-            self._resolved.clear()  # results of the last round used the old table
-            found: Dict[str, List[ast.expr]] = {}
-            for file in self._trees:
-                for name, bindings in self._history(file).items():
-                    if bindings[-1].kind == "alias" and name not in self._classes:
-                        value = self._resolve(file, name, None, ())
-                        if value is not None:
-                            found.setdefault(name, []).append(value)
-            next_table = {
-                name: values[0]
-                for name, values in found.items()
-                if len({ast.dump(v) for v in values}) == 1
-            }
-            if self._dumped(next_table) == self._dumped(table):
-                break
-            table = next_table
-        self._fallback = table
-        self._resolved.clear()
-        return self._fallback
+        if name in self._fallback:
+            return self._fallback[name]
+        if name in self._classes:
+            return None
+        cycles = self._cycles
+        values: List[ast.expr] = []
+        for file in self._trees:
+            bindings = self._history(file).get(name)
+            if bindings and bindings[-1].kind == "alias":
+                value = self._resolve(file, name, None, stack)
+                if value is not None:
+                    values.append(value)
+        result = values[0] if values and len({ast.dump(v) for v in values}) == 1 else None
+        if self._cycles == cycles:
+            self._fallback[name] = result
+        return result
 
-    @staticmethod
-    def _dumped(table: Mapping[str, ast.expr]) -> Dict[str, str]:
-        return {name: ast.dump(value) for name, value in table.items()}
+    def _all_fallbacks(self) -> Dict[str, ast.expr]:
+        """Every by-name fallback alias (for a class whose file is unknown)."""
+        table: Dict[str, ast.expr] = {}
+        for name in self._fallback_candidates():
+            value = self._fallback_for(name, ())
+            if value is not None:
+                table[name] = value
+        return table
