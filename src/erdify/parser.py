@@ -1807,6 +1807,9 @@ class ASTDatabaseParser:
     _MANY_WRAPPERS = frozenset({"WriteOnlyMapped", "DynamicMapped"})
     #: SQLAlchemy 2.0 annotation wrappers that mark a mapped attribute.
     _MAPPED_WRAPPERS = frozenset({"Mapped"}) | _MANY_WRAPPERS
+    #: Type qualifiers: they say how a field is declared, not what it holds, so a
+    #: column's type and nullability are those of the qualified type.
+    _QUALIFIERS = frozenset({"Final", "InitVar", "Required", "NotRequired", "ReadOnly"})
     #: Single-argument collections of a model: a "many" reference.
     _MANY_CONTAINERS = frozenset(
         {
@@ -1890,7 +1893,8 @@ class ASTDatabaseParser:
         """A column's displayed type and whether its annotation admits ``None``.
 
         Walks the syntax tree like :meth:`_annotation_reference` (#236): the
-        ``Mapped`` family and ``Annotated`` (bare or qualified) are unwrapped,
+        ``Mapped`` family, ``Annotated`` and type qualifiers such as ``Final``
+        (bare or qualified) are unwrapped,
         and ``X | None``, ``None | X``, ``Optional[X]`` and ``Union[X, None]``
         all give ``X`` and nullable. A union of several other types keeps them,
         minus ``None``, in its own spelling; any member that is itself optional
@@ -1908,7 +1912,7 @@ class ASTDatabaseParser:
             return cls._column_union(cls._union_operands(node), " | ".join)
         if isinstance(node, ast.Subscript):
             name, args = cls._subscript_parts(node)
-            if args and name in cls._TRANSPARENT_WRAPPERS | cls._MANY_WRAPPERS:
+            if args and name in cls._TRANSPARENT_WRAPPERS | cls._MANY_WRAPPERS | cls._QUALIFIERS:
                 return cls._column_type(args[0])
             if name == "Optional" and len(args) == 1:
                 return cls._column_type(args[0])[0], True

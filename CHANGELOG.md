@@ -58,8 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `None | X`, `Union[X, None]` and `typing.Optional[X]` now display as `X`
     (previously the raw spelling), and a union of several types drops only its
     `None` member (`int | str | None` → `int | str`);
-  - `Annotated[...]` and a qualified `orm.Mapped[...]` are unwrapped like
-    `Mapped[...]`, and quoted names lose their quotes, whether the whole
+  - `Annotated[...]`, a qualified `orm.Mapped[...]` and type qualifiers
+    (`Final`, `InitVar`, `Required` / `NotRequired`, `ReadOnly`) are unwrapped
+    like `Mapped[...]`, and quoted names lose their quotes, whether the whole
     annotation is quoted (`"int | None"`) or a name inside it
     (`Mapped[Optional["Decimal"]]` → `Decimal`).
 - A SQLAlchemy model is now detected when its columns are annotated with a
@@ -89,7 +90,8 @@ Mermaid and HTML output lose all edges, and PlantUML loses its
 The #236 fix changes the `nullable` / `?` marker and the displayed type of the
 columns listed above (no longer nullable when `None` / `Optional` only appears
 in a name, literal, metadata or generic argument; shorter types for the
-optional spellings, `Annotated`, qualified `Mapped` and quoted names), and adds
+optional spellings, `Annotated`, qualified `Mapped`, type qualifiers and
+quoted names), and adds
 SQLAlchemy models, with their edges, that were previously not detected. In
 `--format json`, the affected columns' `type` and `nullable` change
 accordingly.

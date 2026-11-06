@@ -136,6 +136,10 @@ class TestColumnNullability:
             ("Optional[Optional[int]]", "int", True),
             ("typing.Union[int, None]", "int", True),
             ("Union[None]", "None", True),
+            # Type qualifiers are unwrapped; the qualified type decides.
+            ("Final[Optional[int]]", "int", True),
+            ("typing.Final[int]", "int", False),
+            ("NotRequired[int | None]", "int", True),
             # Degenerate spellings do not crash.
             ("Union[()]", "Union[()]", False),
             ("Annotated[()]", "Annotated[()]", False),
@@ -228,3 +232,18 @@ class Legacy(Base):
     note: str = "not a Mapped member"
 """
         assert "Legacy" not in _parse(tmp_path, source)
+
+
+def test_dataclass_final_optional_field(tmp_path: Path):
+    """``Final[Optional[int]]`` on a dataclass stays nullable (Copilot on #242)."""
+    source = """
+from dataclasses import dataclass
+from typing import Final, Optional
+
+
+@dataclass
+class Account:
+    limit: Final[Optional[int]] = None
+"""
+    col = _column(_parse(tmp_path, source), "limit")
+    assert (col.type_str, col.is_nullable) == ("int", True)
