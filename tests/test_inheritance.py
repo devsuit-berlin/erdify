@@ -492,3 +492,42 @@ class Post(Base):
         post = _parse(tmp_path, src)["Post"]
         assert [f.name for f in post.fields] == ["user"]
         assert post.relationships == []
+
+
+class TestDjangoInheritedSelfReference:
+    """``"self"`` in an abstract base points at each concrete subclass, as in Django."""
+
+    SRC = """
+from django.db import models
+
+
+class TreeBase(models.Model):
+    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+    peers = models.ManyToManyField("self")
+
+    class Meta:
+        abstract = True
+
+
+class Node(TreeBase):
+    code = models.CharField(max_length=5, primary_key=True)
+
+
+class Leaf(TreeBase):
+    pass
+"""
+
+    def test_foreign_key(self, tmp_path: Path):
+        entities = _parse(tmp_path, self.SRC)
+        node = _field(entities, "Node", "parent_id")
+        assert node.foreign_table == "node.code"
+        assert node.type_str == "str"
+        assert _field(entities, "Leaf", "parent_id").foreign_table == "leaf.id"
+        out = generate_mermaid(entities)
+        assert 'Node }o--o| Node : "parent_id"' in out
+        assert 'Leaf }o--o| Leaf : "parent_id"' in out
+
+    def test_many_to_many(self, tmp_path: Path):
+        entities = _parse(tmp_path, self.SRC)
+        assert entities["Node"].relationships == [("Node", "many_to_many", "peers")]
+        assert entities["Leaf"].relationships == [("Leaf", "many_to_many", "peers")]

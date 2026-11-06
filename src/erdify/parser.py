@@ -1011,7 +1011,8 @@ class ASTDatabaseParser:
         """
         dfs_order = self._dfs_order(class_node, set())
         members = {
-            name: self._class_members(self._all_classes[name], model_kind) for name in dfs_order
+            name: self._class_members(self._all_classes[name], model_kind, class_node.name)
+            for name in dfs_order
         }
         order_fields, order_rels = self._listing_order(class_node, set(), members, model_kind)
         fields, rels = self._merge_members(self._merge_order(class_node), members, model_kind)
@@ -1073,9 +1074,11 @@ class ASTDatabaseParser:
         result.update((key, value) for key, value in values.items() if key not in result)
         return result
 
-    def _class_members(self, class_node: ast.ClassDef, model_kind: str) -> _ClassMembers:
+    def _class_members(
+        self, class_node: ast.ClassDef, model_kind: str, concrete: str
+    ) -> _ClassMembers:
         """A single class body's fields, relationships, and declared attribute names."""
-        fields, rels = self._extract_class_fields(class_node, model_kind)
+        fields, rels = self._extract_class_fields(class_node, model_kind, concrete)
         if model_kind == "django":
             declared = self._django_declared_names(class_node)
         else:
@@ -1134,11 +1137,15 @@ class ASTDatabaseParser:
         ]
 
     def _extract_class_fields(
-        self, class_node: ast.ClassDef, model_kind: str
+        self, class_node: ast.ClassDef, model_kind: str, concrete: str
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
-        """Extract fields and relationships from a class definition."""
+        """Extract fields and relationships from a class definition.
+
+        ``concrete`` is the entity being built; a Django ``"self"`` reference
+        in an inherited body resolves to it, not to the declaring base.
+        """
         if model_kind == "django":
-            return self._extract_django_fields(class_node)
+            return self._extract_django_fields(class_node, concrete)
 
         fields: Dict[str, FieldInfo] = {}
         relationships: Dict[str, _Rel] = {}
@@ -1181,14 +1188,16 @@ class ASTDatabaseParser:
         return fields, relationships
 
     def _extract_django_fields(
-        self, class_node: ast.ClassDef
+        self, class_node: ast.ClassDef, concrete: str
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """Extract fields and relationships from a Django model.
 
         Django fields are plain assignments (``name = models.CharField(...)``),
         not annotated. ``ForeignKey`` / ``OneToOneField`` become ``<name>_id``
         foreign-key columns, ``ManyToManyField`` becomes a relationship, and
-        every other ``*Field`` is a column.
+        every other ``*Field`` is a column. ``"self"`` names ``concrete``, the
+        model being built, as in Django, where a relation to ``"self"`` in an
+        abstract base points at each concrete subclass.
         """
         fields: Dict[str, FieldInfo] = {}
         relationships: Dict[str, _Rel] = {}
@@ -1201,12 +1210,12 @@ class ASTDatabaseParser:
                 # or the PK itself with primary_key=True (shared primary key), in
                 # which case Django adds no implicit `id` (#224).
                 fk = self._parse_django_fk_column(
-                    name, call, class_node.name, one_to_one=field_type == "OneToOneField"
+                    name, call, concrete, one_to_one=field_type == "OneToOneField"
                 )
                 if fk:
                     fields[fk.name] = fk
             elif field_type == "ManyToManyField":
-                rel = self._parse_django_many_to_many(name, call, class_node.name)
+                rel = self._parse_django_many_to_many(name, call, concrete)
                 if rel:
                     relationships[name] = rel
             else:

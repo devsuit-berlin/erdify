@@ -28,7 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Django `ForeignKey` / `OneToOneField` column now references the target's
   actual primary key (including one inherited from an abstract base) or its
   `to_field=` column, and takes that column's type. Previously `foreign_table`
-  always named `<table>.id`, a column that may not exist
+  always named `<table>.id`, a column that may not exist. A relation to
+  `"self"` declared in an abstract base now points at each concrete subclass,
+  as in Django, instead of the abstract base's non-existent table, so its edge
+  is drawn
   ([#226](https://github.com/devsuit-berlin/erdify/issues/226)).
 - Inherited fields and relationships now resolve like Python's MRO: when two
   bases declare the same attribute, the first base wins (previously the last),
@@ -50,7 +53,8 @@ The fixes above change the generated diagram for:
   of one;
 - any Django foreign key to a model whose primary key is not the implicit `id`,
   or with `to_field=`: the FK column takes the referenced column's type (e.g.
-  `UUID` instead of `int`);
+  `UUID` instead of `int`), and any Django model inheriting a relation to
+  `"self"` from an abstract base: its self-edge is now drawn;
 - any Pydantic / dataclass model with an optional model reference;
 - any model whose bases declare the same attribute differently, or whose body
   redeclares an inherited attribute as another kind, and any Django model with
