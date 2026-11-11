@@ -15,7 +15,7 @@ Contrib models themselves are not drawn: they are not part of the project.
 """
 
 import ast
-from typing import Dict, Iterable, Set
+from typing import Dict, Iterable, Iterator, List, Set
 
 #: Concrete contrib models a relation may target -> their table.
 CONTRIB_TABLES: Dict[str, str] = {
@@ -89,19 +89,51 @@ def imported_contrib_names(trees: Iterable[ast.Module]) -> Set[str]:
 
 
 def contrib_bindings(tree: ast.Module) -> Dict[str, str]:
-    """Local name -> qualified contrib model, from the module's own imports.
+    """Local name -> qualified contrib model, as the module binds it at the end.
 
     ``from django.contrib.auth.models import Group as AuthGroup`` binds
-    ``AuthGroup`` to ``"auth.Group"``. Only concrete contrib models count.
+    ``AuthGroup`` to ``"auth.Group"``. Only module-level statements count
+    (also inside module-level ``if`` / ``try`` / ``with`` blocks, not in
+    ``except`` handlers), in order, so
+    an import inside a function is ignored and a later local ``class Group`` or
+    other import of the name replaces the binding, as in Python.
     """
     bindings: Dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module in CONTRIB_MODULES:
+    for node in _module_statements(tree.body):
+        if isinstance(node, ast.ImportFrom):
+            known = CONTRIB_MODULES.get(node.module or "", set())
             for alias in node.names:
+                local = alias.asname or alias.name
                 qualified = _QUALIFIED.get(alias.name)
-                if qualified is not None and alias.name in CONTRIB_MODULES[node.module]:
-                    bindings[alias.asname or alias.name] = qualified
+                if qualified is not None and alias.name in known:
+                    bindings[local] = qualified
+                else:
+                    bindings.pop(local, None)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                bindings.pop(alias.asname or alias.name.partition(".")[0], None)
+        elif isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            bindings.pop(node.name, None)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                for name in ast.walk(target):
+                    if isinstance(name, ast.Name):
+                        bindings.pop(name.id, None)
     return bindings
+
+
+def _module_statements(body: List[ast.stmt]) -> Iterator[ast.stmt]:
+    """Module-level statements in order, entering ``if`` / ``try`` / ``with`` blocks.
+
+    ``except`` handlers are skipped: a fallback there (``except ImportError:
+    Group = None``) normally doesn't run.
+    """
+    for node in body:
+        yield node
+        if isinstance(node, (ast.If, ast.Try, ast.With)):
+            for block in ("body", "orelse", "finalbody"):
+                yield from _module_statements(getattr(node, block, []))
 
 
 def abstract_user_bases(imported: Set[str], defined: Set[str]) -> Dict[str, ast.ClassDef]:

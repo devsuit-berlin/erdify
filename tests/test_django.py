@@ -606,3 +606,42 @@ class Member(AbstractUser):
             },
         )
         assert self._fk(entities, "Document", "owner_id") == "auth_user.id"
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # imported only inside a function: not a module binding
+            "from django.db import models\n\n\n"
+            "def helper():\n"
+            "    from django.contrib.auth.models import Group\n"
+            "    return Group\n\n\n"
+            "class Group(models.Model):\n    pass\n\n\n"
+            "class Membership(models.Model):\n"
+            "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+            # imported, then redefined locally: the local class wins
+            "from django.contrib.auth.models import Group\n"
+            "from django.db import models\n\n\n"
+            "class Group(models.Model):\n    pass\n\n\n"
+            "class Membership(models.Model):\n"
+            "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+        ],
+        ids=["function_scope_import", "redefined_after_import"],
+    )
+    def test_local_group_is_not_overridden(self, tmp_path: Path, source: str):
+        entities = self._parse(tmp_path, source)
+        assert self._fk(entities, "Membership", "group_id") == "shop_group.id"
+
+    def test_import_in_try_block_with_fallback(self, tmp_path: Path):
+        entities = self._parse(
+            tmp_path,
+            "try:\n"
+            "    from django.contrib.auth.models import Group\n"
+            "except ImportError:\n"
+            "    Group = None\n\n"
+            "import logging\n"
+            "from django.db import models\n\n"
+            "log: logging.Logger = logging.getLogger(__name__)\n\n\n"
+            "class Membership(models.Model):\n"
+            "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+        )
+        assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
