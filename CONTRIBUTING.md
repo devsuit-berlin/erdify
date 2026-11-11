@@ -176,8 +176,8 @@ rejects must be listed in `EXPECTED_UNLOADABLE` / `EXPECTED_REJECTED`; nothing i
 skipped silently.
 
 Test models must also be valid Django: each source is loaded the way a project
-would run it and must pass Django's system checks (`manage.py check`) on every
-supported Django series. Give a second foreign key to the same model a
+would run it and must pass Django's model checks (the `models` checks of
+`manage.py check`, per model and across models) on every supported Django series. Give a second foreign key to the same model a
 `related_name`, a `CharField` a `max_length`, and so on. A regression snippet that
 violates a check on purpose lists the error ids and why in
 `EXPECTED_CHECK_ERRORS`.

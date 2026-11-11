@@ -7,8 +7,9 @@ erdify from text, and executed by Django into an isolated app registry. Both
 are reduced to the same normalised schema (tables, columns, primary / unique /
 foreign keys, nullability, many-to-many edges, choices enums) and must agree.
 
-Every source is loaded the way a Django project runs it, and Django's system
-checks must pass (#287): test data that no project could run is caught.
+Every source is loaded the way a Django project runs it, and Django's model
+checks (the ``models`` checks of ``manage.py check``) must pass (#287): test
+data that no project could run is caught.
 
 Nothing is skipped silently: known differences, sources Django rejects,
 sources that are not self-contained and deliberate check errors are each
@@ -66,6 +67,10 @@ DEGENERATE = {
 # why. Every other source must pass the checks (#287), and the fixture app,
 # the docs example and the edge-case catalog always must.
 EXPECTED_CHECK_ERRORS = {
+    "test_ground_truth_django.py::test_reference_runs_cross_model_checks.shared": (
+        ("models.E028",),
+        "the harness's own test that cross-model checks run",
+    ),
     "test_ground_truth_django.py::test_reference_reports_system_check_errors.bad": (
         ("fields.E120",),
         "the harness's own test that check errors are reported",
@@ -240,3 +245,48 @@ def test_reference_swaps_in_the_sources_user_model() -> None:
     )
     assert schema.checks == ()
     assert schema.tables["Order"].columns["buyer_id"].fk == "gt_member.id"
+
+
+def test_reference_runs_cross_model_checks() -> None:
+    """Checks spanning models run too: two managed models on one table."""
+    shared = django_ref.load(
+        "from django.db import models\n\n\n"
+        "class A(models.Model):\n    class Meta:\n        db_table = 'same'\n\n\n"
+        "class B(models.Model):\n    class Meta:\n        db_table = 'same'\n"
+    )
+    assert shared.checks == ("models.E028",)
+
+
+@pytest.mark.parametrize(
+    ("bodies", "user"),
+    [
+        (["class Member(AbstractUser):\n    pass\n"], "Member"),
+        (
+            [
+                "class Member(AbstractUser):\n    pass\n",
+                "class Staff(Member):\n    class Meta:\n        proxy = True\n",
+                "class Customer(Member):\n    pass\n",
+            ],
+            "Member",
+        ),
+        (
+            [
+                "class Base(AbstractBaseUser):\n    class Meta:\n        abstract = True\n",
+                "class Account(Base):\n    pass\n",
+            ],
+            "Account",
+        ),
+        (
+            ["class Member(AbstractUser):\n    pass\n", "class Admin(AbstractUser):\n    pass\n"],
+            None,
+        ),
+        (["class Base(AbstractUser):\n    class Meta:\n        abstract = True\n"], None),
+        (["class Plain(models.Model):\n    pass\n"], None),
+    ],
+    ids=["one", "proxy_and_child", "via_abstract_base", "two", "only_abstract", "none"],
+)
+def test_reference_finds_the_sources_user_model(bodies: list[str], user: str | None) -> None:
+    import ast
+
+    source = "\n\n".join(bodies)
+    assert django_ref._user_model(ast.parse(source)) == user

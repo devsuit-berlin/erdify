@@ -64,8 +64,9 @@ without extra work.
   `EXPECTED_UNLOADABLE`.
 - Test data must be a model module a Django project can run: every source is
   loaded like a project (contrib apps installed, `AUTH_USER_MODEL` set to the
-  source's own user model if it defines one) and must pass Django's system
-  checks. The edge-case catalog, the fixture app and the docs example always
+  source's own user model if it defines one) and must pass Django's model
+  checks (the `models` checks of `manage.py check`, per model and across
+  models). The edge-case catalog, the fixture app and the docs example always
   must; a regression snippet with a deliberate check error lists its error ids
   and the reason in `EXPECTED_CHECK_ERRORS`.
 - New Django parsing support → add an edge-case module for it.

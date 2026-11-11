@@ -17,6 +17,7 @@ import django
 from django.apps import apps as global_apps
 from django.apps.registry import Apps
 from django.conf import settings
+from django.core.checks.model_checks import check_all_models
 from django.core.exceptions import FieldError
 from django.db import models
 from django.test.utils import isolate_apps, override_settings
@@ -150,9 +151,7 @@ def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps) -> Schema
                 raise Unloadable(f"unresolved relation {model.__name__}.{f.name}")
     try:
         tables = {m.__name__: _table(m) for m in concrete}
-        checks = sorted(
-            {e.id for m in defined if not m._meta.abstract for e in m.check() if e.is_serious()}
-        )
+        checks = _system_checks(registry, defined)
     except FieldError as exc:
         raise Rejected(f"FieldError: {exc}") from exc
     enums = {
@@ -161,6 +160,20 @@ def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps) -> Schema
         if issubclass(cls, enum.Enum)
     }
     return Schema(tables=tables, enums=enums, checks=tuple(checks))
+
+
+def _system_checks(registry: Apps, defined: list[type[models.Model]]) -> list[str]:
+    """Error ids of Django's model checks for the source, as ``manage.py check`` runs them.
+
+    ``check_all_models`` adds the cross-model checks (e.g. ``models.E028``, two
+    managed models on one table) to each model's own; models whose
+    ``Meta.app_label`` names an app that isn't installed are checked one by one.
+    """
+    app_config = registry.get_app_config(APP_LABEL)
+    errors = list(check_all_models(app_configs=[app_config]))
+    outside = [m for m in defined if m._meta.app_label != APP_LABEL and not m._meta.abstract]
+    errors += [e for m in outside for e in m.check()]
+    return sorted({e.id for e in errors if e.is_serious()})
 
 
 USER_BASES = {"AbstractUser", "AbstractBaseUser"}
@@ -174,7 +187,7 @@ def _user_model(tree: ast.Module) -> str | None:
     another user model. Read from the syntax tree, because ``AUTH_USER_MODEL``
     must be set before the models are created.
     """
-    classes = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+    classes = {n.name: n for n in tree.body if isinstance(n, ast.ClassDef)}
 
     def bases(node: ast.ClassDef) -> list[str]:
         return [
@@ -206,7 +219,12 @@ def _user_model(tree: ast.Module) -> str | None:
         and is_user(name)
         and not meta_flag(node, "abstract")
         and not meta_flag(node, "proxy")
-        and not any(b in classes and is_user(b) and b not in USER_BASES for b in bases(node))
+        # A subclass of another concrete user model (multi-table) isn't a root;
+        # an abstract user base of the source is just a base.
+        and not any(
+            b in classes and is_user(b) and not meta_flag(classes[b], "abstract")
+            for b in bases(node)
+        )
     ]
     return users[0] if len(users) == 1 else None
 
