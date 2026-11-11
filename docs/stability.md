@@ -92,9 +92,10 @@ versions.
 
 The SQLModel, SQLAlchemy, Django, Pydantic and sqlglot versions erdify follows
 are listed on the [installation page](installation.md#supported-framework-versions),
-and each is checked in CI.
+together with the versions CI checks.
 
-- Support for a new framework release can be added in any release.
+- Support for a new framework release is added in a minor release, or in a
+  patch when it only fixes how erdify reads a release it already supports.
 - A framework version is dropped only in a minor release, never in a patch,
   and the changelog says so.
 

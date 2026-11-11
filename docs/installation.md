@@ -18,9 +18,9 @@ erdify reads model files as text and never imports them, so your project's
 framework doesn't need to be installed alongside erdify. The version still
 matters: it decides which syntax exists and what schema the framework builds
 from it (default table names, which settings a column takes, and so on). erdify
-follows these versions, and CI tests each of them. For SQLModel, SQLAlchemy and
-Django, CI checks erdify's output against the schema the real framework builds
-(the ground-truth tests). "Current release" is the version in erdify's
+follows these versions; CI runs the ones in the "Checked in CI" column. For
+SQLModel, SQLAlchemy and Django, it checks erdify's output against the schema
+the real framework builds (the ground-truth tests). "Current release" is the version in erdify's
 lockfile, which Dependabot keeps up to date.
 
 | Framework | Supported | Checked in CI |

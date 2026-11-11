@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 import sqlmodel
+from packaging.version import Version
 
 from tests.ground_truth import sqlalchemy_ref
 from tests.ground_truth.schema import Schema, from_erdify
@@ -101,7 +102,7 @@ KNOWN_DIFFERENCES = {
 # The oldest supported SQLModel is 0.0.22 (docs/installation.md); CI runs these
 # tests on it and on the locked release. Where SQLModel itself changed, the
 # expected schema depends on the installed version.
-SQLMODEL_VERSION = tuple(int(part) for part in sqlmodel.__version__.split(".")[:3])
+SQLMODEL_VERSION = Version(sqlmodel.__version__).release[:3]  # 0.0.49rc1 -> (0, 0, 49)
 
 # Catalog modules for a SQLModel feature, skipped before the release that added it.
 REQUIRES_SQLMODEL = {
@@ -343,6 +344,8 @@ def test_known_lists_name_existing_sources() -> None:
         | set(EXPECTED_UNLOADABLE)
     )
     assert not listed - names
+    # A version-gated difference listed unconditionally too would lose its gate.
+    assert not set(SQLMODEL_DIFFERENCES) & (set(KNOWN_DIFFERENCES) | set(LIMITATIONS))
 
 
 def test_most_sources_are_compared() -> None:

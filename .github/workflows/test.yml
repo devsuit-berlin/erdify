@@ -190,11 +190,16 @@ jobs:
         run: |
           extra=(--with "sqlalchemy~=$SQLALCHEMY.0")
           [[ "$SQLMODEL" != locked ]] && extra+=(--with "sqlmodel==$SQLMODEL")
+          # On a `locked` leg, SQLModel must be the lockfile's version.
           uv run "${extra[@]}" python -c "
-          import os, sqlalchemy, sqlmodel
+          import os, sqlalchemy, sqlmodel, tomllib
           print('SQLAlchemy', sqlalchemy.__version__, '/ SQLModel', sqlmodel.__version__)
           assert sqlalchemy.__version__.startswith(os.environ['SQLALCHEMY'] + '.')
-          assert os.environ['SQLMODEL'] in ('locked', sqlmodel.__version__)
+          expected = os.environ['SQLMODEL']
+          if expected == 'locked':
+              lock = tomllib.load(open('uv.lock', 'rb'))
+              expected = next(p['version'] for p in lock['package'] if p['name'] == 'sqlmodel')
+          assert sqlmodel.__version__ == expected, (sqlmodel.__version__, expected)
           "
       - name: Run the SQLAlchemy / SQLModel ground-truth tests
         run: |
