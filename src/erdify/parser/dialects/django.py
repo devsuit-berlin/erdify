@@ -326,16 +326,27 @@ class DjangoDialect(Dialect):
         return bool(value) if isinstance(value, bool) else False
 
     def _meta_value(self, class_node: ast.ClassDef, attr: str) -> object | None:
-        """Read a constant attribute (e.g. ``db_table``) from a model's ``class Meta``."""
+        """Read a constant attribute (e.g. ``db_table``) from a model's ``class Meta``.
+
+        Plain and annotated assignments (``app_label: str = "sales"``) count;
+        the last one wins, as in Python, and a non-literal last one makes the
+        value unknown (None).
+        """
         meta = self._get_meta_class(class_node)
         if meta is None:
             return None
+        value: object | None = None
         for node in meta.body:
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == attr:
-                        return node.value.value
-        return None
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                targets = [node.target]
+            else:
+                continue
+            if any(isinstance(t, ast.Name) and t.id == attr for t in targets):
+                assigned = node.value
+                value = assigned.value if isinstance(assigned, ast.Constant) else None
+        return value
 
     def _django_self_owner(self, name: str, merge_order: List[str]) -> str:
         """The model a Django ``"self"`` relation declared in class ``name`` points at.

@@ -349,6 +349,31 @@ class TestDjangoDefaultTableNames:
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/models/*.py"])
         assert entities["OrderItem"].table_name == "shop_orderitem"
 
+    ANNOTATED_APP_LABEL = """
+from django.db import models
+
+
+class OrderItem(models.Model):
+    class Meta:
+        app_label: str = "sales"
+"""
+
+    REASSIGNED_APP_LABEL = """
+from django.db import models
+
+
+class OrderItem(models.Model):
+    class Meta:
+        app_label = "shop"
+        app_label = "sales"
+"""
+
+    @pytest.mark.parametrize("source", [ANNOTATED_APP_LABEL, REASSIGNED_APP_LABEL])
+    def test_meta_app_label_annotated_or_reassigned(self, tmp_path: Path, source: str):
+        app = self._app(tmp_path, "shop")
+        (app / "models.py").write_text(source, encoding="utf-8")
+        assert self._tables(tmp_path) == {"OrderItem": "sales_orderitem"}
+
     def test_meta_app_label_wins(self, tmp_path: Path):
         app = self._app(tmp_path, "shop")
         (app / "models.py").write_text(
