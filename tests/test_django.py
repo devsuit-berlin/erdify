@@ -775,3 +775,43 @@ class Book(models.Model):
     def test_empty_db_column_is_unset(self, tmp_path: Path):
         fks = self._fks(tmp_path, self.EMPTY_DB_COLUMN, "Book")
         assert fks == {"id": None, "author_id": "shop_author.key"}
+
+    SHARED_TABLE_SAME_ATTRIBUTE = """
+from django.db import models
+
+
+class LegacyCustomer(models.Model):
+    id = models.IntegerField(primary_key=True, db_column="LEGACY_ID")
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class CustomerView(models.Model):
+    id = models.IntegerField(primary_key=True)
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class Archive(models.Model):
+    id = models.IntegerField(primary_key=True, db_column="ARCHIVE_ID")
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class Ticket(models.Model):
+    legacy = models.ForeignKey(LegacyCustomer, on_delete=models.DO_NOTHING, related_name="+")
+    view = models.ForeignKey(CustomerView, on_delete=models.DO_NOTHING, related_name="+")
+    archive = models.ForeignKey(Archive, on_delete=models.DO_NOTHING, related_name="+")
+"""
+
+    def test_shared_table_renames_follow_the_target_model(self, tmp_path: Path):
+        fks = self._fks(tmp_path, self.SHARED_TABLE_SAME_ATTRIBUTE, "Ticket")
+        assert fks["legacy_id"] == "crm_customer.LEGACY_ID"
+        assert fks["view_id"] == "crm_customer.id"
+        assert fks["archive_id"] == "crm_customer.ARCHIVE_ID"

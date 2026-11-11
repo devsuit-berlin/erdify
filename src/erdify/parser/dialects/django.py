@@ -78,6 +78,9 @@ class DjangoDialect(Dialect):
         self._lower_names: Dict[str, str] | None = None
         self._links_cache: Dict[str, List[Tuple[str, str]]] = {}
         self._app_labels: Dict[Path, str] = {}
+        # id(FieldInfo) of each foreign-key column -> the model it references, so
+        # db_column renames follow the model, not just its table (#275).
+        self._fk_targets: Dict[int, str] = {}
         self._user_model_name: str | None = None
         self._declaring: Dict[int, ast.ClassDef] | None = None
         self._bindings: Dict[Tuple[int, int], Dict[str, str]] = {}
@@ -112,10 +115,8 @@ class DjangoDialect(Dialect):
         rely on. Only now are the columns renamed, and every foreign key that
         references a renamed column is pointed at the new name.
         """
-        # Rename each entity's own columns where the entity is in hand. For the
-        # foreign-key pass, renames are merged per table: unmanaged models may
-        # share one (Meta.db_table), and an FK only names the table.
-        renames: Dict[str, Dict[str, str]] = {}
+        # Rename each entity's own columns where the entity is in hand.
+        by_model: Dict[str, Dict[str, str]] = {}
         for name, entity in entities.items():
             node = self.classes.all.get(name)
             if entity.source != self.kind or node is None:
@@ -123,11 +124,12 @@ class DjangoDialect(Dialect):
             columns = self._db_columns(node)
             if not columns:
                 continue
-            merged = renames.setdefault(entity.table_name, {})
-            for column, db_column in columns.items():
-                merged.setdefault(column, db_column)
+            by_model[name] = columns
             for f in entity.fields:
                 f.name = columns.get(f.name, f.name)
+        # Point foreign keys at renamed columns, by the model they reference
+        # (recorded when the FK column is built): unmanaged models may share a
+        # table (Meta.db_table) and rename the same attribute differently.
         for entity in entities.values():
             if entity.source != self.kind:
                 continue
@@ -135,8 +137,9 @@ class DjangoDialect(Dialect):
                 if f.foreign_table is None:
                     continue
                 table, _, column = f.foreign_table.rpartition(".")
-                if column in renames.get(table, {}):
-                    f.foreign_table = f"{table}.{renames[table][column]}"
+                columns = by_model.get(self._fk_targets.get(id(f), ""), {})
+                if column in columns:
+                    f.foreign_table = f"{table}.{columns[column]}"
 
     def _db_columns(self, class_node: ast.ClassDef) -> Dict[str, str]:
         """Internal column name -> literal ``db_column`` for a model's own columns.
@@ -351,16 +354,16 @@ class DjangoDialect(Dialect):
                     declared.is_nullable = False
                 continue
             column, type_str = self._django_target_column(parent, None, ())
-            added.append(
-                FieldInfo(
-                    name=f"{attr}_id",
-                    type_str=type_str,
-                    is_primary_key=is_pk,
-                    is_foreign_key=True,
-                    is_unique=not is_pk,
-                    foreign_table=f"{self._django_target_table(parent)}.{column}",
-                )
+            link = FieldInfo(
+                name=f"{attr}_id",
+                type_str=type_str,
+                is_primary_key=is_pk,
+                is_foreign_key=True,
+                is_unique=not is_pk,
+                foreign_table=f"{self._django_target_table(parent)}.{column}",
             )
+            self._fk_targets[id(link)] = parent
+            added.append(link)
         if links:
             fields = added + entity.fields
             entity.fields = [f for f in fields if f.is_primary_key] + [
@@ -569,7 +572,7 @@ class DjangoDialect(Dialect):
         if to_field is not None:
             target = self._column_owner(target, to_field, ()) or target
         column, type_str = self._django_target_column(target, to_field, ())
-        return FieldInfo(
+        fk = FieldInfo(
             name=f"{name}_id",
             type_str=type_str,
             is_primary_key=is_primary_key,
@@ -578,6 +581,8 @@ class DjangoDialect(Dialect):
             is_unique=is_unique and not is_primary_key,
             foreign_table=f"{self._django_target_table(target)}.{column}",
         )
+        self._fk_targets[id(fk)] = target
+        return fk
 
     def _column_owner(self, model: str, to_field: str, stack: Tuple[str, ...]) -> str | None:
         """The model whose table holds column ``to_field`` of ``model``, if any.
