@@ -549,7 +549,9 @@ from django.db import models
 
 
 class Parent(models.Model):
-    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+    parent = models.ForeignKey(
+        "self", null=True, on_delete=models.CASCADE, related_name="children"
+    )
     peers = models.ManyToManyField("self")
 
 
@@ -742,7 +744,7 @@ from django.db import models
 
 
 class TreeBase(models.Model):
-    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+    parent = models.ForeignKey("self", null=True, unique=True, on_delete=models.CASCADE)
 
     class Meta:
         abstract = True

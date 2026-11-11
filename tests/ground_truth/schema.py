@@ -39,10 +39,16 @@ class Table:
 
 @dataclass
 class Schema:
-    """Entities keyed by class name, plus enums keyed by name (member names)."""
+    """Entities keyed by class name, plus enums keyed by name (member names).
+
+    ``checks`` holds the ids of the errors the framework's own validation
+    reports for the source (Django's system checks), empty for erdify. It is
+    not part of the schema comparison.
+    """
 
     tables: dict[str, Table] = field(default_factory=dict)
     enums: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    checks: tuple[str, ...] = ()
 
 
 def from_erdify(path: Path, source: str) -> Schema:

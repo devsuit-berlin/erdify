@@ -7,3 +7,5 @@ from django.db import models
 class Account(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     team = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True)
+
+    USERNAME_FIELD = "email"

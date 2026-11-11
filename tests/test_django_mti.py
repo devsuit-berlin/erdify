@@ -158,7 +158,9 @@ class TestRelationshipsStayOnParent:
             tmp_path,
             """
 class Parent(models.Model):
-    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+    parent = models.ForeignKey(
+        "self", null=True, on_delete=models.CASCADE, related_name="children"
+    )
     peers = models.ManyToManyField("self")
 
 
@@ -331,8 +333,8 @@ class SortedPerson(OrderedPerson):
 
 class Note(models.Model):
     who = models.ForeignKey(OrderedPerson, on_delete=models.CASCADE)
-    by = models.ForeignKey("SortedPerson", on_delete=models.CASCADE)
-    readers = models.ManyToManyField(OrderedPerson)
+    by = models.ForeignKey("SortedPerson", on_delete=models.CASCADE, related_name="+")
+    readers = models.ManyToManyField(OrderedPerson, related_name="+")
 """
 
     def test_foreign_keys_reference_the_concrete_model(self, tmp_path: Path):
