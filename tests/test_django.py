@@ -693,3 +693,32 @@ class TestDjangoDbColumn:
             "writer": "shop_author.AUTHOR_ID",
             "editor_id": "shop_author.AUTHOR_ID",
         }
+
+    REDECLARED = """
+from django.db import models
+
+
+class Owned(models.Model):
+    owner = models.ForeignKey("Person", on_delete=models.CASCADE, db_column="OWNER")
+
+    class Meta:
+        abstract = True
+
+
+class Person(models.Model):
+    name = models.CharField(max_length=10, db_column="first")
+    name = models.CharField(max_length=10)
+
+
+class Note(Owned):
+    owner = None
+    owner_id = models.IntegerField()
+"""
+
+    def test_overridden_and_removed_declarations_keep_their_own_column(self, tmp_path: Path):
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(self.REDECLARED, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Person"].fields] == ["id", "name"]
+        assert [f.name for f in entities["Note"].fields] == ["id", "owner_id"]

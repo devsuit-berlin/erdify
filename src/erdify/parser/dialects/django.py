@@ -112,15 +112,18 @@ class DjangoDialect(Dialect):
         rely on. Only now are the columns renamed, and every foreign key that
         references a renamed column is pointed at the new name.
         """
+        # Rename each entity's own columns where the entity is in hand; keep the
+        # renames by table only for the foreign-key pass (two Django models
+        # can't share a table, models.E028).
         renames: Dict[str, Dict[str, str]] = {}
         for name, entity in entities.items():
             node = self.classes.all.get(name)
-            if entity.source == self.kind and node is not None:
-                renames[entity.table_name] = self._db_columns(node)
-        for table, columns in renames.items():
+            if entity.source != self.kind or node is None:
+                continue
+            columns = self._db_columns(node)
             if not columns:
                 continue
-            entity = next(e for e in entities.values() if e.table_name == table)
+            renames[entity.table_name] = columns
             for f in entity.fields:
                 f.name = columns.get(f.name, f.name)
         for entity in entities.values():
@@ -134,29 +137,22 @@ class DjangoDialect(Dialect):
                     f.foreign_table = f"{table}.{renames[table][column]}"
 
     def _db_columns(self, class_node: ast.ClassDef) -> Dict[str, str]:
-        """Internal column name -> literal ``db_column`` for a model's fields.
+        """Internal column name -> literal ``db_column`` for a model's own columns.
 
         The internal name is the attribute (``isbn``), or ``<attr>_id`` for a
-        ``ForeignKey`` / ``OneToOneField``. The declaration closest in the MRO
-        wins, like the field itself.
+        ``ForeignKey`` / ``OneToOneField``. Declarations resolve exactly like the
+        fields (:meth:`_own_declarations`: overrides, ``name = None`` removals,
+        a concrete parent's fields staying in the parent's table).
         """
         columns: Dict[str, str] = {}
-        seen: Set[str] = set()
-        for class_name in self.classes.mro(class_node.name) or [class_node.name]:
-            owner = self.classes.all.get(class_name)
-            if owner is None:
+        for attr, (field_type, call, _owner) in self._own_declarations(class_node).items():
+            db_column = next((k.value for k in call.keywords if k.arg == "db_column"), None)
+            if not (isinstance(db_column, ast.Constant) and isinstance(db_column.value, str)):
                 continue
-            for attr, field_type, call in self._django_field_calls(owner):
-                if attr in seen:
-                    continue
-                seen.add(attr)
-                db_column = next((k.value for k in call.keywords if k.arg == "db_column"), None)
-                if not (isinstance(db_column, ast.Constant) and isinstance(db_column.value, str)):
-                    continue
-                if field_type in ("ForeignKey", "OneToOneField"):
-                    columns[f"{attr}_id"] = db_column.value
-                elif field_type != "ManyToManyField":
-                    columns[attr] = db_column.value
+            if field_type in ("ForeignKey", "OneToOneField"):
+                columns[f"{attr}_id"] = db_column.value
+            elif field_type != "ManyToManyField":
+                columns[attr] = db_column.value
         return columns
 
     def default_table_name(self, class_node: ast.ClassDef) -> str:
