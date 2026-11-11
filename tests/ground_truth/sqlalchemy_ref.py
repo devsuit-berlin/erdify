@@ -72,6 +72,8 @@ def load(source: str) -> Schema:
         tree = ast.parse(source)
     except SyntaxError as exc:
         raise Unloadable(f"SyntaxError: {exc}") from exc
+    if _has_template_annotation(tree):
+        raise Unloadable("a str.format placeholder ({name}) in an annotation")
     module = types.ModuleType(MODULE)
     module.__file__ = "<models>"
     # SQLAlchemy resolves string annotations (Mapped["User"]) in the module of
@@ -89,6 +91,8 @@ def load(source: str) -> Schema:
             except (NameError, ImportError) as exc:
                 raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
             except (sa_exc.ArgumentError, sa_exc.InvalidRequestError, TypeError) as exc:
+                if _caused_by_name_error(exc):
+                    raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
                 raise Rejected(f"{type(exc).__name__}: {exc}") from exc
             classes = list(_classes(module))
             # The registries of the mapped classes, and of declarative bases
@@ -115,10 +119,12 @@ def _schema(module: types.ModuleType, classes: list[type], registries: set[regis
         try:
             reg.configure()
         except sa_exc.InvalidRequestError as exc:
-            if _names_outside_class(exc):
+            if _names_outside_class(exc) or _caused_by_name_error(exc):
                 raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
             checks.append(type(exc).__name__)
         except sa_exc.ArgumentError as exc:
+            if _caused_by_name_error(exc):
+                raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
             checks.append(type(exc).__name__)
     mappers = [
         m
@@ -156,6 +162,38 @@ def _schema(module: types.ModuleType, classes: list[type], registries: set[regis
         if issubclass(cls, enum.Enum) and cls is not enum.Enum
     }
     return Schema(tables=tables, enums=enums, checks=tuple(sorted(set(checks))))
+
+
+def _has_template_annotation(tree: ast.Module) -> bool:
+    """An annotation holding a set display, i.e. an unfilled ``{placeholder}``.
+
+    No model annotation is a set; a ``str.format`` template's ``Mapped[{annotation}]``
+    is. Before Python 3.14 executing it raised ``NameError``; with lazy
+    annotations (PEP 649) it may not raise at all.
+    """
+    return any(
+        isinstance(sub, ast.Set)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        for sub in ast.walk(node.annotation)
+    )
+
+
+def _caused_by_name_error(exc: BaseException) -> bool:
+    """An annotation names something the source doesn't define.
+
+    Since Python 3.14 (PEP 649) annotations are evaluated lazily: the
+    ``NameError`` that executing the class body used to raise now comes from
+    SQLAlchemy reading the annotation, wrapped in its own exception.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, NameError):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def _names_outside_class(exc: Exception) -> bool:
