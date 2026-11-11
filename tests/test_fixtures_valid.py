@@ -19,8 +19,9 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # malformed: contains deliberate syntax errors to exercise the parser's error
 # handling. django: Django models cannot be imported standalone (they require a
-# configured settings module / app registry); erdify only ever reads them as
-# text, and the django fixture is exercised end-to-end by test_django.py.
+# configured settings module / app registry). test_ground_truth_django.py loads
+# them into an isolated registry instead and compares the schema Django builds
+# with erdify's parse - a stronger check than importability.
 # base_classes: importable by construction is the one thing it must NOT be - it
 # exists to reproduce a base class that lives outside the scanned files, so its
 # imports deliberately resolve to nothing. Depending on django-ninja just to

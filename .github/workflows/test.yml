@@ -111,6 +111,45 @@ jobs:
           flags: "type:unit-tests,language:python"
           files: coverage.xml
 
+  # The Django ground-truth tests (tests/test_ground_truth_django.py) load every
+  # Django model source with the real framework and compare its schema with
+  # erdify's parse. The lockfile pins the 5.2 LTS (the last series supporting
+  # Python 3.11), which the `test` matrix above runs; this job repeats those
+  # tests on each supported Django series. `uv run --with` resolves the newest
+  # patch release of the series on top of the locked environment, so new
+  # patches are picked up without a lockfile change.
+  django:
+    name: Django ${{ matrix.django }} ground truth
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        django: ["5.2", "6.0", "6.1"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "latest-known"
+          # Django 6.x requires Python >= 3.12.
+          python-version: "3.13"
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Assert the matrix Django is in use
+        env:
+          EXPECTED: ${{ matrix.django }}
+        run: >-
+          uv run --with "django~=${{ matrix.django }}.0" python -c
+          "import django, os; v = '%d.%d' % django.VERSION[:2];
+          assert v == os.environ['EXPECTED'], django.__version__; print(django.__version__)"
+      - name: Run the Django ground-truth tests
+        run: uv run --with "django~=${{ matrix.django }}.0" pytest tests/test_ground_truth_django.py -rsx
+
   # README coverage badge. Datadog exposes no public badge endpoint, so the
   # percentage is published as a shields.io endpoint payload at
   # https://raw.githubusercontent.com/devsuit-berlin/erdify/badges/coverage.json
@@ -192,7 +231,7 @@ jobs:
   gate:
     name: Tests passed
     if: always()
-    needs: [test]
+    needs: [test, django]
     runs-on: ubuntu-latest
     steps:
       # `badges` holds only bot-written badge payloads. A pull request from it
@@ -212,5 +251,5 @@ jobs:
             exit 1
           fi
       - name: Fail if any matrix job failed
-        if: needs.test.result != 'success'
+        if: needs.test.result != 'success' || needs.django.result != 'success'
         run: exit 1

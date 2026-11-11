@@ -43,6 +43,29 @@ them, e.g.:
 uv run erdify tests/fixtures/ecommerce --title 'E-Commerce ERD' -o tests/fixtures/ecommerce/expected.puml
 ```
 
+### Ground-truth tests
+
+Golden files only lock in erdify's own output. The ground-truth tests check it
+against the real framework instead: `tests/ground_truth/` loads a model source
+with the library (Django: an isolated app registry, no database) and reduces it
+to the same normalised schema as erdify's parse (tables, columns, PK / unique /
+FK, nullability, many-to-many edges, enums). `tests/test_ground_truth_django.py`
+runs this over the Django fixture, `docs/examples/django`, the Django
+**edge-case catalog** (`tests/fixtures/django_edge_cases/`, one module per
+Django feature) and every inline Django snippet in `tests/test_*.py` (any
+string literal with a `class` and `models.Model` or a `from django` import,
+discovered automatically). A new regression test is checked against Django
+without extra work.
+
+- A mismatch is a bug in erdify (or in the source), not in the harness. Fix it,
+  or file an issue and add the source to `KNOWN_DIFFERENCES` (a strict xfail).
+- Nothing is skipped silently: a source Django rejects or can't load fails the
+  test unless it is listed, with a reason, in `EXPECTED_REJECTED` /
+  `EXPECTED_UNLOADABLE`.
+- New Django parsing support → add an edge-case module for it.
+- CI repeats these tests on every supported Django series (`django` job in
+  `test.yml`). Add a series there when Django releases one.
+
 ## Architecture
 
 erdify turns Python model files into ERD diagrams **without importing them or
