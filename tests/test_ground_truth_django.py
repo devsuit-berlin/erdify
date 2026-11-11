@@ -56,6 +56,7 @@ KNOWN_DIFFERENCES = {
     "composite_primary_key": "#276: CompositePrimaryKey is not supported (and #271)",
     "custom_user": "#277: a model based on AbstractUser is missing from the diagram",
     "db_column": "#275: db_column is ignored",
+    "meta_constraints": "#274: a single-field Meta.constraints UniqueConstraint is not read",
     "generic_relations": "#278: ContentType's table is django_content_type",
     "relation_options": "#271: default table name is snake_case, Django lower-cases the class name",
 }
@@ -102,7 +103,9 @@ SNIPPETS = django_snippets()
 def _param(name: str, value: object) -> object:
     marks = []
     if name in KNOWN_DIFFERENCES:
-        marks.append(pytest.mark.xfail(reason=KNOWN_DIFFERENCES[name], strict=True))
+        marks.append(
+            pytest.mark.xfail(reason=KNOWN_DIFFERENCES[name], raises=AssertionError, strict=True)
+        )
     return pytest.param(value, id=name, marks=marks)
 
 

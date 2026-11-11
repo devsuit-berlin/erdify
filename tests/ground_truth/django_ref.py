@@ -8,8 +8,8 @@ is touched: everything compared here comes from model metadata.
 
 from __future__ import annotations
 
+import ast
 import enum
-import re
 from collections.abc import Iterable, Iterator
 from typing import Any
 
@@ -23,6 +23,7 @@ from django.test.utils import isolate_apps
 from .schema import Column, Schema, Table
 
 APP = "tests.ground_truth.django_app"
+APP_LABEL = "gt"  # see django_app/apps.py
 # Django apps a model source may point at (user model, generic relations).
 CONTRIB = {"contenttypes": "django.contrib.contenttypes", "auth": "django.contrib.auth"}
 
@@ -59,26 +60,36 @@ def _setup() -> None:
         django.setup()
 
 
-# A string relation target: the first argument of a relation field, or ``to=``
-# / ``through=``. Other dotted strings (``db_table = "schema.table"``) are kept.
-_LAZY_REFERENCE = re.compile(r"""(\(|\b(?:to|through)\s*=)(\s*)(["'])(\w+)\.(\w+)\3""")
+RELATION_FIELDS = {"ForeignKey", "OneToOneField", "ManyToManyField", "ForeignObject"}
 
 
-def _single_app(source: str) -> str:
-    """Drop the app label from ``"app.Model"`` lazy references.
+class _SingleApp(ast.NodeTransformer):
+    """Drop the app label from ``"app.Model"`` relation targets.
 
     Every source is loaded as one app, so a reference naming its own app
     (``"catalog.Place"``) resolves the same way without the label. Django
-    matches the model name case-insensitively either way. References into the
+    matches the model name case-insensitively either way. Only the target (first
+    argument, ``to=``) and ``through=`` of a relation field are touched; other
+    dotted strings (``db_table = "schema.table"``) and references into the
     ``CONTRIB`` apps (``"auth.User"``) are kept.
     """
 
-    def strip(match: re.Match[str]) -> str:
-        prefix, space, quote, label, model = match.groups()
-        target = f"{label}.{model}" if label in CONTRIB else model
-        return f"{prefix}{space}{quote}{target}{quote}"
-
-    return _LAZY_REFERENCE.sub(strip, source)
+    def visit_Call(self, node: ast.Call) -> ast.Call:
+        self.generic_visit(node)
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        if name in RELATION_FIELDS:
+            targets = node.args[:1] + [k.value for k in node.keywords if k.arg in ("to", "through")]
+            for target in targets:
+                if (
+                    isinstance(target, ast.Constant)
+                    and isinstance(target.value, str)
+                    and target.value.count(".") == 1
+                ):
+                    label, model = target.value.split(".")
+                    if label not in CONTRIB:
+                        target.value = model
+        return node
 
 
 def load(source: str) -> Schema:
@@ -91,7 +102,8 @@ def load(source: str) -> Schema:
             for model in global_apps.get_app_config(label).get_models(include_auto_created=True):
                 registry.all_models[label][model._meta.model_name] = model
         try:
-            exec(compile(_single_app(source), "<models>", "exec"), namespace)
+            tree = _SingleApp().visit(ast.parse(source))
+            exec(compile(tree, "<models>", "exec"), namespace)
         except (NameError, ImportError, SyntaxError) as exc:
             raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
         except (FieldError, TypeError) as exc:
@@ -136,13 +148,35 @@ def table_name(model: type[models.Model]) -> str:
 
     Django prefixes a default table name with the app label
     (``<app_label>_<model>``); erdify has no app configuration and shows the
-    bare name, so the prefix is dropped here until #271 decides whether erdify
-    should add it. An explicit ``Meta.db_table`` is compared as-is.
+    bare name, so the prefix of the source's own app is dropped here until #271
+    decides whether erdify should add it. An explicit ``Meta.db_table`` and the
+    tables of external (``CONTRIB``) models are compared as-is.
     """
     meta = model._meta
-    if "db_table" in meta.original_attrs:
+    if "db_table" in meta.original_attrs or meta.app_label != APP_LABEL:
         return str(meta.db_table)
-    return meta.db_table.removeprefix(f"{meta.app_label}_")
+    return meta.db_table.removeprefix(f"{APP_LABEL}_")
+
+
+def _meta_unique(model: type[models.Model]) -> set[Any]:
+    """Fields made unique on their own by ``Meta`` rather than ``unique=True``.
+
+    An unconditional single-field ``UniqueConstraint`` or a one-field
+    ``unique_together`` entry makes the column unique in the database without
+    setting ``Field.unique``. Members of composite, conditional or expression
+    constraints are not unique individually.
+    """
+    meta = model._meta
+    names = [
+        c.fields[0]
+        for c in meta.constraints
+        if isinstance(c, models.UniqueConstraint)
+        and len(c.fields) == 1
+        and c.condition is None
+        and not c.expressions
+    ]
+    names += [group[0] for group in meta.unique_together if len(group) == 1]
+    return {meta.get_field(name) for name in names}
 
 
 def _table(model: type[models.Model]) -> Table:
@@ -150,6 +184,7 @@ def _table(model: type[models.Model]) -> Table:
     # pk_fields covers a CompositePrimaryKey (Django 5.2+), whose columns
     # don't set primary_key themselves.
     pk_fields = set(meta.pk_fields)
+    unique_fields = {f for f in meta.local_concrete_fields if f.unique} | _meta_unique(model)
     columns: dict[str, Column] = {}
     for f in meta.local_concrete_fields:
         fk = None
@@ -161,7 +196,7 @@ def _table(model: type[models.Model]) -> Table:
             # A primary key is NOT NULL in the database even with null=True
             # (Django flags that as fields.E007 but still builds the column).
             nullable=f.null and f not in pk_fields,
-            unique=f.unique and f not in pk_fields,
+            unique=f in unique_fields and f not in pk_fields,
             fk=fk,
         )
     m2m = frozenset(
