@@ -29,7 +29,9 @@ def test_missing_series_reports_only_untested_newest_series() -> None:
 
 def test_matrix_series_reads_the_real_workflow() -> None:
     """The workflow layout the script relies on: a change to test.yml must keep it working."""
-    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "test.yml").read_text())
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+    )
     series = check.matrix_series(workflow)
     assert {"5.2", "6.0", "6.1"} <= series["django"]
     assert {"2.0", "2.1"} <= series["sqlalchemy"]

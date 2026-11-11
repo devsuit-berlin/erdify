@@ -135,10 +135,11 @@ members, under any declarative base (`class Base(DeclarativeBase)`,
 `Base = declarative_base()`, or the `@registry.mapped` decorator). A Core
 `Table(...)` is drawn only in one case:
 
-- **Association tables are drawn.** A module-level `name = Table(...)` whose
-  primary key is made up entirely of foreign keys (a many-to-many link, also
-  one used as `relationship(secondary=...)`) becomes a link entity named after
-  the variable.
+- **Association tables are drawn.** A module-level `name = Table(...)` in
+  which every column is part of a composite primary key made up of foreign keys
+  (two FKs or more, no payload columns) becomes a link entity named after the
+  variable. That holds whether or not a `relationship(secondary=...)` goes
+  through it; a `secondary=` table with a payload column is not drawn.
 
 Everything else declared as a Core table is missing from the diagram, along
 with the foreign-key edges that point at it:

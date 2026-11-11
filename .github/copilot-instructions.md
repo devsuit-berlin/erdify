@@ -103,7 +103,8 @@ test helper prepends to a bare body).
   release on).
 
 - `.github/workflows/upstream.yml` (daily, not a required check) runs the
-  whole suite on the newest releases (`uv lock --upgrade`, newest Django) and
+  whole suite on the newest releases (newest SQLModel / Pydantic / sqlglot /
+  Django from PyPI on top of `uv lock --upgrade`) and
   `scripts/check_upstream_series.py`, which fails when a Django / SQLAlchemy
   series is out but missing from the `test.yml` matrices. A failed scheduled
   run opens or updates one `ci`-labelled issue.
