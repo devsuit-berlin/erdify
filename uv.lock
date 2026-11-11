@@ -510,9 +510,11 @@ sql = [
 dev = [
     { name = "django" },
     { name = "mypy" },
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "sqlalchemy" },
     { name = "sqlglot" },
@@ -530,9 +532,11 @@ provides-extras = ["sql"]
 dev = [
     { name = "django" },
     { name = "mypy" },
+    { name = "packaging", specifier = ">=26.2" },
     { name = "pydantic" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff" },
     { name = "sqlalchemy" },
     { name = "sqlglot" },

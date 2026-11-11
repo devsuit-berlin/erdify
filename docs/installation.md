@@ -25,7 +25,7 @@ lockfile, which Dependabot keeps up to date.
 
 | Framework | Supported | Checked in CI |
 |---|---|---|
-| SQLModel | 0.0.22 and later | 0.0.22 (the oldest) and the current release |
+| SQLModel | 0.0.22 and later | 0.0.22 (the oldest), 0.0.32 (see below) and the current release |
 | SQLAlchemy | 2.0, 2.1 (the annotated `Mapped[...]` style) | newest patch release of 2.0 and of 2.1 |
 | Django | 5.2, 6.0, 6.1 | newest patch release of each series |
 | Pydantic | 2 | the current release (fixtures import; ground-truth tests are planned, [#267](https://github.com/devsuit-berlin/erdify/issues/267)) |
@@ -33,7 +33,13 @@ lockfile, which Dependabot keeps up to date.
 | SQL DDL (`erdify[sql]`) | sqlglot 25 and later | the current sqlglot release (ground-truth tests are planned, [#266](https://github.com/devsuit-berlin/erdify/issues/266)) |
 
 Where a framework changed what it builds in a release, erdify's diagram is
-checked against both sides of that release. Known gaps are listed under
+checked against both sides of that release, and that release is itself a CI
+leg.
+
+The newest releases are also tested every day by a scheduled workflow, without
+waiting for the lockfile: the whole test suite runs on the newest compatible
+SQLModel, SQLAlchemy, Pydantic and sqlglot and the newest Django, and a Django
+or SQLAlchemy series that is out but missing from the CI matrix is reported. Known gaps are listed under
 [Limitations](frameworks/limitations.md) and in the issue tracker, for example
 SQLModel 0.0.32+ applying `Field()` settings given in `Annotated[...]`
 metadata, which erdify doesn't read yet

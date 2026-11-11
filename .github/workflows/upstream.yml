@@ -1,0 +1,113 @@
+name: Upstream releases
+
+# Tests erdify against the newest framework releases, independent of pushes and
+# pull requests:
+#
+# - `newest`: re-resolves the lockfile to the newest compatible releases
+#   (SQLModel, SQLAlchemy, Pydantic, sqlglot, ...) and the newest Django
+#   release, then runs the whole test suite, ground-truth tests included. The
+#   required checks in test.yml use the locked versions, which Dependabot moves
+#   weekly with a 7-day cooldown; this job closes that gap.
+# - `series`: fails when Django or SQLAlchemy has a release series that is not
+#   in the test.yml matrices (scripts/check_upstream_series.py).
+#
+# Not a required check: a broken upstream release must not block unrelated
+# pull requests. A failed scheduled run opens (or comments on) one tracking
+# issue instead.
+#
+# `newest` installs releases younger than the Dependabot cooldown, so no job
+# that installs packages gets a secret or a write permission. Only `report`,
+# which installs nothing, may write issues.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream
+  cancel-in-progress: true
+
+jobs:
+  newest:
+    name: Tests on the newest releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "latest-known"
+          # The newest Django requires a recent Python.
+          python-version: "3.13"
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Resolve the newest compatible releases
+        run: uv lock --upgrade && uv sync
+      - name: Find the newest Django release
+        id: django
+        run: |
+          version=$(curl -fsS https://pypi.org/pypi/django/json | python3 -c "import json, sys; print(json.load(sys.stdin)['info']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Show the versions under test
+        env:
+          DJANGO: ${{ steps.django.outputs.version }}
+        run: >-
+          uv run --with "django==$DJANGO" python -c
+          "import importlib.metadata as m;
+          [print(p, m.version(p)) for p in ('sqlmodel', 'sqlalchemy', 'pydantic', 'sqlglot', 'django')]"
+      - name: Run the test suite
+        env:
+          DJANGO: ${{ steps.django.outputs.version }}
+        run: uv run --with "django==$DJANGO" pytest -rsx
+
+  series:
+    name: New release series
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "latest-known"
+          python-version: "3.13"
+      - name: Check for release series missing from the CI matrices
+        run: uv run --no-project --with pyyaml --with packaging python scripts/check_upstream_series.py
+
+  report:
+    name: Report a failure
+    needs: [newest, series]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          NEWEST: ${{ needs.newest.result }}
+          SERIES: ${{ needs.series.result }}
+        run: |
+          title="Upstream releases: scheduled check failed"
+          body="Run: $RUN_URL
+          - Tests on the newest releases: $NEWEST
+          - New release series: $SERIES"
+          number=$(gh issue list --state open --label ci --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --label ci --body "$body"
+          fi

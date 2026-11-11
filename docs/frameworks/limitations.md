@@ -128,6 +128,28 @@ annotation, so they are not drawn as columns. A class needs at least one
 `Mapped[...]` (or `WriteOnlyMapped` / `DynamicMapped`) member of its own to be
 detected; one mixing both styles shows only its `Mapped` columns.
 
+## Tables declared outside a class body
+
+A mapped class is read from its class body: `__tablename__` plus `Mapped[...]`
+members, under any declarative base (`class Base(DeclarativeBase)`,
+`Base = declarative_base()`, or the `@registry.mapped` decorator). A Core
+`Table(...)` is drawn only in one case:
+
+- **Association tables are drawn.** A module-level `name = Table(...)` whose
+  primary key is made up entirely of foreign keys (a many-to-many link, also
+  one used as `relationship(secondary=...)`) becomes a link entity named after
+  the variable.
+
+Everything else declared as a Core table is missing from the diagram, along
+with the foreign-key edges that point at it:
+
+- **Other Core tables**, e.g. a lookup or log table with payload columns
+  ([#305](https://github.com/devsuit-berlin/erdify/issues/305)).
+- **A class with `__table__ = Table(...)`** instead of `__tablename__`
+  ([#297](https://github.com/devsuit-berlin/erdify/issues/297)).
+- **Imperative mapping**, `registry.map_imperatively(Cls, table)`
+  ([#306](https://github.com/devsuit-berlin/erdify/issues/306)).
+
 ## Column type aliases
 
 SQLAlchemy column type aliases are resolved like Python resolves the name when
