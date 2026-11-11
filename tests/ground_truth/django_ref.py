@@ -137,10 +137,14 @@ def _classes(values: Iterable[object], module: str) -> Iterator[type]:
     renders. ``__empty__`` is the label of a blank form choice, not a stored
     value, so it is left out.
     """
-    for value in values:
-        if isinstance(value, type) and value.__module__ == module:
+    seen: set[type] = set()
+    pending = list(values)
+    while pending:
+        value = pending.pop()
+        if isinstance(value, type) and value.__module__ == module and value not in seen:
+            seen.add(value)  # class attributes may refer back (``Node.alias = Node``)
             yield value
-            yield from _classes(vars(value).values(), module)
+            pending.extend(vars(value).values())
 
 
 def table_name(model: type[models.Model]) -> str:
