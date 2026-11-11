@@ -13,9 +13,9 @@ from .django_contrib import (
     CONTRIB_TABLES,
     DEFAULT_USER_MODEL,
     abstract_user_bases,
+    contrib_bindings,
     contrib_target,
     imported_contrib_names,
-    qualified_name,
 )
 
 #: Django relationship field constructs (everything else ending in "Field" is a column).
@@ -78,8 +78,9 @@ class DjangoDialect(Dialect):
         self._lower_names: Dict[str, str] | None = None
         self._links_cache: Dict[str, List[Tuple[str, str]]] = {}
         self._app_labels: Dict[Path, str] = {}
-        self._contrib_imports: Set[str] | None = None
         self._user_model_name: str | None = None
+        self._declaring: Dict[int, ast.ClassDef] | None = None
+        self._bindings: Dict[int, Dict[str, str]] = {}
 
     @classmethod
     def builtin_classes(
@@ -804,12 +805,13 @@ class DjangoDialect(Dialect):
         relation to it targets the concrete model it proxies.
         """
         target = None
+        bindings = self._module_bindings(call)
         if call.args:
-            target = self._resolve_django_target(call.args[0], current_class)
+            target = self._resolve_django_target(call.args[0], current_class, bindings)
         else:
             for keyword in call.keywords:
                 if keyword.arg == "to":
-                    target = self._resolve_django_target(keyword.value, current_class)
+                    target = self._resolve_django_target(keyword.value, current_class, bindings)
                     break
         if target is not None and "." not in target and target not in self.classes.all:
             target = self._class_names_by_lower().get(target.lower(), target)
@@ -827,15 +829,17 @@ class DjangoDialect(Dialect):
             self._lower_names = {low: names[0] for low, names in counts.items() if len(names) == 1}
         return self._lower_names
 
-    def _resolve_django_target(self, node: ast.expr, current_class: str) -> str | None:
+    def _resolve_django_target(
+        self, node: ast.expr, current_class: str, bindings: Dict[str, str]
+    ) -> str | None:
         """Resolve a Django relationship target to a class name.
 
         Handles ``"self"``, ``"app.Model"`` / ``"Model"`` string references and a
         direct class reference (``ForeignKey(Author, ...)``). A ``django.contrib``
         model is returned qualified (``"auth.User"``): from a string naming its
-        app, a class imported from contrib and not defined in the scanned
-        files, or the user model (``settings.AUTH_USER_MODEL``,
-        ``get_user_model()``, #278).
+        app, a name the declaring module imports from contrib (``bindings``;
+        it wins over a scanned class of the same name), or the user model
+        (``settings.AUTH_USER_MODEL``, ``get_user_model()``, #278).
         """
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             value = node.value
@@ -846,16 +850,30 @@ class DjangoDialect(Dialect):
             return self._user_model()
         if isinstance(node, ast.Call) and expr_name(node.func) == "get_user_model":
             return self._user_model()
-        name = expr_name(node)
-        if name is not None and name not in self.classes.all and name in self._contrib_names():
-            return qualified_name(name) or name
-        return name
+        if isinstance(node, ast.Name) and node.id in bindings:
+            return bindings[node.id]
+        return expr_name(node)
 
-    def _contrib_names(self) -> Set[str]:
-        """Contrib names the scanned files import (``from django.contrib... import``)."""
-        if self._contrib_imports is None:
-            self._contrib_imports = imported_contrib_names(self.ctx.trees)
-        return self._contrib_imports
+    def _module_bindings(self, call: ast.Call) -> Dict[str, str]:
+        """Contrib names imported by the module that declares the field ``call``.
+
+        The declaring class may be an abstract base in another file than the
+        model being built, so its own module's imports are the ones that count.
+        """
+        if self._declaring is None:
+            self._declaring = {
+                id(node): owner
+                for owner in self.classes.all.values()
+                for node in ast.walk(owner)
+                if isinstance(node, ast.Call)
+            }
+        owner = self._declaring.get(id(call))
+        tree = self.ctx.tree_of(owner) if owner is not None else None
+        if tree is None:
+            return {}
+        if id(tree) not in self._bindings:
+            self._bindings[id(tree)] = contrib_bindings(tree)
+        return self._bindings[id(tree)]
 
     def _user_model(self) -> str:
         """The model ``AUTH_USER_MODEL`` names, as far as the source tells.

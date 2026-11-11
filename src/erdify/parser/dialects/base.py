@@ -27,6 +27,7 @@ class ParseContext:
             #241, #249, #250).
         file_of: The file a class is defined in, or None if unknown.
         trees: The syntax trees of every scanned file.
+        tree_of: The syntax tree of the file a class is defined in, or None.
     """
 
     classes: ClassIndex = field(default_factory=lambda: ClassIndex({}))
@@ -37,6 +38,7 @@ class ParseContext:
     aliases_for: Callable[[ast.ClassDef], Mapping[str, ast.expr]] = lambda _class_node: {}
     file_of: Callable[[ast.ClassDef], Path | None] = lambda _class_node: None
     trees: List[ast.Module] = field(default_factory=list)
+    tree_of: Callable[[ast.ClassDef], ast.Module | None] = lambda _class_node: None
 
     def all_dialects(self) -> List["Dialect"]:
         """Every dialect, in classification order, bound to this context."""

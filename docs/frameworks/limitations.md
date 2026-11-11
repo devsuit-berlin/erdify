@@ -252,6 +252,7 @@ names, so it can be wrong in both directions.
 | Django `Meta.db_table` / `Meta.app_label` inherited from an abstract base | Not read yet ([#279](https://github.com/devsuit-berlin/erdify/issues/279)) |
 | Django `AUTH_USER_MODEL` | Not read from `settings.py`; the one scanned model built on `AbstractBaseUser` is assumed, else `auth.User` |
 | Django contrib bases imported under another name (`import AbstractUser as Base`), or subclassing the concrete `auth.User` | Fields of the contrib base are not added |
+| A base class named `AbstractUser` / `AbstractBaseUser` / `PermissionsMixin` imported from a non-Django module, while another scanned file imports Django's | Gets Django's fields: base classes are resolved by name across the scan. Relation targets, by contrast, follow each module's own imports |
 | Django table names longer than the database's identifier limit | Shown in full; Django truncates them per backend (e.g. 63 characters on PostgreSQL) |
 | Composite foreign keys | Not supported |
 | Foreign keys inside `sa_column=Column(...)` | Not detected |

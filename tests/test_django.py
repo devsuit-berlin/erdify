@@ -544,3 +544,65 @@ class Member(AbstractUser):
         entities, _ = parse_models_directory(tmp_path, django_raw_types=True)
         fk = next(f for f in entities["Note"].fields if f.name == "author_id")
         assert (fk.foreign_table, fk.type_str) == ("auth_user.id", "AutoField")
+
+    def _apps(self, tmp_path: Path, files: dict[str, str]) -> dict:
+        for app, source in files.items():
+            (tmp_path / app).mkdir()
+            (tmp_path / app / "models.py").write_text(source, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return entities
+
+    def test_contrib_import_wins_over_a_project_model_of_that_name(self, tmp_path: Path):
+        entities = self._apps(
+            tmp_path,
+            {
+                "teams": "from django.db import models\n\n\nclass Group(models.Model):\n    pass\n",
+                "shop": "from django.contrib.auth.models import Group\n"
+                "from django.db import models\n\n\n"
+                "class Membership(models.Model):\n"
+                "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+            },
+        )
+        assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
+
+    def test_another_modules_contrib_import_does_not_leak(self, tmp_path: Path):
+        entities = self._apps(
+            tmp_path,
+            {
+                "accounts": "from django.contrib.auth.models import Group\n"
+                "from django.db import models\n\n\n"
+                "class Profile(models.Model):\n"
+                "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+                "billing": "from directory.models import Group\n"
+                "from django.db import models\n\n\n"
+                "class Invoice(models.Model):\n"
+                "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+            },
+        )
+        assert self._fk(entities, "Profile", "group_id") == "auth_group.id"
+        assert self._fk(entities, "Invoice", "group_id") == "group.id"
+
+    def test_aliased_contrib_import(self, tmp_path: Path):
+        entities = self._parse(
+            tmp_path,
+            "from django.contrib.auth.models import Group as AuthGroup\n"
+            "from django.db import models\n\n\n"
+            "class Membership(models.Model):\n"
+            "    group = models.ForeignKey(AuthGroup, on_delete=models.CASCADE)\n",
+        )
+        assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
+
+    def test_inherited_field_uses_the_declaring_modules_imports(self, tmp_path: Path):
+        entities = self._apps(
+            tmp_path,
+            {
+                "core": "from django.contrib.auth.models import User\n"
+                "from django.db import models\n\n\n"
+                "class Owned(models.Model):\n"
+                "    owner = models.ForeignKey(User, on_delete=models.CASCADE)\n\n"
+                "    class Meta:\n"
+                "        abstract = True\n",
+                "shop": "from core.models import Owned\n\n\nclass Document(Owned):\n    pass\n",
+            },
+        )
+        assert self._fk(entities, "Document", "owner_id") == "auth_user.id"

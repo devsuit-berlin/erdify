@@ -257,7 +257,13 @@ class ASTDatabaseParser:
             aliases_for=self._alias_lookup(),
             file_of=lambda class_node: self._class_files.get(id(class_node)),
             trees=list(self._file_trees.values()),
+            tree_of=self._tree_of,
         )
+
+    def _tree_of(self, class_node: ast.ClassDef) -> ast.Module | None:
+        """The syntax tree of the file ``class_node`` is defined in, if scanned."""
+        model_file = self._class_files.get(id(class_node))
+        return self._file_trees.get(model_file) if model_file is not None else None
 
     def _alias_lookup(self) -> "Callable[[ast.ClassDef], Mapping[str, ast.expr]]":
         """Class -> the column type aliases visible where it is defined (#249, #250)."""

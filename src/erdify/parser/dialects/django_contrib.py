@@ -88,6 +88,22 @@ def imported_contrib_names(trees: Iterable[ast.Module]) -> Set[str]:
     return names
 
 
+def contrib_bindings(tree: ast.Module) -> Dict[str, str]:
+    """Local name -> qualified contrib model, from the module's own imports.
+
+    ``from django.contrib.auth.models import Group as AuthGroup`` binds
+    ``AuthGroup`` to ``"auth.Group"``. Only concrete contrib models count.
+    """
+    bindings: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in CONTRIB_MODULES:
+            for alias in node.names:
+                qualified = _QUALIFIED.get(alias.name)
+                if qualified is not None and alias.name in CONTRIB_MODULES[node.module]:
+                    bindings[alias.asname or alias.name] = qualified
+    return bindings
+
+
 def abstract_user_bases(imported: Set[str], defined: Set[str]) -> Dict[str, ast.ClassDef]:
     """The abstract user bases to add: imported, not defined in the scanned files.
 
@@ -112,8 +128,3 @@ def contrib_target(reference: str) -> str | None:
         if label == q_label and model.lower() == q_model.lower():
             return qualified
     return None
-
-
-def qualified_name(class_name: str) -> str | None:
-    """``User`` -> ``"auth.User"`` for a contrib model's class name."""
-    return _QUALIFIED.get(class_name)

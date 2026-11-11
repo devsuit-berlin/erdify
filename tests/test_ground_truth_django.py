@@ -85,6 +85,10 @@ EXPECTED_REJECTED = {
 # Sources that are not a self-contained Django module, so there is nothing to
 # load them into. Each is a deliberate test of erdify on partial input.
 EXPECTED_UNLOADABLE = {
+    "test_django.py::TestDjangoContribAuth"
+    ".test_another_modules_contrib_import_does_not_leak.entities[2]": (
+        "imports Group from a module outside the source"
+    ),
     "test_django.py::TestDjangoDefaultTableNames.test_foreign_key_uses_the_target_app": (
         "relation to a model in another app's file"
     ),
