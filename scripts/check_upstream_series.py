@@ -65,12 +65,25 @@ def missing_series(tested: dict[str, set[str]], released: dict[str, list[str]]) 
 
 
 def pypi_releases(name: str) -> list[str]:
-    """All release versions of ``name`` on PyPI that have files."""
+    """All installable release versions of ``name`` on PyPI."""
     url = f"https://pypi.org/pypi/{name}/json"
     request = urllib.request.Request(url, headers={"User-Agent": "erdify-ci-upstream-check"})
     with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 - fixed https URL
         data = json.load(response)
-    return [version for version, files in data["releases"].items() if files]
+    return available_versions(data["releases"])
+
+
+def available_versions(releases: dict[str, list[dict]]) -> list[str]:
+    """Versions with at least one file that isn't yanked (``releases`` of the PyPI JSON API).
+
+    A yanked release keeps its files on PyPI but is skipped by installers, so a
+    series whose only releases are yanked is not out yet.
+    """
+    return [
+        version
+        for version, files in releases.items()
+        if any(not file.get("yanked", False) for file in files)
+    ]
 
 
 def main() -> int:

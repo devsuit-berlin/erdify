@@ -20,6 +20,16 @@ def test_newest_series_ignores_pre_releases_and_bad_versions() -> None:
     assert check.newest_series([]) is None
 
 
+def test_available_versions_skips_yanked_and_empty_releases() -> None:
+    releases = {
+        "6.1.3": [{"yanked": False}],
+        "6.2.0": [{"yanked": True}, {"yanked": True}],
+        "6.2.1": [{"yanked": True}, {"yanked": False}],
+        "6.3.0": [],
+    }
+    assert check.available_versions(releases) == ["6.1.3", "6.2.1"]
+
+
 def test_missing_series_reports_only_untested_newest_series() -> None:
     tested = {"django": {"5.2", "6.0", "6.1"}, "sqlalchemy": {"2.0", "2.1"}}
     assert check.missing_series(tested, {"django": ["6.1.3"], "sqlalchemy": ["2.1.8"]}) == []
