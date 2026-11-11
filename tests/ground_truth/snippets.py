@@ -15,6 +15,9 @@ from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent.parent
 DJANGO_HEADER = "from django.db import models\n\n\n"
+# A literal is a model source only if it mentions a model base: Model itself,
+# or Django's abstract user bases (a user model needs no models.Model).
+MODEL_WORDS = ("Model", "AbstractUser", "AbstractBaseUser")
 
 
 @dataclass(frozen=True)
@@ -36,7 +39,8 @@ class Snippet:
 def django_snippets() -> list[Snippet]:
     """String literals in ``tests/test_*.py`` that define Django models.
 
-    A literal counts when it contains a ``class``, the word ``Model``, and
+    A literal counts when it contains a ``class``, a model base
+    (:data:`MODEL_WORDS`), and
     either ``models.Model`` or a ``from django`` import (so an ``apps.py`` with
     only an ``AppConfig`` is not a model source). One without any ``django``
     import (a body that a test helper prefixes with it, e.g. in
@@ -48,7 +52,7 @@ def django_snippets() -> list[Snippet]:
         seen: Counter[str] = Counter()
         for scope, node in _literals(tree, ()):
             text = node.value
-            if "class " not in text or "Model" not in text:
+            if "class " not in text or not any(word in text for word in MODEL_WORDS):
                 continue  # e.g. an apps.py with only an AppConfig
             if not ("models.Model" in text or "from django" in text):
                 continue

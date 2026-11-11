@@ -67,6 +67,18 @@ DEGENERATE = {
 # why. Every other source must pass the checks (#287), and the fixture app,
 # the docs example and the edge-case catalog always must.
 EXPECTED_CHECK_ERRORS = {
+    "test_ground_truth_django.py::OUTSIDE_LABELS": (
+        ("models.E028",),
+        "the harness's own test of cross-model checks for other app labels",
+    ),
+    "test_ground_truth_django.py::MIXED_LABELS": (
+        ("models.E028",),
+        "the harness's own test of cross-model checks across app labels",
+    ),
+    "test_ground_truth_django.py::INVALID_USER": (
+        ("auth.E003",),
+        "the harness's own test that auth's user-model checks run",
+    ),
     "test_ground_truth_django.py::test_reference_runs_cross_model_checks.shared": (
         ("models.E028",),
         "the harness's own test that cross-model checks run",
@@ -153,7 +165,7 @@ def test_module_matches_django(name: str, tmp_path: Path) -> None:
     _assert_same(_erdify(source, tmp_path), expected)
 
 
-def _assert_checks(name: str, expected: Schema, allowed: tuple[str, ...]) -> None:
+def _assert_checks(name: str, expected: Schema, allowed: tuple[str, ...], reason: str = "") -> None:
     """Fail unless Django's system checks report exactly the ``allowed`` errors.
 
     ``pytest.fail`` rather than ``assert``: a known-difference xfail only
@@ -162,8 +174,10 @@ def _assert_checks(name: str, expected: Schema, allowed: tuple[str, ...]) -> Non
     if expected.checks != allowed:
         pytest.fail(
             f"Django's system checks for {name} report {list(expected.checks) or 'no errors'}, "
-            f"expected {list(allowed) or 'none'}. Fix the source (it must be a model module a "
-            "Django project can run), or list a deliberate error in EXPECTED_CHECK_ERRORS."
+            f"expected {list(allowed) or 'none'}"
+            + (f" (listed: {reason})" if reason else "")
+            + ". Fix the source (it must be a model module a Django project can run), "
+            "or list a deliberate error in EXPECTED_CHECK_ERRORS."
         )
 
 
@@ -183,8 +197,8 @@ def _check(name: str, source: str, tmp_path: Path, *, catalog: bool = False) -> 
         if name in EXPECTED_UNLOADABLE:
             pytest.skip(f"not a self-contained Django module ({EXPECTED_UNLOADABLE[name]})")
         pytest.fail(f"Django cannot load {name}: {exc}. Fix it or list it in EXPECTED_UNLOADABLE.")
-    allowed = () if catalog else EXPECTED_CHECK_ERRORS.get(name, ((), ""))[0]
-    _assert_checks(name, expected, allowed)
+    allowed, reason = ((), "") if catalog else EXPECTED_CHECK_ERRORS.get(name, ((), ""))
+    _assert_checks(name, expected, allowed, reason)
     _assert_same(_erdify(source, tmp_path), expected)
 
 
@@ -247,6 +261,49 @@ def test_reference_swaps_in_the_sources_user_model() -> None:
     assert schema.tables["Order"].columns["buyer_id"].fk == "gt_member.id"
 
 
+OUTSIDE_LABELS = """
+from django.db import models
+
+
+class A(models.Model):
+    class Meta:
+        app_label = "sales"
+        db_table = "same"
+
+
+class B(models.Model):
+    class Meta:
+        app_label = "sales"
+        db_table = "same"
+"""
+
+MIXED_LABELS = """
+from django.db import models
+
+
+class A(models.Model):
+    class Meta:
+        app_label = "sales"
+        db_table = "same"
+
+
+class B(models.Model):
+    class Meta:
+        db_table = "same"
+"""
+
+INVALID_USER = """
+from django.contrib.auth.models import AbstractBaseUser
+from django.db import models
+
+
+class Account(AbstractBaseUser):
+    email = models.EmailField()
+
+    USERNAME_FIELD = "email"
+"""
+
+
 def test_reference_runs_cross_model_checks() -> None:
     """Checks spanning models run too: two managed models on one table."""
     shared = django_ref.load(
@@ -255,6 +312,14 @@ def test_reference_runs_cross_model_checks() -> None:
         "class B(models.Model):\n    class Meta:\n        db_table = 'same'\n"
     )
     assert shared.checks == ("models.E028",)
+    # Models of another app label are installed and checked together.
+    assert django_ref.load(OUTSIDE_LABELS).checks == ("models.E028",)
+    assert django_ref.load(MIXED_LABELS).checks == ("models.E028",)
+
+
+def test_reference_runs_the_contrib_checks() -> None:
+    """auth's user-model validation runs: a non-unique USERNAME_FIELD is auth.E003."""
+    assert django_ref.load(INVALID_USER).checks == ("auth.E003",)
 
 
 @pytest.mark.parametrize(

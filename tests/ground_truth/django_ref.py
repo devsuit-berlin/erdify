@@ -10,13 +10,21 @@ from __future__ import annotations
 
 import ast
 import enum
+import types
 from collections.abc import Iterable, Iterator
+from pathlib import Path
 from typing import Any
 
 import django
+from django.apps import AppConfig
 from django.apps import apps as global_apps
 from django.apps.registry import Apps
 from django.conf import settings
+from django.contrib.auth.checks import check_models_permissions, check_user_model
+from django.contrib.contenttypes.checks import (
+    check_generic_foreign_keys,
+    check_model_name_lengths,
+)
 from django.core.checks.model_checks import check_all_models
 from django.core.exceptions import FieldError
 from django.db import models
@@ -48,8 +56,9 @@ class Rejected(Unloadable):
 
     erdify still draws such sources; there is no schema to compare them with.
     System-check errors that leave the schema defined (e.g. clashing reverse
-    accessors, a missing ``max_length``) are deliberately not treated as
-    rejections, so the regression snippets that contain them are still compared.
+    accessors, a missing ``max_length``) are not rejections: they are reported
+    in :attr:`Schema.checks`, and a source with any fails its test unless
+    ``EXPECTED_CHECK_ERRORS`` lists them.
     """
 
 
@@ -110,7 +119,8 @@ def load(source: str) -> Schema:
         raise Unloadable(f"SyntaxError: {exc}") from exc
     user_model = _user_model(tree)
     swap = override_settings(AUTH_USER_MODEL=f"{APP_LABEL}.{user_model}") if user_model else None
-    with isolate_apps(APP, *CONTRIB.values()) as registry:
+    labels = sorted(_app_labels(tree) - {APP_LABEL, *CONTRIB})
+    with isolate_apps(APP, *CONTRIB.values(), *map(_label_config, labels)) as registry:
         # The contrib modules were imported (and their models registered) by
         # django.setup(); make them part of the isolated registry too.
         for label in CONTRIB:
@@ -119,13 +129,16 @@ def load(source: str) -> Schema:
         if swap is not None:
             swap.enable()
         try:
-            return _load(tree, namespace, registry)
+            return _load(tree, namespace, registry, [APP_LABEL, *labels])
         finally:
             if swap is not None:
                 swap.disable()
+            # The isolated registry wrote reverse-relation caches into the
+            # shared contrib models' _meta (auth.User, ContentType, ...).
+            global_apps.clear_cache()
 
 
-def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps) -> Schema:
+def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps, labels: list[str]) -> Schema:
     try:
         exec(compile(tree, "<models>", "exec"), namespace)
     except (NameError, ImportError) as exc:
@@ -151,7 +164,7 @@ def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps) -> Schema
                 raise Unloadable(f"unresolved relation {model.__name__}.{f.name}")
     try:
         tables = {m.__name__: _table(m) for m in concrete}
-        checks = _system_checks(registry, defined)
+        checks = _system_checks(registry, labels)
     except FieldError as exc:
         raise Rejected(f"FieldError: {exc}") from exc
     enums = {
@@ -162,19 +175,65 @@ def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps) -> Schema
     return Schema(tables=tables, enums=enums, checks=tuple(checks))
 
 
-def _system_checks(registry: Apps, defined: list[type[models.Model]]) -> list[str]:
-    """Error ids of Django's model checks for the source, as ``manage.py check`` runs them.
+def _system_checks(registry: Apps, labels: list[str]) -> list[str]:
+    """Error ids of Django's ``models`` checks for the source's apps.
 
-    ``check_all_models`` adds the cross-model checks (e.g. ``models.E028``, two
-    managed models on one table) to each model's own; models whose
-    ``Meta.app_label`` names an app that isn't installed are checked one by one.
+    The checks ``manage.py check`` runs under the ``models`` tag, given the
+    source's app configs: Django's per-model and cross-model checks (e.g.
+    ``models.E028``) and those of the contrib apps (auth's user model and
+    permissions, contenttypes' generic relations and name lengths). Not the
+    whole tag: ``check_lazy_references`` reads the global registry. A check
+    that crashes (a user model without ``USERNAME_FIELD``) would break
+    ``manage.py check`` too and counts as an error, ``<check>.crashed``.
+    ``labels`` are the apps the source's models live in.
     """
-    app_config = registry.get_app_config(APP_LABEL)
-    errors = list(check_all_models(app_configs=[app_config]))
-    outside = [m for m in defined if m._meta.app_label != APP_LABEL and not m._meta.abstract]
-    errors += [e for m in outside for e in m.check()]
-    return sorted({e.id for e in errors if e.is_serious()})
+    app_configs = [registry.get_app_config(label) for label in labels]
+    ids: set[str] = set()
+    for check in MODEL_CHECKS:
+        try:
+            ids.update(e.id for e in check(app_configs=app_configs) if e.is_serious())
+        except Exception:  # noqa: BLE001 - any crash makes the project's check fail
+            ids.add(f"{check.__module__.rpartition('.')[0]}.{check.__name__}.crashed")
+    return sorted(ids)
 
+
+def _app_labels(tree: ast.Module) -> set[str]:
+    """Literal ``Meta.app_label`` values of the source's classes."""
+    labels: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "Meta":
+            for stmt in node.body:
+                value = getattr(stmt, "value", None)
+                targets = getattr(stmt, "targets", None) or [getattr(stmt, "target", None)]
+                if (
+                    isinstance(value, ast.Constant)
+                    and isinstance(value.value, str)
+                    and any(isinstance(t, ast.Name) and t.id == "app_label" for t in targets)
+                ):
+                    labels.add(value.value)
+    return labels
+
+
+def _label_config(label: str) -> AppConfig:
+    """An installed app with label ``label`` for models that name it in ``Meta.app_label``.
+
+    Like a project, where such a model's app would be in ``INSTALLED_APPS``;
+    a module object is enough, nothing is imported.
+    """
+    module = types.ModuleType(f"{APP}_{label}")
+    module.__path__ = [str(Path(__file__).parent)]
+    config_class = type("SourceAppConfig", (AppConfig,), {"label": label})
+    return config_class(module.__name__, module)
+
+
+#: The ``models``-tag checks run for a source (see :func:`_system_checks`).
+MODEL_CHECKS = (
+    check_all_models,
+    check_user_model,
+    check_models_permissions,
+    check_generic_foreign_keys,
+    check_model_name_lengths,
+)
 
 USER_BASES = {"AbstractUser", "AbstractBaseUser"}
 
