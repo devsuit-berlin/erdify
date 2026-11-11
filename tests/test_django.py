@@ -722,3 +722,56 @@ class Note(Owned):
         entities, _ = parse_models_directory(tmp_path)
         assert [f.name for f in entities["Person"].fields] == ["id", "name"]
         assert [f.name for f in entities["Note"].fields] == ["id", "owner_id"]
+
+    SHARED_TABLE = """
+from django.db import models
+
+
+class LegacyCustomer(models.Model):
+    number = models.IntegerField(primary_key=True, db_column="LEGACY_ID")
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class CustomerView(models.Model):
+    external_id = models.IntegerField(primary_key=True, db_column="LEGACY_ID")
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class Ticket(models.Model):
+    customer = models.ForeignKey(LegacyCustomer, on_delete=models.DO_NOTHING)
+    view = models.ForeignKey(CustomerView, on_delete=models.DO_NOTHING, related_name="+")
+"""
+
+    EMPTY_DB_COLUMN = """
+from django.db import models
+
+
+class Author(models.Model):
+    key = models.IntegerField(primary_key=True, db_column="")
+
+
+class Book(models.Model):
+    author = models.ForeignKey(Author, on_delete=models.CASCADE, db_column="")
+"""
+
+    def _fks(self, tmp_path: Path, source: str, model: str) -> dict[str, str | None]:
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(source, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return {f.name: f.foreign_table for f in entities[model].fields}
+
+    def test_models_sharing_a_table_keep_their_renames(self, tmp_path: Path):
+        fks = self._fks(tmp_path, self.SHARED_TABLE, "Ticket")
+        assert fks["customer_id"] == "crm_customer.LEGACY_ID"
+        assert fks["view_id"] == "crm_customer.LEGACY_ID"
+
+    def test_empty_db_column_is_unset(self, tmp_path: Path):
+        fks = self._fks(tmp_path, self.EMPTY_DB_COLUMN, "Book")
+        assert fks == {"id": None, "author_id": "shop_author.key"}

@@ -112,9 +112,9 @@ class DjangoDialect(Dialect):
         rely on. Only now are the columns renamed, and every foreign key that
         references a renamed column is pointed at the new name.
         """
-        # Rename each entity's own columns where the entity is in hand; keep the
-        # renames by table only for the foreign-key pass (two Django models
-        # can't share a table, models.E028).
+        # Rename each entity's own columns where the entity is in hand. For the
+        # foreign-key pass, renames are merged per table: unmanaged models may
+        # share one (Meta.db_table), and an FK only names the table.
         renames: Dict[str, Dict[str, str]] = {}
         for name, entity in entities.items():
             node = self.classes.all.get(name)
@@ -123,7 +123,9 @@ class DjangoDialect(Dialect):
             columns = self._db_columns(node)
             if not columns:
                 continue
-            renames[entity.table_name] = columns
+            merged = renames.setdefault(entity.table_name, {})
+            for column, db_column in columns.items():
+                merged.setdefault(column, db_column)
             for f in entity.fields:
                 f.name = columns.get(f.name, f.name)
         for entity in entities.values():
@@ -147,7 +149,12 @@ class DjangoDialect(Dialect):
         columns: Dict[str, str] = {}
         for attr, (field_type, call, _owner) in self._own_declarations(class_node).items():
             db_column = next((k.value for k in call.keywords if k.arg == "db_column"), None)
-            if not (isinstance(db_column, ast.Constant) and isinstance(db_column.value, str)):
+            # db_column="" is unset in Django: the default name applies.
+            if not (
+                isinstance(db_column, ast.Constant)
+                and isinstance(db_column.value, str)
+                and db_column.value
+            ):
                 continue
             if field_type in ("ForeignKey", "OneToOneField"):
                 columns[f"{attr}_id"] = db_column.value
