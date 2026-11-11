@@ -8,7 +8,9 @@ is touched: everything compared here comes from model metadata.
 
 from __future__ import annotations
 
+import enum
 import re
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 import django
@@ -108,14 +110,25 @@ def load(source: str) -> Schema:
         except FieldError as exc:
             raise Rejected(f"FieldError: {exc}") from exc
     enums = {
-        # ``__empty__`` is the label of a blank form choice, not a stored value.
-        name: tuple(n for n in value.names if n != "__empty__")
-        for name, value in namespace.items()
-        if isinstance(value, type)
-        and issubclass(value, models.Choices)
-        and value.__module__ == namespace["__name__"]
+        cls.__name__: tuple(m for m in cls.__members__ if m != "__empty__")
+        for cls in _classes(namespace.values(), namespace["__name__"])
+        if issubclass(cls, enum.Enum)
     }
     return Schema(tables=tables, enums=enums)
+
+
+def _classes(values: Iterable[object], module: str) -> Iterator[type]:
+    """Every class defined in the source, including ones nested in a class body.
+
+    Enums count whether they are ``models.Choices`` (often nested in the model,
+    as Django's docs show) or a plain ``enum.Enum``, matching what erdify
+    renders. ``__empty__`` is the label of a blank form choice, not a stored
+    value, so it is left out.
+    """
+    for value in values:
+        if isinstance(value, type) and value.__module__ == module:
+            yield value
+            yield from _classes(vars(value).values(), module)
 
 
 def table_name(model: type[models.Model]) -> str:

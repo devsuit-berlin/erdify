@@ -63,6 +63,14 @@ def _literals(
 ) -> Iterator[tuple[tuple[str, ...], ast.Constant]]:
     """Yield every string constant below ``node`` with its enclosing scope."""
     for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.JoinedStr):
+            continue  # an f-string's literal parts are not sources on their own
+        if (
+            isinstance(child, ast.Expr)
+            and isinstance(child.value, ast.Constant)
+            and isinstance(child.value.value, str)
+        ):
+            continue  # docstrings (and other bare string statements) are prose
         if isinstance(child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             yield from _literals(child, (*scope, child.name))
         elif (

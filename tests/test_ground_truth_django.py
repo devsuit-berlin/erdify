@@ -94,9 +94,6 @@ EXPECTED_UNLOADABLE = {
     "test_cardinality.py::TestDjangoForeignKeyTarget.test_pk_with_unresolvable_target.src": (
         "relation to a model outside the file"
     ),
-    "test_cardinality.py::TestDjangoForeignKeyTarget.test_to_field_relation_attname.src": (
-        "str.format template"
-    ),
 }
 
 SNIPPETS = django_snippets()
