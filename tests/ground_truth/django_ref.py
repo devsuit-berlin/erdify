@@ -108,10 +108,16 @@ def load(source: str) -> Schema:
             raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
         except (FieldError, TypeError) as exc:
             raise Rejected(f"{type(exc).__name__}: {exc}") from exc
+        # all_models, not get_models(): a model with Meta.app_label naming an
+        # app that isn't installed is registered but not listed by get_models().
         concrete = [
             m
-            for m in registry.get_models()
-            if m.__module__ == namespace["__name__"] and not m._meta.proxy
+            for models_by_name in registry.all_models.values()
+            for m in models_by_name.values()
+            if m.__module__ == namespace["__name__"]
+            and not m._meta.proxy
+            and not m._meta.abstract
+            and not m._meta.auto_created
         ]
         for model in concrete:
             for f in model._meta.get_fields(include_hidden=True):
@@ -148,18 +154,8 @@ def _classes(values: Iterable[object], module: str) -> Iterator[type]:
 
 
 def table_name(model: type[models.Model]) -> str:
-    """The table name erdify is expected to show for ``model``.
-
-    Django prefixes a default table name with the app label
-    (``<app_label>_<model>``); erdify has no app configuration and shows the
-    bare name, so the prefix of the source's own app is dropped here until #271
-    decides whether erdify should add it. An explicit ``Meta.db_table`` and the
-    tables of external (``CONTRIB``) models are compared as-is.
-    """
-    meta = model._meta
-    if "db_table" in meta.original_attrs or meta.app_label != APP_LABEL:
-        return str(meta.db_table)
-    return meta.db_table.removeprefix(f"{APP_LABEL}_")
+    """The real table name: ``Meta.db_table`` or ``<app_label>_<model name>``."""
+    return str(model._meta.db_table)
 
 
 def _meta_unique(model: type[models.Model]) -> set[Any]:

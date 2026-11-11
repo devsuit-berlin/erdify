@@ -13,11 +13,18 @@ from erdify.generator import generate_mermaid
 from erdify.parser import parse_models_directory
 
 
+def _app(tmp_path: Path) -> Path:
+    """A Django app package named ``app``: default table names are ``app_<model>``."""
+    app = tmp_path / "app"
+    app.mkdir(exist_ok=True)
+    return app
+
+
 def _parse(tmp_path: Path, body: str) -> dict[str, EntityInfo]:
-    (tmp_path / "models.py").write_text(
+    (_app(tmp_path) / "models.py").write_text(
         "from django.db import models\n\n\n" + body, encoding="utf-8"
     )
-    entities, _ = parse_models_directory(tmp_path)
+    entities, _ = parse_models_directory(tmp_path / "app")
     return entities
 
 
@@ -52,7 +59,7 @@ class TestParentLink:
     def test_child_has_only_its_own_fields_and_the_ptr(self, tmp_path: Path):
         entities = _parse(tmp_path, ISSUE)
         assert _cols(entities["Child"]) == [
-            ("parent_ptr_id", "str", True, True, False, "parent.code"),
+            ("parent_ptr_id", "str", True, True, False, "app_parent.code"),
             ("extra", "int", False, False, False, None),
         ]
         assert [f.name for f in entities["Parent"].fields] == ["code", "name"]
@@ -63,7 +70,7 @@ class TestParentLink:
 
     def test_foreign_key_to_child_references_the_ptr(self, tmp_path: Path):
         fk = _field(_parse(tmp_path, ISSUE)["Order"], "child_id")
-        assert (fk.type_str, fk.foreign_table) == ("str", "child.parent_ptr_id")
+        assert (fk.type_str, fk.foreign_table) == ("str", "app_child.parent_ptr_id")
 
     def test_implicit_parent_id(self, tmp_path: Path):
         entities = _parse(
@@ -78,7 +85,7 @@ class Restaurant(Place):
 """,
         )
         assert _cols(entities["Restaurant"]) == [
-            ("place_ptr_id", "int", True, True, False, "place.id"),
+            ("place_ptr_id", "int", True, True, False, "app_place.id"),
             ("serves_pizza", "bool", False, False, False, None),
         ]
 
@@ -161,7 +168,7 @@ class Child(Parent):
         )
         assert [f.name for f in entities["Child"].fields] == ["parent_ptr_id", "extra"]
         assert entities["Child"].relationships == []
-        assert _field(entities["Parent"], "parent_id").foreign_table == "parent.id"
+        assert _field(entities["Parent"], "parent_id").foreign_table == "app_parent.id"
 
 
 class TestExplicitKeys:
@@ -180,7 +187,7 @@ class Restaurant(Place):
         )
         # Declared after `seats`, the promoted link is still listed first.
         assert _cols(entities["Restaurant"]) == [
-            ("place_id", "int", True, True, False, "place.id"),
+            ("place_id", "int", True, True, False, "app_place.id"),
             ("seats", "int", False, False, False, None),
         ]
 
@@ -199,7 +206,7 @@ class Restaurant(Place):
         # The declared primary key is listed first.
         assert _cols(entities["Restaurant"]) == [
             ("code", "str", True, False, False, None),
-            ("place_ptr_id", "int", False, True, True, "place.id"),
+            ("place_ptr_id", "int", False, True, True, "app_place.id"),
         ]
 
 
@@ -221,7 +228,7 @@ class Pizzeria(Restaurant):
 """,
         )
         assert _cols(entities["Pizzeria"]) == [
-            ("restaurant_ptr_id", "int", True, True, False, "restaurant.place_ptr_id"),
+            ("restaurant_ptr_id", "int", True, True, False, "app_restaurant.place_ptr_id"),
             ("oven", "str", False, False, False, None),
         ]
 
@@ -242,8 +249,8 @@ class Shop(Place, Business):
 """,
         )
         assert _cols(entities["Shop"]) == [
-            ("place_ptr_id", "int", True, True, False, "place.place_no"),
-            ("business_ptr_id", "int", False, True, True, "business.business_no"),
+            ("place_ptr_id", "int", True, True, False, "app_place.place_no"),
+            ("business_ptr_id", "int", False, True, True, "app_business.business_no"),
         ]
 
 
@@ -283,7 +290,7 @@ class Employee(OrderedPerson):
         )
         assert set(entities) == {"Person", "Employee"}
         assert _cols(entities["Employee"]) == [
-            ("person_ptr_id", "int", True, True, False, "person.id"),
+            ("person_ptr_id", "int", True, True, False, "app_person.id"),
             ("badge", "int", False, False, False, None),
         ]
 
@@ -331,10 +338,10 @@ class Note(models.Model):
     def test_foreign_keys_reference_the_concrete_model(self, tmp_path: Path):
         note = _parse(tmp_path, self.SRC)["Note"]
         assert (_field(note, "who_id").foreign_table, _field(note, "who_id").type_str) == (
-            "person.uid",
+            "app_person.uid",
             "UUID",
         )
-        assert _field(note, "by_id").foreign_table == "person.uid"
+        assert _field(note, "by_id").foreign_table == "app_person.uid"
 
     def test_many_to_many_targets_the_concrete_model(self, tmp_path: Path):
         note = _parse(tmp_path, self.SRC)["Note"]
@@ -365,17 +372,17 @@ class Ref(models.Model):
 
     def test_parent_column_is_referenced_in_the_parent_table(self, tmp_path: Path):
         fk = _field(_parse(tmp_path, self.SRC)["Ref"], "by_slug_id")
-        assert (fk.foreign_table, fk.type_str) == ("place.slug", "str")
+        assert (fk.foreign_table, fk.type_str) == ("app_place.slug", "str")
 
     def test_implicit_link_as_to_field(self, tmp_path: Path):
         ref = _parse(tmp_path, self.SRC)["Ref"]
         for name in ("by_ptr_id", "by_ptr_id_id"):
             fk = _field(ref, name)
-            assert (fk.foreign_table, fk.type_str) == ("restaurant.place_ptr_id", "int")
+            assert (fk.foreign_table, fk.type_str) == ("app_restaurant.place_ptr_id", "int")
 
     def test_own_column(self, tmp_path: Path):
         fk = _field(_parse(tmp_path, self.SRC)["Ref"], "by_own_id")
-        assert (fk.foreign_table, fk.type_str) == ("restaurant.seats", "int")
+        assert (fk.foreign_table, fk.type_str) == ("app_restaurant.seats", "int")
 
 
 class TestAbstractLinks:
@@ -399,7 +406,7 @@ class Restaurant(LinkBase, Place):
 """,
         )
         assert _cols(entities["Restaurant"]) == [
-            ("place_id", "int", True, True, False, "place.id"),
+            ("place_id", "int", True, True, False, "app_place.id"),
             ("seats", "int", False, False, False, None),
         ]
 
@@ -417,7 +424,9 @@ class Restaurant(Place):
     )
 """,
         )
-        assert _cols(entities["Restaurant"]) == [("place_id", "int", True, True, False, "place.id")]
+        assert _cols(entities["Restaurant"]) == [
+            ("place_id", "int", True, True, False, "app_place.id")
+        ]
 
     def test_abstract_base_of_a_concrete_model_passes_its_link_on(self, tmp_path: Path):
         """Django gives an abstract subclass of a concrete model its parent link."""
@@ -440,7 +449,7 @@ class Stadium(Venue):
 """,
         )
         assert _cols(entities["Stadium"]) == [
-            ("place_ptr_id", "int", True, True, False, "place.id"),
+            ("place_ptr_id", "int", True, True, False, "app_place.id"),
             ("capacity", "int", False, False, False, None),
             ("roof", "bool", False, False, False, None),
         ]
@@ -465,8 +474,8 @@ class Ref(models.Model):
     parent = models.ForeignKey(Parent, on_delete=models.CASCADE, to_field="id")
 """,
         )
-        assert _field(entities["Ref"], "child_id").foreign_table == "parent.id"
-        assert _field(entities["Ref"], "parent_id").foreign_table == "parent.id"
+        assert _field(entities["Ref"], "child_id").foreign_table == "app_parent.id"
+        assert _field(entities["Ref"], "parent_id").foreign_table == "app_parent.id"
 
     def test_chained_inherited_to_field_keeps_its_type(self, tmp_path: Path):
         entities = _parse(
@@ -491,9 +500,9 @@ class Ref(models.Model):
 """,
         )
         bridge = _field(entities["Bridge"], "child_id")
-        assert (bridge.foreign_table, bridge.type_str) == ("parent.slug", "str")
+        assert (bridge.foreign_table, bridge.type_str) == ("app_parent.slug", "str")
         ref = _field(entities["Ref"], "bridge_id")
-        assert (ref.foreign_table, ref.type_str) == ("bridge.child_id", "str")
+        assert (ref.foreign_table, ref.type_str) == ("app_bridge.child_id", "str")
 
     def test_removed_inherited_primary_key_restores_implicit_id(self, tmp_path: Path):
         entities = _parse(
@@ -519,7 +528,7 @@ class Ref(models.Model):
 """,
         )
         assert [f.name for f in entities["Parent"].fields] == ["id"]
-        assert _field(entities["Ref"], "child_id").foreign_table == "parent.id"
+        assert _field(entities["Ref"], "child_id").foreign_table == "app_parent.id"
 
 
 def test_shared_abstract_ancestors_are_walked_once(tmp_path: Path):
@@ -616,13 +625,13 @@ class Bistro(LinkBase, Place):
     def test_removed_explicit_link_falls_back_to_the_implicit_ptr(self, tmp_path: Path):
         entities = _parse(tmp_path, self.SRC)
         assert _cols(entities["Restaurant"]) == [
-            ("place_ptr_id", "int", True, True, False, "place.id"),
+            ("place_ptr_id", "int", True, True, False, "app_place.id"),
         ]
 
     def test_overridden_explicit_link_falls_back_to_the_implicit_ptr(self, tmp_path: Path):
         entities = _parse(tmp_path, self.SRC)
         assert _cols(entities["Bistro"]) == [
-            ("place_ptr_id", "int", True, True, False, "place.id"),
+            ("place_ptr_id", "int", True, True, False, "app_place.id"),
             ("place", "str", False, False, False, None),
         ]
 
@@ -642,7 +651,9 @@ class Restaurant(Place):
     place = models.OneToOneField("catalog.place", on_delete=models.CASCADE, parent_link=True)
 """,
         )
-        assert _cols(entities["Restaurant"]) == [("place_id", "int", True, True, False, "place.id")]
+        assert _cols(entities["Restaurant"]) == [
+            ("place_id", "int", True, True, False, "app_place.id")
+        ]
 
     def test_many_to_many_by_lower_case_reference(self, tmp_path: Path):
         entities = _parse(

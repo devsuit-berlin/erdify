@@ -248,6 +248,8 @@ names, so it can be wrong in both directions.
 | Non-literal `__tablename__` / `declared_attr` | Falls back to the class name, silently |
 | `__table_args__` (composite FKs, composite `UniqueConstraint`, partial or non-unique `Index`, `schema=`) | Not read; single-column `UniqueConstraint` / unique `Index` is read |
 | Django `Meta.unique_together` / `Meta.indexes` | Not read |
+| Django app label from an `AppConfig` named in `INSTALLED_APPS` (`"shop.apps.Custom"`), or a non-literal `label` | The app's default `AppConfig` or the package name is used |
+| Django table names longer than the database's identifier limit | Shown in full; Django truncates them per backend (e.g. 63 characters on PostgreSQL) |
 | Composite foreign keys | Not supported |
 | Foreign keys inside `sa_column=Column(...)` | Not detected |
 | Unannotated `x = relationship("Target")` | Not detected |
