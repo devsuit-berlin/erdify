@@ -88,6 +88,16 @@ Before anything public is removed or changed incompatibly, it is deprecated:
 The [installation page](installation.md) lists the currently supported
 versions.
 
+## Supported framework versions
+
+The SQLModel, SQLAlchemy, Django, Pydantic and sqlglot versions erdify follows
+are listed on the [installation page](installation.md#supported-framework-versions),
+and each is checked in CI.
+
+- Support for a new framework release can be added in any release.
+- A framework version is dropped only in a minor release, never in a patch,
+  and the changelog says so.
+
 ## Dependencies
 
 erdify has no runtime dependencies, and that stays true within a major

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The supported framework versions are documented in
+  [Installation](https://erdify.devsuit.io/installation/#supported-framework-versions):
+  SQLModel 0.0.22 and later, SQLAlchemy 2.0 and 2.1, Django 5.2 / 6.0 / 6.1,
+  Pydantic 2 and sqlglot 25 and later (`erdify[sql]`), and what CI tests for
+  each. The SQLModel / SQLAlchemy ground-truth tests now also run on the oldest
+  supported SQLModel. Dropping a framework version happens only in a minor
+  release ([Stability](https://erdify.devsuit.io/stability/)).
+
 ### Fixed
 
 - Django models without `Meta.db_table` now get the table name Django creates,

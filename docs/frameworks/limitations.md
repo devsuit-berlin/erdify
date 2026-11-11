@@ -155,7 +155,10 @@ mapped_column(primary_key=True)]`, also `X: TypeAlias = ...`, a re-export
   not take a `mapped_column()` from it, and neither is a subscripted one
   (`Pk[int]`).
 - Only SQLAlchemy models read this metadata; SQLModel, Pydantic and dataclass
-  fields keep the alias name and get no settings from it.
+  fields keep the alias name and get no settings from it. SQLModel 0.0.32 and
+  later do apply `Field()` settings given in `Annotated[...]` metadata
+  (`id: Annotated[int, Field(primary_key=True)]`); erdify doesn't read them yet
+  ([#295](https://github.com/devsuit-berlin/erdify/issues/295)).
 - The defining module must be scanned: with the default `--include models.py`,
   aliases in `coltypes.py` are only found with `--include '**/*.py'` (or a
   pattern that matches the file).

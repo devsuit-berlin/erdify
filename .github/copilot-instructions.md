@@ -95,8 +95,20 @@ test helper prepends to a bare body).
   `EXPECTED_CHECK_ERRORS`; the fixtures, the docs examples and the catalog
   always must configure.
 - New SQLAlchemy / SQLModel parsing support → add an edge-case module for it.
-- CI repeats these tests on every supported SQLAlchemy series (`sqlalchemy`
-  job in `test.yml`).
+- CI repeats these tests on every supported SQLAlchemy series and on the
+  oldest supported SQLModel (0.0.22) as well as the locked one (`sqlalchemy`
+  job in `test.yml`). Where SQLModel changed what it builds, expectations are
+  version-gated: `REQUIRES_SQLMODEL` (skip a catalog module before the release
+  that added the feature) and `SQLMODEL_DIFFERENCES` (a known difference from a
+  release on).
+
+### Supported versions are documented
+
+`docs/installation.md` ("Supported framework versions") is the single list of
+the Python, SQLModel, SQLAlchemy, Django, Pydantic and sqlglot versions erdify
+supports and what CI checks for each. It must always match the CI matrices in
+`test.yml`: adding or dropping a version updates the table, the matrix and the
+changelog in the same change (policy: `docs/stability.md`).
 
 ## Architecture
 

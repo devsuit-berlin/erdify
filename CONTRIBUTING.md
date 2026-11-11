@@ -205,7 +205,18 @@ limitations are listed in `LIMITATIONS`, so they show up once supported.
 uv run pytest tests/test_ground_truth_sqlalchemy.py -rsx
 # Against another SQLAlchemy series:
 uv run --with "sqlalchemy~=2.0.0" pytest tests/test_ground_truth_sqlalchemy.py
+# Against the oldest supported SQLModel (it requires SQLAlchemy < 2.1):
+uv run --with "sqlmodel==0.0.22" --with "sqlalchemy~=2.0.0" pytest tests/test_ground_truth_sqlalchemy.py
 ```
+
+Where SQLModel changed what it builds in a release, the expectation depends on
+the installed version: `REQUIRES_SQLMODEL` skips a catalog module before the
+release that added its feature, and `SQLMODEL_DIFFERENCES` holds known
+differences that exist only from a release on.
+
+The supported framework versions are listed in `docs/installation.md`
+("Supported framework versions"). When you add or drop one, update that table,
+the CI matrix in `.github/workflows/test.yml`, and the changelog together.
 
 ### Adding New Test Fixtures
 
