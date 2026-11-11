@@ -5,11 +5,19 @@ Django names a model's table ``<app_label>_<model name, lower-cased>`` unless
 from what the source shows:
 
 1. ``Meta.app_label`` on the model (read by the dialect).
-2. The ``AppConfig`` in the app's ``apps.py``: a literal ``label``, else the
-   last component of a literal ``name``. With several configs, the one marked
-   ``default = True``.
-3. The name of the app package: the directory holding ``models.py``, or the
-   parent of the ``models/`` package a model module is in.
+2. The ``AppConfig`` in the app's ``apps.py``, chosen like
+   ``AppConfig.create``: configs with ``default = False`` are dropped, then the
+   only one left, else the one with ``default = True``. Its ``label``, else the
+   last component of its ``name``; attributes are looked up through config
+   classes defined in the same file, and the last assignment wins.
+3. The name of the app package.
+
+The app package is found by walking up the Python package chain (directories
+with an ``__init__.py``) from the model file: the nearest directory with an
+``apps.py``; else the parent of the nearest ``models`` package
+(``shop/models/billing/invoice.py`` -> ``shop``); else the directory of the
+file. The walk never leaves the package chain, so an unrelated ``models``
+directory above the project can't be picked up.
 
 ``Meta.app_label`` inherited from an abstract base's ``Meta`` is not read yet
 (the same gap as an inherited ``db_table``, #279).
@@ -20,78 +28,127 @@ is not known to erdify; the app's default config is used instead.
 
 import ast
 from pathlib import Path
+from typing import Dict, List
+
+# A class attribute whose last assignment is not a literal: its value is unknown.
+_UNKNOWN = object()
 
 
 def app_package(model_file: Path) -> Path:
-    """The app package a model file belongs to.
+    """The app package a model file belongs to (see the module docstring).
 
-    The directory of ``models.py``; for a module inside a ``models/`` package
-    (also a nested one, ``shop/models/billing/invoice.py``), the parent of the
-    nearest ``models`` directory. The path is resolved first, so the result
-    doesn't depend on how the input path was written (``.``, ``..``).
+    The path is resolved first, so the result doesn't depend on how the input
+    path was written (``.``, ``..``).
     """
-    model_file = model_file.resolve()
-    if model_file.name != "models.py":
-        for parent in model_file.parents:
-            if parent.name == "models":
-                return parent.parent
-    return model_file.parent
+    chain = _package_chain(model_file.resolve().parent)
+    for directory in chain:
+        if (directory / "apps.py").is_file():
+            return directory
+    for directory in chain:
+        if directory.name == "models":
+            return directory.parent
+    return chain[0]
+
+
+def _package_chain(start: Path) -> List[Path]:
+    """``start`` and its ancestors while the current one is a Python package."""
+    chain = [start]
+    directory = start
+    while (directory / "__init__.py").is_file() and directory.parent != directory:
+        directory = directory.parent
+        chain.append(directory)
+    return chain
 
 
 def app_label(package: Path) -> str:
     """The app label of the Django app in ``package``."""
-    config = _default_config(package / "apps.py")
+    configs = _app_configs(package / "apps.py")
+    config = _default_config(configs)
     if config is not None:
-        label = _literal(config, "label")
+        label = _attr(config, "label", configs)
         if isinstance(label, str) and label:
             return label
-        name = _literal(config, "name")
+        name = _attr(config, "name", configs)
         if isinstance(name, str) and name:
             return name.rpartition(".")[2]
     return package.name
 
 
-def _default_config(apps_file: Path) -> ast.ClassDef | None:
-    """The AppConfig class Django would pick as the app's default, if readable."""
+def _app_configs(apps_file: Path) -> Dict[str, ast.ClassDef]:
+    """The ``AppConfig`` subclasses defined in ``apps_file``, by name.
+
+    Subclasses of another config in the same file count too.
+    """
     try:
         tree = ast.parse(apps_file.read_text(encoding="utf-8"))
     except (OSError, SyntaxError, ValueError, RecursionError):
         # ValueError: a null byte on Python 3.11 (3.12+ raises SyntaxError);
         # UnicodeDecodeError is a ValueError too.
-        return None
-    # Like AppConfig.create: configs marked ``default = False`` never count,
-    # then the only one left, else the one marked ``default = True``.
-    configs = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef)
-        and any(_is_app_config(base) for base in node.bases)
-        and _literal(node, "default") is not False
-    ]
-    if len(configs) == 1:
-        return configs[0]
-    marked = [c for c in configs if _literal(c, "default") is True]
+        return {}
+    classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+    configs: Dict[str, ast.ClassDef] = {}
+    changed = True
+    while changed:  # fixed point over local subclassing, in any order
+        changed = False
+        for name, node in classes.items():
+            if name not in configs and any(
+                _base_name(base) == "AppConfig" or _base_name(base) in configs
+                for base in node.bases
+            ):
+                configs[name] = node
+                changed = True
+    return configs
+
+
+def _default_config(configs: Dict[str, ast.ClassDef]) -> ast.ClassDef | None:
+    """The config Django picks as the app's default, if it can be told from source."""
+    candidates = [c for c in configs.values() if _attr(c, "default", configs) is not False]
+    if len(candidates) == 1:
+        return candidates[0]
+    marked = [c for c in candidates if _attr(c, "default", configs) is True]
     return marked[0] if len(marked) == 1 else None
 
 
-def _is_app_config(base: ast.expr) -> bool:
-    name = base.attr if isinstance(base, ast.Attribute) else getattr(base, "id", "")
-    return name == "AppConfig"
+def _base_name(base: ast.expr) -> str:
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return base.id if isinstance(base, ast.Name) else ""
 
 
-def _literal(class_node: ast.ClassDef, attr: str) -> object | None:
-    """A constant class attribute (``label = "shop"``), or None."""
-    for node in class_node.body:
-        targets = (
-            node.targets
-            if isinstance(node, ast.Assign)
-            else [node.target]
-            if isinstance(node, ast.AnnAssign)
-            else []
-        )
-        value = getattr(node, "value", None)
-        if isinstance(value, ast.Constant) and any(
-            isinstance(t, ast.Name) and t.id == attr for t in targets
-        ):
-            return value.value
+def _attr(
+    node: ast.ClassDef, attr: str, configs: Dict[str, ast.ClassDef], depth: int = 0
+) -> object | None:
+    """A class attribute's literal value, looked up through same-file bases.
+
+    The last assignment in a class body wins (as in Python). A non-literal last
+    assignment makes the value unknown (None), rather than falling back to an
+    earlier literal or a base class.
+    """
+    value = _own_attr(node, attr)
+    if value is _UNKNOWN:
+        return None
+    if value is not None or depth > len(configs):
+        return value
+    for base in node.bases:
+        parent = configs.get(_base_name(base))
+        if parent is not None:
+            inherited = _attr(parent, attr, configs, depth + 1)
+            if inherited is not None:
+                return inherited
     return None
+
+
+def _own_attr(node: ast.ClassDef, attr: str) -> object | None:
+    """The last value assigned to ``attr`` in the class body; ``_UNKNOWN`` if not literal."""
+    value: object | None = None
+    for statement in node.body:
+        if isinstance(statement, ast.Assign):
+            targets = statement.targets
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            targets = [statement.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == attr for t in targets):
+            assigned = statement.value
+            value = assigned.value if isinstance(assigned, ast.Constant) else _UNKNOWN
+    return value

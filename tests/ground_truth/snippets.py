@@ -36,9 +36,11 @@ class Snippet:
 def django_snippets() -> list[Snippet]:
     """String literals in ``tests/test_*.py`` that define Django models.
 
-    A literal counts when it contains a ``class`` and either ``models.Model``
-    or a ``from django`` import. One without any ``django`` import (a body that a test helper
-    prefixes with it, e.g. in ``test_django_mti.py``) gets the import prepended.
+    A literal counts when it contains a ``class``, the word ``Model``, and
+    either ``models.Model`` or a ``from django`` import (so an ``apps.py`` with
+    only an ``AppConfig`` is not a model source). One without any ``django``
+    import (a body that a test helper prefixes with it, e.g. in
+    ``test_django_mti.py``) gets the import prepended.
     """
     found: list[Snippet] = []
     for path in sorted(TESTS_DIR.glob("test_*.py")):
@@ -46,7 +48,9 @@ def django_snippets() -> list[Snippet]:
         seen: Counter[str] = Counter()
         for scope, node in _literals(tree, ()):
             text = node.value
-            if "class " not in text or not ("models.Model" in text or "from django" in text):
+            if "class " not in text or "Model" not in text:
+                continue  # e.g. an apps.py with only an AppConfig
+            if not ("models.Model" in text or "from django" in text):
                 continue
             if "from django" not in text:
                 text = DJANGO_HEADER + text

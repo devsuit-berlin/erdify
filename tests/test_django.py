@@ -275,12 +275,72 @@ class TestDjangoDefaultTableNames:
         monkeypatch.chdir(app)
         assert self._tables(Path(arg)) == {"OrderItem": "shop_orderitem"}
 
+    def _package(self, *parts: Path) -> None:
+        for part in parts:
+            part.mkdir(parents=True, exist_ok=True)
+            (part / "__init__.py").write_text("", encoding="utf-8")
+
     def test_nested_models_package_belongs_to_the_app(self, tmp_path: Path):
-        nested = tmp_path / "shop" / "models" / "billing"
-        nested.mkdir(parents=True)
+        shop = tmp_path / "shop"
+        nested = shop / "models" / "billing"
+        self._package(shop, shop / "models", nested)
         (nested / "invoice.py").write_text(self.MODELS, encoding="utf-8")
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/models/**/*.py"])
         assert entities["OrderItem"].table_name == "shop_orderitem"
+
+    @pytest.mark.parametrize("inner", [("models",), ("models", "billing")])
+    def test_models_py_inside_a_models_package(self, tmp_path: Path, inner: tuple[str, ...]):
+        shop = tmp_path / "shop"
+        directory = shop.joinpath(*inner)
+        self._package(shop, *(shop.joinpath(*inner[: i + 1]) for i in range(len(inner))))
+        (directory / "models.py").write_text(self.MODELS, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/models.py"])
+        assert entities["OrderItem"].table_name == "shop_orderitem"
+
+    def test_app_named_models(self, tmp_path: Path):
+        app = self._app(
+            tmp_path,
+            "models",
+            "from django.apps import AppConfig\n\n\nclass C(AppConfig):\n    pass\n",
+        )
+        self._package(app)
+        assert self._tables(tmp_path) == {"OrderItem": "models_orderitem"}
+
+    def test_models_directory_above_the_project_is_ignored(self, tmp_path: Path):
+        self._app(tmp_path / "models" / "project", "shop")
+        assert self._tables(tmp_path / "models" / "project") == {"OrderItem": "shop_orderitem"}
+
+    def test_app_config_attributes_from_a_local_base(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class BaseConfig(AppConfig):\n"
+            "    default = False\n"
+            '    label = "store"\n\n\n'
+            "class ShopConfig(BaseConfig):\n"
+            "    default = True\n"
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "store_orderitem"}
+
+    def test_last_assignment_wins(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class ShopConfig(AppConfig):\n"
+            '    label = "shop"\n'
+            '    label = "store"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "store_orderitem"}
+
+    def test_non_literal_last_assignment_falls_back(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class ShopConfig(AppConfig):\n"
+            '    label = "store"\n'
+            "    label = compute_label()\n"
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
 
     def test_models_package_belongs_to_its_parent_app(self, tmp_path: Path):
         models_pkg = tmp_path / "shop" / "models"
