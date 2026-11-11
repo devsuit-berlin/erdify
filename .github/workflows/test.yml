@@ -157,7 +157,8 @@ jobs:
   # The `test` matrix runs the locked versions; this job repeats those tests on
   # each supported SQLAlchemy series (newest patch release, `uv run --with`,
   # like the Django job) and on the oldest supported SQLModel, 0.0.22 (which
-  # requires SQLAlchemy < 2.1) as well as the locked one. Keep the supported
+  # requires SQLAlchemy < 2.1), each release where SQLModel's behaviour
+  # changed, and the locked one. Keep the supported
   # versions in docs/installation.md in sync with this matrix.
   sqlalchemy:
     name: SQLAlchemy ${{ matrix.sqlalchemy }} / SQLModel ${{ matrix.sqlmodel }} ground truth
@@ -167,6 +168,9 @@ jobs:
       matrix:
         include:
           - { sqlalchemy: "2.0", sqlmodel: "0.0.22" }
+          # A release where SQLModel changed what it builds (#295: Field() in
+          # Annotated metadata), so the documented boundary is pinned.
+          - { sqlalchemy: "2.0", sqlmodel: "0.0.32" }
           - { sqlalchemy: "2.0", sqlmodel: "locked" }
           - { sqlalchemy: "2.1", sqlmodel: "locked" }
     env:

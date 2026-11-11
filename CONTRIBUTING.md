@@ -217,6 +217,14 @@ differences that exist only from a release on.
 The supported framework versions are listed in `docs/installation.md`
 ("Supported framework versions"). When you add or drop one, update that table,
 the CI matrix in `.github/workflows/test.yml`, and the changelog together.
+A scheduled workflow (`.github/workflows/upstream.yml`, weekly) runs the
+suite on the newest releases and reports a Django or SQLAlchemy series that is
+missing from the matrix; you can also start it by hand from the Actions tab.
+Check for new series locally with:
+
+```bash
+uv run --no-project --with pyyaml --with packaging python scripts/check_upstream_series.py
+```
 
 ### Adding New Test Fixtures
 

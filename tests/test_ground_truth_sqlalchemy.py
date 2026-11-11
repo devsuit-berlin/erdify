@@ -86,6 +86,8 @@ KNOWN_DIFFERENCES = {
     ),
     "enums": "#296: enum.IntEnum (and other Enum subclasses) are not drawn as enums",
     "imperative_table": "#297: a class mapped with __table__ = Table(...) is not drawn",
+    "map_imperatively": "#306: classes mapped with registry.map_imperatively() are not drawn",
+    "core_tables": "#305: Core tables other than association tables are not drawn",
     "mixins": "#298: a relationship from a @declared_attr on a mixin is not read",
     "one_to_one_required_reverse": (
         "#299: a to-one reference from the referenced side is always optional"
@@ -460,3 +462,26 @@ def test_reference_leaves_out_created_and_inherited_relationships() -> None:
     assert set(schema.tables["Pet"].relationships) == {"owner"}
     assert schema.tables["Pet"].relationships["owner"].inverse is None
     assert schema.tables["Dog"].relationships == {}
+
+
+CORE_ONLY = """
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, String, Table
+
+metadata = MetaData()
+
+region = Table("region", metadata, Column("id", Integer, primary_key=True))
+
+shop = Table(
+    "shop",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50), nullable=False),
+)
+"""
+
+
+def test_reference_finds_core_tables_without_mapped_classes() -> None:
+    """Core tables count whether their MetaData is module-level or created inline."""
+    schema = sqlalchemy_ref.load(CORE_ONLY)
+    assert set(schema.tables) == {"region", "shop"}
+    assert schema.tables["shop"].columns["name"].nullable is False

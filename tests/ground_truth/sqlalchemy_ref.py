@@ -26,8 +26,6 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapper, RelationshipDirection, RelationshipProperty, registry
 from sqlmodel import SQLModel
 
-from erdify.config import FieldInfo, is_structural_link_table
-
 from .schema import Column, Relationship, Schema, Table as SchemaTable
 
 # A top-level name: a relative import in a source fails (it is not
@@ -133,30 +131,23 @@ def _schema(module: types.ModuleType, classes: list[type], registries: set[regis
         for m in reg.mappers
         if m.class_.__module__ == MODULE and _has_own_table(m)
     ]
-    metadatas = {reg.metadata for reg in registries} | {
-        v for v in vars(module).values() if isinstance(v, MetaData)
-    }
+    # Every MetaData the source can reach: the registries', module-level ones,
+    # and the one of each module-level Table (also an inline MetaData()).
+    metadatas = (
+        {reg.metadata for reg in registries}
+        | {v for v in vars(module).values() if isinstance(v, MetaData)}
+        | {v.metadata for v in vars(module).values() if isinstance(v, Table)}
+    )
     tables = {m.class_.__name__: _table(m.local_table, m if not checks else None) for m in mappers}
     mapped_tables = {m.local_table for m in mappers}
-    # Relationships can't be inspected when configuring failed; such a source
-    # (EXPECTED_CHECK_ERRORS) then keeps only Core tables that are
-    # association tables.
-    secondaries = {
-        r.secondary
-        for m in mappers
-        if not checks
-        for r in m.relationships
-        if r.secondary is not None
-    }
     names = {id(v): k for k, v in vars(module).items() if isinstance(v, Table)}
     for metadata in metadatas:
         for table in metadata.tables.values():
             if table in mapped_tables:
                 continue
-            # erdify draws a Core table that is an association table (#34);
-            # one a relationship goes through is part of the schema too.
-            if table in secondaries or _is_association(table):
-                tables[names.get(id(table), table.name)] = _table(table, None)
+            # Every Core Table(...) is part of the schema, whether it is an
+            # association table (#34), a secondary= or a plain table.
+            tables[names.get(id(table), table.name)] = _table(table, None)
     enums = {
         cls.__name__: tuple(cls.__members__)
         for cls in classes
@@ -228,16 +219,6 @@ def _classes(module: types.ModuleType) -> Iterator[type]:
             seen.add(value)
             yield value
             pending.extend(vars(value).values())
-
-
-def _is_association(table: Table) -> bool:
-    """A composite primary key made up of foreign keys only, as erdify defines it."""
-    return is_structural_link_table(
-        [
-            FieldInfo(c.name, "", is_primary_key=c.primary_key, is_foreign_key=bool(c.foreign_keys))
-            for c in table.columns
-        ]
-    )
 
 
 def _unique_columns(table: Table) -> set[str]:

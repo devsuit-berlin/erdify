@@ -15,7 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Pydantic 2 and sqlglot 25 and later (`erdify[sql]`), and what CI tests for
   each. The SQLModel / SQLAlchemy ground-truth tests now also run on the oldest
   supported SQLModel. Dropping a framework version happens only in a minor
-  release ([Stability](https://erdify.devsuit.io/stability/)).
+  release ([Stability](https://erdify.devsuit.io/stability/)). A weekly
+  scheduled run also tests the newest framework releases and reports new
+  release series.
+- [Limitations](https://erdify.devsuit.io/frameworks/limitations/#tables-declared-outside-a-class-body)
+  documents which SQLAlchemy Core tables are drawn (association tables) and
+  which are not yet (other Core tables, `__table__`, `map_imperatively`).
 
 ### Fixed
 

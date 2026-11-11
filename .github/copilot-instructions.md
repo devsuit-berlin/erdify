@@ -76,8 +76,8 @@ without extra work.
 `tests/test_ground_truth_sqlalchemy.py` is the SQLAlchemy / SQLModel
 counterpart (`tests/ground_truth/sqlalchemy_ref.py`): each source runs as a
 fresh module (SQLModel's shared registry is swapped per load), its mappers are
-configured, and the schema comes from `MetaData.tables` (Core association
-tables included) and the relationships from `sqlalchemy.inspect(Model)`
+configured, and the schema comes from `MetaData.tables` (every Core
+`Table(...)` included) and the relationships from `sqlalchemy.inspect(Model)`
 (target, `"one"` / `"many"`, optionality, `back_populates`; `secondary=` and
 `backref=`-created sides are left out, as erdify draws them through the link
 table / doesn't declare them). Sources: the SQLAlchemy / SQLModel fixtures, the
@@ -101,6 +101,13 @@ test helper prepends to a bare body).
   version-gated: `REQUIRES_SQLMODEL` (skip a catalog module before the release
   that added the feature) and `SQLMODEL_DIFFERENCES` (a known difference from a
   release on).
+
+- `.github/workflows/upstream.yml` (weekly, not a required check) runs the
+  whole suite on the newest releases (newest SQLModel / Pydantic / sqlglot /
+  Django from PyPI on top of `uv lock --upgrade`) and
+  `scripts/check_upstream_series.py`, which fails when a Django / SQLAlchemy
+  series is out but missing from the `test.yml` matrices. A failed scheduled
+  run opens or updates one `ci`-labelled issue.
 
 ### Supported versions are documented
 
