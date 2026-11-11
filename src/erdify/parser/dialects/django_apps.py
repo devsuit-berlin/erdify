@@ -9,7 +9,10 @@ from what the source shows:
    last component of a literal ``name``. With several configs, the one marked
    ``default = True``.
 3. The name of the app package: the directory holding ``models.py``, or the
-   parent of a ``models/`` package.
+   parent of the ``models/`` package a model module is in.
+
+``Meta.app_label`` inherited from an abstract base's ``Meta`` is not read yet
+(the same gap as an inherited ``db_table``, #279).
 
 An ``AppConfig`` chosen explicitly in ``INSTALLED_APPS`` (``"shop.apps.Custom"``)
 is not known to erdify; the app's default config is used instead.
@@ -20,11 +23,19 @@ from pathlib import Path
 
 
 def app_package(model_file: Path) -> Path:
-    """The app package a model file belongs to."""
-    package = model_file.parent
-    if package.name == "models" and model_file.name != "models.py":
-        return package.parent
-    return package
+    """The app package a model file belongs to.
+
+    The directory of ``models.py``; for a module inside a ``models/`` package
+    (also a nested one, ``shop/models/billing/invoice.py``), the parent of the
+    nearest ``models`` directory. The path is resolved first, so the result
+    doesn't depend on how the input path was written (``.``, ``..``).
+    """
+    model_file = model_file.resolve()
+    if model_file.name != "models.py":
+        for parent in model_file.parents:
+            if parent.name == "models":
+                return parent.parent
+    return model_file.parent
 
 
 def app_label(package: Path) -> str:
@@ -44,12 +55,18 @@ def _default_config(apps_file: Path) -> ast.ClassDef | None:
     """The AppConfig class Django would pick as the app's default, if readable."""
     try:
         tree = ast.parse(apps_file.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, UnicodeDecodeError):
+    except (OSError, SyntaxError, ValueError, RecursionError):
+        # ValueError: a null byte on Python 3.11 (3.12+ raises SyntaxError);
+        # UnicodeDecodeError is a ValueError too.
         return None
+    # Like AppConfig.create: configs marked ``default = False`` never count,
+    # then the only one left, else the one marked ``default = True``.
     configs = [
         node
         for node in tree.body
-        if isinstance(node, ast.ClassDef) and any(_is_app_config(base) for base in node.bases)
+        if isinstance(node, ast.ClassDef)
+        and any(_is_app_config(base) for base in node.bases)
+        and _literal(node, "default") is not False
     ]
     if len(configs) == 1:
         return configs[0]

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from erdify.generator import PlantUMLGenerator
 from erdify.parser import parse_models_directory
 
@@ -240,9 +242,45 @@ class TestDjangoDefaultTableNames:
         self._app(tmp_path, "shop", apps_py)
         assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
 
-    def test_unreadable_apps_py_falls_back_to_the_package(self, tmp_path: Path):
-        self._app(tmp_path, "shop", "class Broken(:\n")
+    @pytest.mark.parametrize("apps_py", ["class Broken(:\n", "label = 1\x00\n"])
+    def test_unreadable_apps_py_falls_back_to_the_package(self, tmp_path: Path, apps_py: str):
+        self._app(tmp_path, "shop", apps_py)
         assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
+
+    def test_config_marked_not_default_is_ignored(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class ShopConfig(AppConfig):\n"
+            "    default = False\n"
+            '    label = "store"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
+
+    def test_remaining_config_after_dropping_non_defaults(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class First(AppConfig):\n"
+            "    default = False\n"
+            '    label = "first"\n\n\n'
+            "class Second(AppConfig):\n"
+            '    label = "second"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "second_orderitem"}
+
+    @pytest.mark.parametrize("arg", [".", "models.py"])
+    def test_relative_input_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arg: str):
+        app = self._app(tmp_path, "shop")
+        monkeypatch.chdir(app)
+        assert self._tables(Path(arg)) == {"OrderItem": "shop_orderitem"}
+
+    def test_nested_models_package_belongs_to_the_app(self, tmp_path: Path):
+        nested = tmp_path / "shop" / "models" / "billing"
+        nested.mkdir(parents=True)
+        (nested / "invoice.py").write_text(self.MODELS, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/models/**/*.py"])
+        assert entities["OrderItem"].table_name == "shop_orderitem"
 
     def test_models_package_belongs_to_its_parent_app(self, tmp_path: Path):
         models_pkg = tmp_path / "shop" / "models"
