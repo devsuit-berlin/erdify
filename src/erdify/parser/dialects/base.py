@@ -26,6 +26,7 @@ class ParseContext:
             (``intpk = Annotated[int, mapped_column(primary_key=True)]``,
             #241, #249, #250).
         file_of: The file a class is defined in, or None if unknown.
+        trees: The syntax trees of every scanned file.
     """
 
     classes: ClassIndex = field(default_factory=lambda: ClassIndex({}))
@@ -35,6 +36,7 @@ class ParseContext:
     dialects: List["Dialect"] = field(default_factory=list)
     aliases_for: Callable[[ast.ClassDef], Mapping[str, ast.expr]] = lambda _class_node: {}
     file_of: Callable[[ast.ClassDef], Path | None] = lambda _class_node: None
+    trees: List[ast.Module] = field(default_factory=list)
 
     def all_dialects(self) -> List["Dialect"]:
         """Every dialect, in classification order, bound to this context."""
@@ -89,6 +91,19 @@ class Dialect:
         self.classes = ctx.classes
 
     # -- detection --------------------------------------------------------
+
+    @classmethod
+    def builtin_classes(
+        cls, trees: Iterable[ast.Module], defined: Set[str]
+    ) -> Dict[str, ast.ClassDef]:
+        """Framework classes to add to the scanned ones, by name.
+
+        For base classes that ship with the framework and that models build
+        on (Django's ``AbstractUser``), so their members are inherited even
+        though their source isn't scanned. ``defined`` holds the names the
+        scanned files define; those are never replaced. None by default.
+        """
+        return {}
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         """Whether the class belongs to this framework."""

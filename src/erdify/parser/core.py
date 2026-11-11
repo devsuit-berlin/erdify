@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Mapping, Tuple
 from ..config import EntityInfo, EnumInfo, is_structural_link_table
 from .aliases import AliasResolver
 from .common import is_enum_class
-from .dialects import ParseContext
+from .dialects import DIALECTS, ParseContext
 from .discovery import discover_model_files
 from .inheritance import ClassIndex
 
@@ -149,6 +149,14 @@ class ASTDatabaseParser:
         if self.strict and self._parse_errors:
             raise ModelParseError(self._parse_errors)
 
+        # Framework base classes the scanned models build on but whose source
+        # isn't scanned (e.g. Django's AbstractUser, #277). They have no file.
+        defined = set(self._all_classes)
+        for dialect_class in DIALECTS:
+            builtins = dialect_class.builtin_classes(self._file_trees.values(), defined)
+            for name, node in builtins.items():
+                self._all_classes.setdefault(name, node)
+
         # Second pass: process enum and model classes. Dialects (and their
         # caches) are fresh for each run.
         self._ctx = self._new_context()
@@ -248,6 +256,7 @@ class ASTDatabaseParser:
             base_classes=self.base_classes,
             aliases_for=self._alias_lookup(),
             file_of=lambda class_node: self._class_files.get(id(class_node)),
+            trees=list(self._file_trees.values()),
         )
 
     def _alias_lookup(self) -> "Callable[[ast.ClassDef], Mapping[str, ast.expr]]":

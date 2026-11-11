@@ -45,12 +45,9 @@ KNOWN_DIFFERENCES = {
     ".src": "#280: a field on a plain (non-Model) mixin is not a column in Django",
     # Edge-case catalog (tests/fixtures/django_edge_cases).
     "abstract_meta_inheritance": "#279: Meta.db_table inherited from an abstract base",
-    "auth_user_model": "#278: settings.AUTH_USER_MODEL gets an invented table name",
     "composite_primary_key": "#276: CompositePrimaryKey is not supported",
-    "custom_user": "#277: a model based on AbstractUser is missing from the diagram",
     "db_column": "#275: db_column is ignored",
     "meta_constraints": "#274: a single-field Meta.constraints UniqueConstraint is not read",
-    "generic_relations": "#278: ContentType's table is django_content_type",
 }
 
 # Sources where Django itself builds an inconsistent model, so there is no
@@ -60,6 +57,14 @@ DEGENERATE = {
         "Removing or overriding an abstract parent_link leaves Django with the abstract "
         "base's field (or a CharField) as the parent link and primary key"
     ),
+}
+
+# Sources whose schema depends on project settings the reference can't mirror:
+# it runs with Django's default AUTH_USER_MODEL (auth.User), while erdify
+# resolves settings.AUTH_USER_MODEL to the source's own user model (#278).
+# Covered by unit tests in test_django.py instead.
+SETTINGS_DEPENDENT = {
+    "test_django.py::TestDjangoContribAuth.CUSTOM_USER": "swapped AUTH_USER_MODEL",
 }
 
 # Sources Django refuses to build (FieldError) that the suite still feeds to
@@ -128,6 +133,8 @@ def test_module_matches_django(name: str, tmp_path: Path) -> None:
 def _check(name: str, source: str, tmp_path: Path) -> None:
     if name in DEGENERATE:
         pytest.skip(DEGENERATE[name])
+    if name in SETTINGS_DEPENDENT:
+        pytest.skip(f"depends on project settings: {SETTINGS_DEPENDENT[name]}")
     try:
         expected = django_ref.load(source)
     except django_ref.Rejected as exc:
@@ -158,14 +165,23 @@ def test_known_lists_name_existing_snippets() -> None:
     """A renamed or deleted test must not leave a stale entry behind."""
     names = {s.id for s in SNIPPETS} | {p.stem for p in EDGE_CASES}
     listed = (
-        set(KNOWN_DIFFERENCES) | set(DEGENERATE) | set(EXPECTED_REJECTED) | set(EXPECTED_UNLOADABLE)
+        set(KNOWN_DIFFERENCES)
+        | set(DEGENERATE)
+        | set(SETTINGS_DEPENDENT)
+        | set(EXPECTED_REJECTED)
+        | set(EXPECTED_UNLOADABLE)
     )
     assert not listed - names
 
 
 def test_most_sources_are_compared() -> None:
     """Guard the discovery and the lists: most sources must really be compared."""
-    listed = set(DEGENERATE) | set(EXPECTED_REJECTED) | set(EXPECTED_UNLOADABLE)
+    listed = (
+        set(DEGENERATE)
+        | set(SETTINGS_DEPENDENT)
+        | set(EXPECTED_REJECTED)
+        | set(EXPECTED_UNLOADABLE)
+    )
     compared = [s for s in SNIPPETS if s.id not in listed]
     assert len(compared) >= 40
     assert len(EDGE_CASES) >= 15

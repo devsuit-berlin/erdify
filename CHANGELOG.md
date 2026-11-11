@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the app package (the directory holding `models.py`, or the parent of a
   `models/` package). Foreign keys reference the same names
   ([#271](https://github.com/devsuit-berlin/erdify/issues/271)).
+- A Django user model built on `AbstractUser`, or on `AbstractBaseUser` and
+  `PermissionsMixin`, is drawn with the fields and many-to-many relations those
+  bases define. A model on `AbstractUser` used to be missing from the diagram
+  ([#277](https://github.com/devsuit-berlin/erdify/issues/277)).
+- Django relations to `django.contrib` models reference their real tables:
+  `auth_user`, `auth_group`, `auth_permission`, `django_content_type`.
+  `settings.AUTH_USER_MODEL` and `get_user_model()` resolve to the project's
+  user model (the one scanned model built on `AbstractBaseUser`), else to
+  `auth_user`, instead of a table named `auth_user_model`
+  ([#278](https://github.com/devsuit-berlin/erdify/issues/278)).
 
 ### Output changes
 
@@ -24,6 +34,11 @@ Every Django model without `Meta.db_table` changes its table name, in the
 diagram, in JSON `table_name` / `foreign_table`, and for `--exclude` patterns
 matched against table names. Regenerate the diagram once if you gate CI on
 `--check`, and update `--exclude` patterns that name Django tables.
+
+Django projects with a custom user model on Django's abstract user bases, or
+with relations to `auth.User` / `Group` / `Permission` / `ContentType` or to
+`settings.AUTH_USER_MODEL`, get new columns and different foreign-key targets.
+Regenerate the diagram once if you gate CI on `--check`.
 
 ## [1.4.2] - 2026-11-06
 

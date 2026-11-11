@@ -413,3 +413,96 @@ class OrderItem(models.Model):
         assert entities["Invoice"].table_name == "billing_invoice"
         fk = next(f for f in entities["Invoice"].fields if f.name == "item_id")
         assert fk.foreign_table == "shop_orderitem.id"
+
+
+class TestDjangoContribAuth:
+    """#277 / #278: django.contrib.auth bases and relation targets."""
+
+    def _parse(self, tmp_path: Path, source: str) -> dict:
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(source, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return entities
+
+    def _fk(self, entities: dict, model: str, column: str) -> str | None:
+        return next(f for f in entities[model].fields if f.name == column).foreign_table
+
+    CUSTOM_USER = """
+from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+
+
+class Member(AbstractUser):
+    pass
+
+
+class Order(models.Model):
+    buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+"""
+
+    def test_custom_user_inherits_the_abstract_user_fields(self, tmp_path: Path):
+        member = self._parse(tmp_path, self.CUSTOM_USER)["Member"]
+        assert [f.name for f in member.fields] == [
+            "id",
+            "password",
+            "last_login",
+            "is_superuser",
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "is_staff",
+            "is_active",
+            "date_joined",
+        ]
+        assert sorted(member.relationships) == [
+            ("Group", "many_to_many", "groups"),
+            ("Permission", "many_to_many", "user_permissions"),
+        ]
+
+    def test_auth_user_model_resolves_to_the_only_custom_user(self, tmp_path: Path):
+        entities = self._parse(tmp_path, self.CUSTOM_USER)
+        assert self._fk(entities, "Order", "buyer_id") == "shop_member.id"
+
+    def test_auth_user_model_without_a_custom_user_is_auth_user(self, tmp_path: Path):
+        source = self.CUSTOM_USER.replace("class Member(AbstractUser):\n    pass\n", "")
+        entities = self._parse(tmp_path, source)
+        assert self._fk(entities, "Order", "buyer_id") == "auth_user.id"
+
+    def test_auth_user_model_with_several_custom_users_is_auth_user(self, tmp_path: Path):
+        source = self.CUSTOM_USER.replace(
+            "class Member(AbstractUser):\n    pass\n",
+            "class Member(AbstractUser):\n    pass\n\n\nclass Staff(AbstractUser):\n    pass\n",
+        )
+        entities = self._parse(tmp_path, source)
+        assert self._fk(entities, "Order", "buyer_id") == "auth_user.id"
+
+    def test_locally_defined_base_is_not_replaced(self, tmp_path: Path):
+        source = """
+from django.db import models
+
+
+class AbstractUser(models.Model):
+    handle = models.CharField(max_length=20)
+
+    class Meta:
+        abstract = True
+
+
+class Member(AbstractUser):
+    pass
+"""
+        member = self._parse(tmp_path, source)["Member"]
+        assert [f.name for f in member.fields] == ["id", "handle"]
+
+    def test_bases_are_only_added_when_imported_from_contrib(self, tmp_path: Path):
+        source = """
+from accounts.base import AbstractUser
+
+
+class Member(AbstractUser):
+    pass
+"""
+        assert "Member" not in self._parse(tmp_path, source)
