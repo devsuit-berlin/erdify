@@ -32,6 +32,18 @@ entity "entity_with_positional" as EntityWithPositionalDefault {
   column(payment) : PaymentMethod = CREDIT_CARD
 }
 
+entity "entity_a" as EntityA {
+  primary_key(id) : int
+}
+
+entity "entity_b" as EntityB {
+  primary_key(id) : int
+}
+
+entity "entity_c" as EntityC {
+  primary_key(id) : int
+}
+
 entity "three_key_link" as LinkTableWithThreeKeys << (L, #AAFFAA) link >> {
   primary_key(entity_a_id) : int
   primary_key(entity_b_id) : int
@@ -45,5 +57,8 @@ entity "entity_with_no_table_name" as EntityWithNoTableName {
 
 ' Relationships
 
+EntityA ||--o{ LinkTableWithThreeKeys : "entity_a_id"
+EntityB ||--o{ LinkTableWithThreeKeys : "entity_b_id"
+EntityC ||--o{ LinkTableWithThreeKeys : "entity_c_id"
 
 @enduml

@@ -188,6 +188,25 @@ uv run pytest tests/test_ground_truth_django.py -rsx
 uv run --with "django~=6.1.0" pytest tests/test_ground_truth_django.py
 ```
 
+`tests/test_ground_truth_sqlalchemy.py` does the same for SQLAlchemy and
+SQLModel: every source (the SQLAlchemy / SQLModel fixtures,
+`docs/examples/sqlalchemy` and `docs/examples/sqlmodel`, the edge-case catalog
+in `tests/fixtures/sqlalchemy_edge_cases/`, and every inline snippet) is
+executed, its mappers are configured, and `MetaData.tables` plus
+`sqlalchemy.inspect(Model).relationships` are compared with erdify's parse,
+relationships included (cardinality, optionality, `back_populates`). A snippet
+built as `HEADER + """..."""` is folded into one source; a body that a test
+helper prefixes gets that file's header from `SNIPPET_HEADERS`. Test models
+must configure, as on first use in a project: give each relationship a foreign
+key to join on, and `foreign_keys=` where there are several. Documented
+limitations are listed in `LIMITATIONS`, so they show up once supported.
+
+```bash
+uv run pytest tests/test_ground_truth_sqlalchemy.py -rsx
+# Against another SQLAlchemy series:
+uv run --with "sqlalchemy~=2.0.0" pytest tests/test_ground_truth_sqlalchemy.py
+```
+
 ### Adding New Test Fixtures
 
 1. Create a new directory under `tests/fixtures/`

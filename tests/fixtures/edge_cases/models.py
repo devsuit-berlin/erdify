@@ -32,8 +32,32 @@ class EntityWithPositionalDefault(SQLModel, table=True):
     payment: PaymentMethod = Field(PaymentMethod.CREDIT_CARD)  # Positional enum default
 
 
+class EntityA(SQLModel, table=True):
+    """First target of the three-key link table."""
+
+    __tablename__: str = "entity_a"
+
+    id: int = Field(primary_key=True)
+
+
+class EntityB(SQLModel, table=True):
+    """Second target of the three-key link table."""
+
+    __tablename__: str = "entity_b"
+
+    id: int = Field(primary_key=True)
+
+
+class EntityC(SQLModel, table=True):
+    """Third target of the three-key link table."""
+
+    __tablename__: str = "entity_c"
+
+    id: int = Field(primary_key=True)
+
+
 class LinkTableWithThreeKeys(SQLModel, table=True):
-    """Invalid link table with 3 FKs (edge case)."""
+    """Ternary link table with 3 FKs (edge case)."""
 
     __tablename__: str = "three_key_link"
 

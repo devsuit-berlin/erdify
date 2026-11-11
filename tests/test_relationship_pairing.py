@@ -31,6 +31,7 @@ def _entity(
 
 class TestParserRecordsInverse:
     SRC = """
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -48,12 +49,14 @@ class User(Base):
 class Post(Base):
     __tablename__ = "post"
     id: Mapped[int] = mapped_column(primary_key=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
     author: Mapped["User"] = relationship(back_populates="posts")
 
 
 class Tag(Base):
     __tablename__ = "tag"
     id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
 """
 
     def test_back_populates_is_recorded(self, tmp_path: Path):
@@ -98,14 +101,22 @@ from sqlmodel import Field, Relationship, SQLModel
 
 class Team(SQLModel, table=True):
     id: int = Field(primary_key=True)
-    heroes: list["Hero"] = Relationship(back_populates="team")
-    leaders: list["Hero"] = Relationship(sa_relationship_kwargs={"back_populates": "led"})
+    heroes: list["Hero"] = Relationship(
+        back_populates="team", sa_relationship_kwargs={"foreign_keys": "[Hero.team_id]"}
+    )
+    leaders: list["Hero"] = Relationship(
+        sa_relationship_kwargs={"back_populates": "led", "foreign_keys": "[Hero.led_id]"}
+    )
 
 
 class Hero(SQLModel, table=True):
     id: int = Field(primary_key=True)
-    team: "Team" = Relationship(back_populates="heroes")
-    led: "Team" = Relationship()
+    team_id: int = Field(foreign_key="team.id")
+    team: "Team" = Relationship(
+        back_populates="heroes", sa_relationship_kwargs={"foreign_keys": "[Hero.team_id]"}
+    )
+    led_id: int = Field(foreign_key="team.id")
+    led: "Team" = Relationship(sa_relationship_kwargs={"foreign_keys": "[Hero.led_id]"})
 """,
         )
         assert entities["Team"].inverse_relationships == {"heroes": "team", "leaders": "led"}

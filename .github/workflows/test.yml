@@ -150,6 +150,45 @@ jobs:
       - name: Run the Django ground-truth tests
         run: uv run --with "django~=${{ matrix.django }}.0" pytest tests/test_ground_truth_django.py -rsx
 
+  # The SQLAlchemy / SQLModel ground-truth tests
+  # (tests/test_ground_truth_sqlalchemy.py) execute every SQLAlchemy and
+  # SQLModel model source, configure its mappers and compare the metadata with
+  # erdify's parse. The `test` matrix runs the locked SQLAlchemy; this job
+  # repeats those tests on each supported series, newest patch release first
+  # (`uv run --with`, like the Django job).
+  sqlalchemy:
+    name: SQLAlchemy ${{ matrix.sqlalchemy }} ground truth
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sqlalchemy: ["2.0", "2.1"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "latest-known"
+          python-version: "3.13"
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Assert the matrix SQLAlchemy is in use
+        env:
+          EXPECTED: ${{ matrix.sqlalchemy }}
+        run: >-
+          uv run --with "sqlalchemy~=${{ matrix.sqlalchemy }}.0" python -c
+          "import sqlalchemy, os; v = '.'.join(sqlalchemy.__version__.split('.')[:2]);
+          assert v == os.environ['EXPECTED'], sqlalchemy.__version__; print(sqlalchemy.__version__)"
+      - name: Run the SQLAlchemy ground-truth tests
+        run: >-
+          uv run --with "sqlalchemy~=${{ matrix.sqlalchemy }}.0"
+          pytest tests/test_ground_truth_sqlalchemy.py -rsx
+
   # README coverage badge. Datadog exposes no public badge endpoint, so the
   # percentage is published as a shields.io endpoint payload at
   # https://raw.githubusercontent.com/devsuit-berlin/erdify/badges/coverage.json
@@ -231,7 +270,7 @@ jobs:
   gate:
     name: Tests passed
     if: always()
-    needs: [test, django]
+    needs: [test, django, sqlalchemy]
     runs-on: ubuntu-latest
     steps:
       # `badges` holds only bot-written badge payloads. A pull request from it
@@ -251,5 +290,7 @@ jobs:
             exit 1
           fi
       - name: Fail if any matrix job failed
-        if: needs.test.result != 'success' || needs.django.result != 'success'
+        if: >-
+          needs.test.result != 'success' || needs.django.result != 'success'
+          || needs.sqlalchemy.result != 'success'
         run: exit 1

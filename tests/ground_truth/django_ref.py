@@ -150,7 +150,7 @@ def load(source: str) -> Schema:
 
 def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps, labels: list[str]) -> Schema:
     try:
-        exec(compile(tree, "<models>", "exec"), namespace)
+        exec(compile(tree, "<models>", "exec", dont_inherit=True), namespace)
     except (NameError, ImportError) as exc:
         raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
     except (FieldError, TypeError) as exc:
