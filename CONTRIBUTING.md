@@ -172,10 +172,15 @@ catalog in `tests/fixtures/django_edge_cases/`, and every inline snippet in
 erdify's parse. A Django snippet you add to a test is picked up automatically.
 If it shows a real erdify bug you aren't fixing in the same change, open an
 issue and list the source in `KNOWN_DIFFERENCES`. A source Django can't load or
-rejects must be listed in `EXPECTED_UNLOADABLE` / `EXPECTED_REJECTED` (one that
-depends on project settings, like a swapped `AUTH_USER_MODEL`, in
-`SETTINGS_DEPENDENT`); nothing is
+rejects must be listed in `EXPECTED_UNLOADABLE` / `EXPECTED_REJECTED`; nothing is
 skipped silently.
+
+Test models must also be valid Django: each source is loaded the way a project
+would run it and must pass Django's system checks (`manage.py check`) on every
+supported Django series. Give a second foreign key to the same model a
+`related_name`, a `CharField` a `max_length`, and so on. A regression snippet that
+violates a check on purpose lists the error ids and why in
+`EXPECTED_CHECK_ERRORS`.
 
 ```bash
 uv run pytest tests/test_ground_truth_django.py -rsx

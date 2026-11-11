@@ -7,4 +7,4 @@ from django.db import models
 
 class Post(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    editor = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True)
+    editor = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, related_name="+")

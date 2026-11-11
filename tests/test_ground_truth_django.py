@@ -7,8 +7,12 @@ erdify from text, and executed by Django into an isolated app registry. Both
 are reduced to the same normalised schema (tables, columns, primary / unique /
 foreign keys, nullability, many-to-many edges, choices enums) and must agree.
 
-Nothing is skipped silently: known differences, sources Django rejects and
-sources that are not self-contained are each listed below with a reason. A
+Every source is loaded the way a Django project runs it, and Django's system
+checks must pass (#287): test data that no project could run is caught.
+
+Nothing is skipped silently: known differences, sources Django rejects,
+sources that are not self-contained and deliberate check errors are each
+listed below with a reason. A
 strict ``xfail`` turns into a failure once its issue is fixed, an unlisted
 rejection or skip fails, and a listed name that no longer exists fails.
 """
@@ -58,12 +62,22 @@ DEGENERATE = {
     ),
 }
 
-# Sources whose schema depends on project settings the reference can't mirror:
-# it runs with Django's default AUTH_USER_MODEL (auth.User), while erdify
-# resolves settings.AUTH_USER_MODEL to the source's own user model (#278).
-# Covered by unit tests in test_django.py instead.
-SETTINGS_DEPENDENT = {
-    "test_django.py::TestDjangoContribAuth.CUSTOM_USER": "swapped AUTH_USER_MODEL",
+# Inline snippets that fail Django's system checks on purpose: error ids and
+# why. Every other source must pass the checks (#287), and the fixture app,
+# the docs example and the edge-case catalog always must.
+EXPECTED_CHECK_ERRORS = {
+    "test_ground_truth_django.py::test_reference_reports_system_check_errors.bad": (
+        ("fields.E120",),
+        "the harness's own test that check errors are reported",
+    ),
+    "test_cardinality.py::TestPrimaryKeyNotNullableAcrossSources.test_django_null_pk.src": (
+        ("fields.E007",),
+        "a primary key with null=True: erdify must still draw it NOT NULL",
+    ),
+    "test_cardinality.py::TestDjangoPrimaryKeyForeignKey.SRC": (
+        ("fields.E007",),
+        "ForeignKey(primary_key=True, null=True): erdify must still draw it NOT NULL",
+    ),
 }
 
 # Sources Django refuses to build (FieldError) that the suite still feeds to
@@ -130,14 +144,27 @@ def test_module_matches_django(name: str, tmp_path: Path) -> None:
     source = (MODULES[name] / "models.py").read_text(encoding="utf-8")
     expected = django_ref.load(source)
     assert expected.tables, "the reference loader found no models"
+    _assert_checks(name, expected, ())
     _assert_same(_erdify(source, tmp_path), expected)
 
 
-def _check(name: str, source: str, tmp_path: Path) -> None:
+def _assert_checks(name: str, expected: Schema, allowed: tuple[str, ...]) -> None:
+    """Fail unless Django's system checks report exactly the ``allowed`` errors.
+
+    ``pytest.fail`` rather than ``assert``: a known-difference xfail only
+    accepts an AssertionError, so a broken source must not hide behind one.
+    """
+    if expected.checks != allowed:
+        pytest.fail(
+            f"Django's system checks for {name} report {list(expected.checks) or 'no errors'}, "
+            f"expected {list(allowed) or 'none'}. Fix the source (it must be a model module a "
+            "Django project can run), or list a deliberate error in EXPECTED_CHECK_ERRORS."
+        )
+
+
+def _check(name: str, source: str, tmp_path: Path, *, catalog: bool = False) -> None:
     if name in DEGENERATE:
         pytest.skip(DEGENERATE[name])
-    if name in SETTINGS_DEPENDENT:
-        pytest.skip(f"depends on project settings: {SETTINGS_DEPENDENT[name]}")
     try:
         expected = django_ref.load(source)
     except django_ref.Rejected as exc:
@@ -151,6 +178,8 @@ def _check(name: str, source: str, tmp_path: Path) -> None:
         if name in EXPECTED_UNLOADABLE:
             pytest.skip(f"not a self-contained Django module ({EXPECTED_UNLOADABLE[name]})")
         pytest.fail(f"Django cannot load {name}: {exc}. Fix it or list it in EXPECTED_UNLOADABLE.")
+    allowed = () if catalog else EXPECTED_CHECK_ERRORS.get(name, ((), ""))[0]
+    _assert_checks(name, expected, allowed)
     _assert_same(_erdify(source, tmp_path), expected)
 
 
@@ -161,7 +190,7 @@ def test_snippet_matches_django(snippet: Snippet, tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("path", [_param(p.stem, p) for p in EDGE_CASES])
 def test_edge_case_matches_django(path: Path, tmp_path: Path) -> None:
-    _check(path.stem, path.read_text(encoding="utf-8"), tmp_path)
+    _check(path.stem, path.read_text(encoding="utf-8"), tmp_path, catalog=True)
 
 
 def test_known_lists_name_existing_snippets() -> None:
@@ -170,7 +199,7 @@ def test_known_lists_name_existing_snippets() -> None:
     listed = (
         set(KNOWN_DIFFERENCES)
         | set(DEGENERATE)
-        | set(SETTINGS_DEPENDENT)
+        | set(EXPECTED_CHECK_ERRORS)
         | set(EXPECTED_REJECTED)
         | set(EXPECTED_UNLOADABLE)
     )
@@ -179,12 +208,35 @@ def test_known_lists_name_existing_snippets() -> None:
 
 def test_most_sources_are_compared() -> None:
     """Guard the discovery and the lists: most sources must really be compared."""
-    listed = (
-        set(DEGENERATE)
-        | set(SETTINGS_DEPENDENT)
-        | set(EXPECTED_REJECTED)
-        | set(EXPECTED_UNLOADABLE)
-    )
+    listed = set(DEGENERATE) | set(EXPECTED_REJECTED) | set(EXPECTED_UNLOADABLE)
     compared = [s for s in SNIPPETS if s.id not in listed]
     assert len(compared) >= 40
     assert len(EDGE_CASES) >= 15
+
+
+def test_reference_reports_system_check_errors() -> None:
+    """The harness itself: an invalid model is reported, a valid one is clean."""
+    bad = django_ref.load(
+        "from django.db import models\n\n\n"
+        "class Item(models.Model):\n    name = models.CharField()\n"
+    )
+    assert bad.checks == ("fields.E120",)
+    good = django_ref.load(
+        "from django.db import models\n\n\n"
+        "class Item(models.Model):\n    name = models.CharField(max_length=5)\n"
+    )
+    assert good.checks == ()
+
+
+def test_reference_swaps_in_the_sources_user_model() -> None:
+    """A source with its own user model runs like a project that configured it."""
+    schema = django_ref.load(
+        "from django.conf import settings\n"
+        "from django.contrib.auth.models import AbstractUser\n"
+        "from django.db import models\n\n\n"
+        "class Member(AbstractUser):\n    pass\n\n\n"
+        "class Order(models.Model):\n"
+        "    buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)\n"
+    )
+    assert schema.checks == ()
+    assert schema.tables["Order"].columns["buyer_id"].fk == "gt_member.id"

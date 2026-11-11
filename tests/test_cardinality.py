@@ -97,7 +97,9 @@ class Account(models.Model):
 
 class Profile(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, unique=True)
-    referrer = models.ForeignKey(Account, on_delete=models.SET_NULL, null=True)
+    referrer = models.ForeignKey(
+        Account, on_delete=models.SET_NULL, null=True, related_name="referred"
+    )
     slug = models.SlugField(unique=True)
 """
 
@@ -291,7 +293,7 @@ class TestPrimaryKeyNotNullableAcrossSources:
         src = (
             "from django.db import models\n\n"
             "class Item(models.Model):\n"
-            "    code = models.CharField(primary_key=True, null=True)\n"
+            "    code = models.CharField(max_length=10, primary_key=True, null=True)\n"
         )
         assert not _field(_parse(tmp_path, src), "Item", "code").is_nullable
 
@@ -785,11 +787,11 @@ from django.db import models
 
 
 class A(models.Model):
-    b = models.OneToOneField("B", on_delete=models.CASCADE, primary_key=True)
+    b = models.OneToOneField("B", on_delete=models.CASCADE, primary_key=True, related_name="+")
 
 
 class B(models.Model):
-    a = models.OneToOneField(A, on_delete=models.CASCADE, primary_key=True)
+    a = models.OneToOneField(A, on_delete=models.CASCADE, primary_key=True, related_name="+")
 """
         entities = _parse(tmp_path, src)
         assert _field(entities, "A", "b_id").foreign_table == "app_b.a_id"
