@@ -14,7 +14,7 @@ skinparam class {
 
 ' Entities
 
-entity "restaurant_staff_link" as RestaurantStaffLink << (L, #AAFFAA) link >> {
+entity "restaurantstafflink" as RestaurantStaffLink << (L, #AAFFAA) link >> {
   primary_key(restaurant_id) : UUID
   primary_key(staff_id) : UUID
 }

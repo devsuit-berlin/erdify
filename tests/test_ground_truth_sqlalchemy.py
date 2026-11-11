@@ -62,29 +62,8 @@ SNIPPET_HEADERS = {"test_annotated_metadata.py": "HEADER"}
 
 # erdify output that differs from SQLAlchemy's schema, pending a fix.
 KNOWN_DIFFERENCES = {
-    # SQLModel's default table name is the lower-cased class name.
-    "fixtures/m2m_link_model": "#291: SQLModel default table name is cls.__name__.lower()",
-    "fixtures/edge_cases": "#291: SQLModel default table name is cls.__name__.lower()",
-    "sqlmodel_basics": "#291: SQLModel default table name is cls.__name__.lower()",
-    "test_cardinality.py::TestSharedPrimaryKey.SRC": (
-        "#291: SQLModel default table name is cls.__name__.lower()"
-    ),
-    # An explicit column name names the column.
-    "column_names": "#292: mapped_column('name') / name= names the column",
-    "sqlmodel_sa_column": "#292: sa_column=Column('name') / sa_column_kwargs name the column",
-    "test_cardinality.py::TestExplicitColumnName.test_inherited_column_name.src": (
-        "#292: mapped_column('name') names the column"
-    ),
-    "test_inheritance.py::TestBasePrecedence.test_explicit_column_name_follows_mro.src": (
-        "#292: mapped_column('name') names the column"
-    ),
     "joined_inheritance": "#293: a joined-table subclass has only its own table's columns",
     "single_table_inheritance": "#302: single-table subclass columns belong to the parent table",
-    "mapped_as_dataclass": "#294: `x: Mapped[T] = value` is not a column",
-    "test_annotated_metadata.py::test_assigned_plain_default_wins_over_metadata.entities": (
-        "#294: `x: Mapped[T] = value` is not a column"
-    ),
-    "enums": "#296: enum.IntEnum (and other Enum subclasses) are not drawn as enums",
     "imperative_table": "#297: a class mapped with __table__ = Table(...) is not drawn",
     "map_imperatively": "#306: classes mapped with registry.map_imperatively() are not drawn",
     "core_tables": "#305: Core tables other than association tables are not drawn",
@@ -139,7 +118,7 @@ LIMITATIONS = {
         "limitations.md: schema= is ignored"
     ),
     "bare_relationship": "limitations.md: relationships need an annotation",
-    "sqlmodel_sa_column_foreign_key": "limitations.md: foreign keys hidden in sa_column",
+    "sqlmodel_sa_column_foreign_key": "limitations.md: settings inside sa_column are not read",
     "test_column_annotations.py::TestSqlAlchemyDetection"
     ".test_classic_column_only_class_not_detected.source": (
         "limitations.md: classic Column() attributes are not read"

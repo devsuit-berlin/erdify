@@ -379,21 +379,22 @@ class TestExplicitColumnName:
     )
     def test_constraint_matches_db_column_name(self, tmp_path: Path, constraint: str):
         entities = _parse(tmp_path, self.SRC.format(constraint=constraint))
-        assert _field(entities, "Profile", "account").is_unique
-        assert 'Profile |o--|| Account : "account"' in generate_mermaid(entities)
+        assert _field(entities, "Profile", "account_id").is_unique
+        assert 'Profile |o--|| Account : "account_id"' in generate_mermaid(entities)
 
     def test_string_constraint_does_not_match_attribute_name(self, tmp_path: Path):
         """A string names the DB column; the attribute `account` has DB name account_id."""
         src = self.SRC.format(constraint="UniqueConstraint('account')")
-        assert not _field(_parse(tmp_path, src), "Profile", "account").is_unique
+        assert not _field(_parse(tmp_path, src), "Profile", "account_id").is_unique
 
     def test_db_name_collision_marks_only_the_owner(self, tmp_path: Path):
         src = self.SRC.format(constraint="UniqueConstraint('account')") + (
             "    legacy: Mapped[str] = mapped_column('account')\n"
         )
         entities = _parse(tmp_path, src)
-        assert _field(entities, "Profile", "legacy").is_unique
-        assert not _field(entities, "Profile", "account").is_unique
+        # `legacy` is the column named "account"; `account` is "account_id".
+        assert _field(entities, "Profile", "account").is_unique
+        assert not _field(entities, "Profile", "account_id").is_unique
 
     @pytest.mark.parametrize(
         "decl",
@@ -409,8 +410,8 @@ class TestExplicitColumnName:
         )
         src = "import sqlalchemy as sa\nfrom sqlalchemy import orm\n" + src
         entities = _parse(tmp_path, src)
-        assert _field(entities, "Profile", "account").is_unique
-        assert 'Profile |o--|| Account : "account"' in generate_mermaid(entities)
+        assert _field(entities, "Profile", "account_id").is_unique
+        assert 'Profile |o--|| Account : "account_id"' in generate_mermaid(entities)
 
     def test_subclass_override_drops_inherited_name(self, tmp_path: Path):
         src = (
@@ -436,7 +437,7 @@ class TestExplicitColumnName:
             "mapped_column('account_id', ForeignKey('account.id'))",
             "mapped_column('account_id', ForeignKey('account.id'), key='acct')",
         )
-        assert _field(_parse(tmp_path, src), "Profile", "account").is_unique
+        assert _field(_parse(tmp_path, src), "Profile", "account_id").is_unique
 
     def test_diamond_override_clears_inherited_name(self, tmp_path: Path):
         src = (
@@ -459,15 +460,15 @@ class TestExplicitColumnName:
         assert _field(_parse(tmp_path, src), "Profile", "account").is_unique
 
     @pytest.mark.parametrize(
-        "decl",
+        ("decl", "column"),
         [
-            "Field(sa_column=Column('acct', ForeignKey('account.id')))",
-            "Field(foreign_key='account.id', sa_column_kwargs={'name': 'acct'})",
-            # an explicit key wins over the name
-            "Field(foreign_key='account.id', sa_column_kwargs={'name': 'x', 'key': 'acct'})",
+            ("Field(sa_column=Column('acct', ForeignKey('account.id')))", "acct"),
+            ("Field(foreign_key='account.id', sa_column_kwargs={'name': 'acct'})", "acct"),
+            # an explicit key wins over the name for the constraint; the column is "x"
+            ("Field(foreign_key='account.id', sa_column_kwargs={'name': 'x', 'key': 'acct'})", "x"),
         ],
     )
-    def test_sqlmodel_explicit_column_name(self, tmp_path: Path, decl: str):
+    def test_sqlmodel_explicit_column_name(self, tmp_path: Path, decl: str, column: str):
         src = (
             "from sqlalchemy import Column, ForeignKey, UniqueConstraint\n"
             "from sqlmodel import Field, SQLModel\n\n"
@@ -478,11 +479,11 @@ class TestExplicitColumnName:
             "    id: int = Field(primary_key=True)\n"
             f"    account_id: int = {decl}\n"
         )
-        assert _field(_parse(tmp_path, src), "Profile", "account_id").is_unique
+        assert _field(_parse(tmp_path, src), "Profile", column).is_unique
 
     def test_column_name_is_not_a_default(self, tmp_path: Path):
         src = self.SRC.format(constraint="UniqueConstraint('account_id')")
-        assert _field(_parse(tmp_path, src), "Profile", "account").default_value is None
+        assert _field(_parse(tmp_path, src), "Profile", "account_id").default_value is None
 
     def test_inherited_column_name(self, tmp_path: Path):
         src = (
@@ -499,7 +500,7 @@ class TestExplicitColumnName:
             "    __table_args__ = (UniqueConstraint('account_id'),)\n"
             "    id: Mapped[int] = mapped_column(primary_key=True)\n"
         )
-        assert _field(_parse(tmp_path, src), "Profile", "account").is_unique
+        assert _field(_parse(tmp_path, src), "Profile", "account_id").is_unique
 
     def test_sqlmodel_positional_default_is_kept(self, tmp_path: Path):
         src = (

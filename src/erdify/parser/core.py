@@ -161,7 +161,7 @@ class ASTDatabaseParser:
         # caches) are fresh for each run.
         self._ctx = self._new_context()
         for class_node in self._all_classes.values():
-            if is_enum_class(class_node):
+            if is_enum_class(class_node, self._all_classes):
                 self._parse_enum_class(class_node)
                 continue
             source = self._classify_source(class_node)

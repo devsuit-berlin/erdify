@@ -68,6 +68,12 @@ class AnnotatedDialect(Dialect):
                         relationships[field_name] = rel
                         continue
 
+                # SQLAlchemy maps no column for `x: Mapped[T] = <plain value>`,
+                # not even with MappedAsDataclass: a default goes through
+                # mapped_column(default=...) (#294). `= None` counts as unset.
+                if not self.plain_value_is_column and not self._may_map_column(node.value):
+                    continue
+
                 field = self._parse_field(node)
                 if field:
                     fields[field_name] = field
@@ -75,12 +81,28 @@ class AnnotatedDialect(Dialect):
         return fields, relationships
 
     @staticmethod
+    def _may_map_column(value: ast.expr | None) -> bool:
+        """Whether SQLAlchemy may map a column for a ``Mapped`` attribute assigned ``value``.
+
+        Nothing, ``None`` or a call may; any other value (``= "a"``, ``= 3``,
+        ``= Status.NEW``) is a plain class attribute. Every call counts, since a
+        project helper may return ``mapped_column()``; a plain-value call such
+        as ``= datetime(2020, 1, 1)`` is therefore still drawn as a column.
+        """
+        return (
+            value is None
+            or (isinstance(value, ast.Constant) and value.value is None)
+            or isinstance(value, ast.Call)
+        )
+
+    @staticmethod
     def _declares_default(value: ast.expr | None) -> bool:
         """Whether the assigned value sets a default, even one that cannot be shown."""
-        if value is None:
+        # `= None` is unset in SQLAlchemy: a default in the Annotated metadata applies.
+        if value is None or (isinstance(value, ast.Constant) and value.value is None):
             return False
         if not is_call_to(value, "mapped_column"):
-            return True  # `x: Mapped[str] = "a"` (MappedAsDataclass)
+            return True  # another call (e.g. column_property()) is taken as setting its own
         return any(
             kw.arg in ("default", "default_factory", "insert_default") for kw in value.keywords
         )

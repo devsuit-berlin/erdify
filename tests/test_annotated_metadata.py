@@ -419,8 +419,8 @@ class Account(Base):
         assert _field(entities, "status").default_value is None
 
 
-def test_assigned_plain_default_wins_over_metadata(tmp_path: Path):
-    """MappedAsDataclass allows `= "x"` as the default; it wins over the metadata one."""
+def test_assigned_plain_value_maps_no_column(tmp_path: Path):
+    """`x: Mapped[T] = "x"` is a plain class attribute in SQLAlchemy, not a column (#294)."""
     entities = _parse(
         tmp_path,
         """
@@ -428,9 +428,42 @@ class Account(Base):
     __tablename__ = "account"
     id: Mapped[int] = mapped_column(primary_key=True)
     status: Mapped[Annotated[str, mapped_column(default="new")]] = "x"
+    note: Mapped[str | None] = None
 """,
     )
-    assert _field(entities, "status").default_value == "'x'"
+    assert [f.name for f in entities["Account"].fields] == ["id", "note"]
+
+
+def test_assigned_call_is_still_a_column(tmp_path: Path):
+    """Any call may return mapped_column() (a project helper), so it stays a column."""
+    entities = _parse(
+        tmp_path,
+        """
+def make_column():
+    return mapped_column()
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created: Mapped[str] = make_column()
+""",
+    )
+    assert [f.name for f in entities["Account"].fields] == ["id", "created"]
+
+
+def test_assigned_none_keeps_metadata_default(tmp_path: Path):
+    """`= None` is unset in SQLAlchemy: the default in the metadata applies."""
+    entities = _parse(
+        tmp_path,
+        """
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[Annotated[str | None, mapped_column(default="new")]] = None
+""",
+    )
+    assert _field(entities, "status").default_value == "'new'"
 
 
 class TestCopilotRound2:

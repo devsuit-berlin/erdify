@@ -1,5 +1,5 @@
 ---
-description: "What the AST parser cannot see in Python models — runtime-constructed classes, most of __table_args__, composite foreign keys, sa_column — and what to do about each."
+description: "What the AST parser cannot see in Python models — runtime-constructed classes, most of __table_args__, composite foreign keys, settings inside sa_column — and what to do about each."
 ---
 
 # Python Parsing Limitations
@@ -53,7 +53,8 @@ right instrument — see the [comparison](../comparison.md).
 ## Non-literal `__tablename__`
 
 The table name is read only when it is a string literal. Anything else falls
-back to the class-name conversion, **without a warning**:
+back to the default name (for SQLModel the lower-cased class name), **without a
+warning**:
 
 ```python
 class Computed(SQLModel, table=True):
@@ -106,14 +107,15 @@ exactly that.
 through `__table_args__` (above). A multi-column foreign key produces plain
 columns and no relationship line.
 
-## Foreign keys hidden in `sa_column`
+## Settings inside `sa_column`
 
-erdify reads the foreign key from `Field(foreign_key="team.id")`,
-`mapped_column(ForeignKey("team.id"))` and Django's relationship fields. It does
-**not** look inside a `sa_column=Column(...)`:
+With SQLModel's `Field(sa_column=Column(...))`, erdify reads only the column
+name (`Column("tag_code", ...)`). The other settings of that `Column` — a
+`ForeignKey(...)`, `unique=`, `primary_key=`, `nullable=` — are **not** read;
+declare them on `Field()` instead:
 
 ```python
-# not detected
+# foreign key not detected
 team_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("team.id")))
 
 # detected
@@ -282,7 +284,7 @@ names, so it can be wrong in both directions.
 | A base class named `AbstractUser` / `AbstractBaseUser` / `PermissionsMixin` imported from a non-Django module, while another scanned file imports Django's | Gets Django's fields: base classes are resolved by name across the scan. Relation targets, by contrast, follow each module's own imports |
 | Django table names longer than the database's identifier limit | Shown in full; Django truncates them per backend (e.g. 63 characters on PostgreSQL) |
 | Composite foreign keys | Not supported |
-| Foreign keys inside `sa_column=Column(...)` | Not detected |
+| Settings inside `sa_column=Column(...)` (foreign key, `unique=`, `nullable=`, …) | Not read; only the column name is |
 | Unannotated `x = relationship("Target")` | Not detected |
 | ninja-style `ModelSchema` (fields from an inner `Meta`/`Config`) | Detected and skipped with a warning, rather than drawn empty ([#171](https://github.com/devsuit-berlin/erdify/issues/171)) |
 | `attrs` / `msgspec` models | Not supported ([erdantic](../comparison.md) covers these) |

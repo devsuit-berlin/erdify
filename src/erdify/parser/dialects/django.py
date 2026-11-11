@@ -826,7 +826,7 @@ class DjangoDialect(Dialect):
             if (
                 enum_name
                 and enum_name in self.classes.all
-                and is_enum_class(self.classes.all[enum_name])
+                and is_enum_class(self.classes.all[enum_name], self.classes.all)
             ):
                 return enum_name
         return None

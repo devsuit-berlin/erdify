@@ -8,7 +8,24 @@ from ..annotations import is_call_to, is_mapped_annotation
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
 
 
-class SQLModelDialect(AnnotatedDialect):
+class TableDialect(AnnotatedDialect):
+    """Shared by SQLModel and SQLAlchemy: classes mapped to tables.
+
+    An explicit column name (``mapped_column("name")``, ``name=``,
+    ``Field(sa_column=Column("name"))``, ``sa_column_kwargs={"name": ...}``)
+    names the database column, so the column is drawn under it (#292).
+    """
+
+    def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
+        """Mark ``__table_args__`` uniques, then rename columns to their explicit names."""
+        # The unique constraints are matched by attribute name and key first.
+        super().finish(entity, class_node)
+        names = self._db_column_names(class_node, use_key=False)
+        for f in entity.fields:
+            f.name = names.get(f.name, f.name)
+
+
+class SQLModelDialect(TableDialect):
     """SQLModel: a class declared with ``table=True``."""
 
     kind = "sqlmodel"
@@ -20,8 +37,16 @@ class SQLModelDialect(AnnotatedDialect):
                     return True
         return False
 
+    def default_table_name(self, class_node: ast.ClassDef) -> str:
+        """SQLModel's default ``__tablename__``: the lower-cased class name (#291).
 
-class SQLAlchemyDialect(AnnotatedDialect):
+        ``HeroTeam`` -> ``heroteam``, not snake_case; foreign keys written as
+        ``foreign_key="heroteam.id"`` must find it.
+        """
+        return class_node.name.lower()
+
+
+class SQLAlchemyDialect(TableDialect):
     """SQLAlchemy 2.0: a concrete mapped class has ``__tablename__`` and ``Mapped[...]``.
 
     Mixins / abstract bases (``Mapped`` fields but no ``__tablename__``) are not
@@ -31,6 +56,7 @@ class SQLAlchemyDialect(AnnotatedDialect):
 
     kind = "sqlalchemy"
     reads_annotated_columns = True
+    plain_value_is_column = False
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         return has_tablename(class_node) and has_mapped_field(class_node)

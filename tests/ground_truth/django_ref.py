@@ -178,9 +178,11 @@ def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps, labels: l
     except FieldError as exc:
         raise Rejected(f"FieldError: {exc}") from exc
     enums = {
-        cls.__name__: tuple(m for m in cls.__members__ if m != "__empty__")
+        cls.__name__: members
         for cls in _classes(namespace.values(), namespace["__name__"])
         if issubclass(cls, enum.Enum)
+        # A base without members (a project's own choices base) has nothing to draw.
+        and (members := tuple(m for m in cls.__members__ if m != "__empty__"))
     }
     return Schema(tables=tables, enums=enums, checks=tuple(checks))
 
