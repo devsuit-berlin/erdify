@@ -1,5 +1,5 @@
 ---
-description: "Django-specific erdify parsing: foreign key mapping, field-to-type mapping, TextChoices enums, abstract bases, multi-table inheritance and Meta.db_table."
+description: "Django-specific erdify parsing: table names, foreign key mapping, db_column, field-to-type mapping, TextChoices enums, abstract bases, multi-table inheritance and the user model."
 ---
 
 # Django ORM
@@ -44,6 +44,11 @@ an abstract base, or the `to_field=` column, and takes that column's type
 (`foreign_table` in [JSON output](../usage/output-formats.md#json)). A target
 outside the parsed files is assumed to reference its implicit `id` (or the
 `to_field=` column), typed as Django's default auto field.
+
+A literal `db_column="..."` names the column, on any field including a foreign
+key, a primary key and an explicit `parent_link` (`author = ForeignKey(Author,
+db_column="writer")` is the column `writer`, not `author_id`). Foreign keys that
+reference a renamed column use its new name.
 
 ## Table names
 

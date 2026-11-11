@@ -46,7 +46,6 @@ KNOWN_DIFFERENCES = {
     # Edge-case catalog (tests/fixtures/django_edge_cases).
     "abstract_meta_inheritance": "#279: Meta.db_table inherited from an abstract base",
     "composite_primary_key": "#276: CompositePrimaryKey is not supported",
-    "db_column": "#275: db_column is ignored",
     "meta_constraints": "#274: a single-field Meta.constraints UniqueConstraint is not read",
 }
 

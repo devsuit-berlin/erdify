@@ -667,3 +667,151 @@ class Team(models.Model):
         entities = self._parse(tmp_path, self.REDEFINED_AFTER_USE)
         assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
         assert self._fk(entities, "Team", "group_id") == "shop_group.id"
+
+
+class TestDjangoDbColumn:
+    """#275: a literal db_column names the column, and FKs to it follow."""
+
+    def test_columns_and_references_use_db_column(self, tmp_path: Path):
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(
+            "from django.db import models\n\n\n"
+            "class Author(models.Model):\n"
+            '    key = models.IntegerField(primary_key=True, db_column="AUTHOR_ID")\n'
+            '    name = models.CharField(max_length=50, db_column="author_name")\n\n\n'
+            "class Book(models.Model):\n"
+            '    author = models.ForeignKey(Author, on_delete=models.CASCADE, db_column="writer")\n'
+            "    editor = models.ForeignKey(Author, on_delete=models.CASCADE, related_name='+')\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Author"].fields] == ["AUTHOR_ID", "author_name"]
+        book = {f.name: f.foreign_table for f in entities["Book"].fields}
+        assert book == {
+            "id": None,
+            "writer": "shop_author.AUTHOR_ID",
+            "editor_id": "shop_author.AUTHOR_ID",
+        }
+
+    REDECLARED = """
+from django.db import models
+
+
+class Owned(models.Model):
+    owner = models.ForeignKey("Person", on_delete=models.CASCADE, db_column="OWNER")
+
+    class Meta:
+        abstract = True
+
+
+class Person(models.Model):
+    name = models.CharField(max_length=10, db_column="first")
+    name = models.CharField(max_length=10)
+
+
+class Note(Owned):
+    owner = None
+    owner_id = models.IntegerField()
+"""
+
+    def test_overridden_and_removed_declarations_keep_their_own_column(self, tmp_path: Path):
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(self.REDECLARED, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Person"].fields] == ["id", "name"]
+        assert [f.name for f in entities["Note"].fields] == ["id", "owner_id"]
+
+    SHARED_TABLE = """
+from django.db import models
+
+
+class LegacyCustomer(models.Model):
+    number = models.IntegerField(primary_key=True, db_column="LEGACY_ID")
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class CustomerView(models.Model):
+    external_id = models.IntegerField(primary_key=True, db_column="LEGACY_ID")
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class Ticket(models.Model):
+    customer = models.ForeignKey(LegacyCustomer, on_delete=models.DO_NOTHING)
+    view = models.ForeignKey(CustomerView, on_delete=models.DO_NOTHING, related_name="+")
+"""
+
+    EMPTY_DB_COLUMN = """
+from django.db import models
+
+
+class Author(models.Model):
+    key = models.IntegerField(primary_key=True, db_column="")
+
+
+class Book(models.Model):
+    author = models.ForeignKey(Author, on_delete=models.CASCADE, db_column="")
+"""
+
+    def _fks(self, tmp_path: Path, source: str, model: str) -> dict[str, str | None]:
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(source, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return {f.name: f.foreign_table for f in entities[model].fields}
+
+    def test_models_sharing_a_table_keep_their_renames(self, tmp_path: Path):
+        fks = self._fks(tmp_path, self.SHARED_TABLE, "Ticket")
+        assert fks["customer_id"] == "crm_customer.LEGACY_ID"
+        assert fks["view_id"] == "crm_customer.LEGACY_ID"
+
+    def test_empty_db_column_is_unset(self, tmp_path: Path):
+        fks = self._fks(tmp_path, self.EMPTY_DB_COLUMN, "Book")
+        assert fks == {"id": None, "author_id": "shop_author.key"}
+
+    SHARED_TABLE_SAME_ATTRIBUTE = """
+from django.db import models
+
+
+class LegacyCustomer(models.Model):
+    id = models.IntegerField(primary_key=True, db_column="LEGACY_ID")
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class CustomerView(models.Model):
+    id = models.IntegerField(primary_key=True)
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class Archive(models.Model):
+    id = models.IntegerField(primary_key=True, db_column="ARCHIVE_ID")
+
+    class Meta:
+        managed = False
+        db_table = "crm_customer"
+
+
+class Ticket(models.Model):
+    legacy = models.ForeignKey(LegacyCustomer, on_delete=models.DO_NOTHING, related_name="+")
+    view = models.ForeignKey(CustomerView, on_delete=models.DO_NOTHING, related_name="+")
+    archive = models.ForeignKey(Archive, on_delete=models.DO_NOTHING, related_name="+")
+"""
+
+    def test_shared_table_renames_follow_the_target_model(self, tmp_path: Path):
+        fks = self._fks(tmp_path, self.SHARED_TABLE_SAME_ATTRIBUTE, "Ticket")
+        assert fks["legacy_id"] == "crm_customer.LEGACY_ID"
+        assert fks["view_id"] == "crm_customer.id"
+        assert fks["archive_id"] == "crm_customer.ARCHIVE_ID"

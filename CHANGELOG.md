@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `auth_user`, instead of a table named `auth_user_model`
   ([#278](https://github.com/devsuit-berlin/erdify/issues/278)).
 
+- A literal Django `db_column="..."` now names the column, including on
+  foreign keys, primary keys and explicit `parent_link` fields, and foreign
+  keys referencing a renamed column use its name
+  ([#275](https://github.com/devsuit-berlin/erdify/issues/275)).
+
 ### Output changes
 
 Every Django model without `Meta.db_table` changes its table name, in the
@@ -39,6 +44,9 @@ Django projects with a custom user model on Django's abstract user bases, or
 with relations to `auth.User` / `Group` / `Permission` / `ContentType` or to
 `settings.AUTH_USER_MODEL`, get new columns and different foreign-key targets.
 Regenerate the diagram once if you gate CI on `--check`.
+
+Django fields with `db_column` show that column name instead of the attribute
+name (`writer` instead of `author_id`), also as foreign-key targets.
 
 ## [1.4.2] - 2026-11-06
 
