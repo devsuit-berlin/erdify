@@ -172,6 +172,11 @@ class ASTDatabaseParser:
                     continue
                 self._parse_table_class(class_node, source)
 
+        # Cross-entity adjustments, once every entity is built (e.g. Django
+        # db_column renames that foreign keys elsewhere point at, #275).
+        for dialect in self._ctx.all_dialects():
+            dialect.finalize(self._entities)
+
         # Entities that are not classes, e.g. SQLAlchemy Core association
         # tables referenced by relationship(secondary=...) (#34).
         for dialect in self._ctx.all_dialects():

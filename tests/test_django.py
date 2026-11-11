@@ -667,3 +667,29 @@ class Team(models.Model):
         entities = self._parse(tmp_path, self.REDEFINED_AFTER_USE)
         assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
         assert self._fk(entities, "Team", "group_id") == "shop_group.id"
+
+
+class TestDjangoDbColumn:
+    """#275: a literal db_column names the column, and FKs to it follow."""
+
+    def test_columns_and_references_use_db_column(self, tmp_path: Path):
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(
+            "from django.db import models\n\n\n"
+            "class Author(models.Model):\n"
+            '    key = models.IntegerField(primary_key=True, db_column="AUTHOR_ID")\n'
+            '    name = models.CharField(max_length=50, db_column="author_name")\n\n\n'
+            "class Book(models.Model):\n"
+            '    author = models.ForeignKey(Author, on_delete=models.CASCADE, db_column="writer")\n'
+            "    editor = models.ForeignKey(Author, on_delete=models.CASCADE, related_name='+')\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Author"].fields] == ["AUTHOR_ID", "author_name"]
+        book = {f.name: f.foreign_table for f in entities["Book"].fields}
+        assert book == {
+            "id": None,
+            "writer": "shop_author.AUTHOR_ID",
+            "editor_id": "shop_author.AUTHOR_ID",
+        }

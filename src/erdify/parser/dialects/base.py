@@ -251,6 +251,13 @@ class Dialect:
 
     # -- finishing the entity -------------------------------------------------
 
+    def finalize(self, entities: Mapping[str, EntityInfo]) -> None:
+        """Adjust the dialect's entities once all entities are built. Nothing by default.
+
+        For changes that cross entities, e.g. renaming a column that other
+        entities' foreign keys reference.
+        """
+
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
         """Adjust the built entity: mark columns made unique by ``__table_args__``."""
         # Single-column UniqueConstraint / unique Index in __table_args__ (#218).

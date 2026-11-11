@@ -2,7 +2,7 @@
 
 import ast
 from pathlib import Path
-from typing import Dict, Iterable, List, Set, Tuple
+from typing import Dict, Iterable, List, Mapping, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import expr_name
@@ -103,6 +103,61 @@ class DjangoDialect(Dialect):
             if isinstance(db_table, str):
                 table_name = db_table
         return table_name
+
+    def finalize(self, entities: Mapping[str, EntityInfo]) -> None:
+        """Rename columns to their literal ``db_column`` (#275).
+
+        Fields are keyed by attribute name while entities are built (``author``
+        / ``author_id``), which inheritance, overrides and ``to_field`` lookups
+        rely on. Only now are the columns renamed, and every foreign key that
+        references a renamed column is pointed at the new name.
+        """
+        renames: Dict[str, Dict[str, str]] = {}
+        for name, entity in entities.items():
+            node = self.classes.all.get(name)
+            if entity.source == self.kind and node is not None:
+                renames[entity.table_name] = self._db_columns(node)
+        for table, columns in renames.items():
+            if not columns:
+                continue
+            entity = next(e for e in entities.values() if e.table_name == table)
+            for f in entity.fields:
+                f.name = columns.get(f.name, f.name)
+        for entity in entities.values():
+            if entity.source != self.kind:
+                continue
+            for f in entity.fields:
+                if f.foreign_table is None:
+                    continue
+                table, _, column = f.foreign_table.rpartition(".")
+                if column in renames.get(table, {}):
+                    f.foreign_table = f"{table}.{renames[table][column]}"
+
+    def _db_columns(self, class_node: ast.ClassDef) -> Dict[str, str]:
+        """Internal column name -> literal ``db_column`` for a model's fields.
+
+        The internal name is the attribute (``isbn``), or ``<attr>_id`` for a
+        ``ForeignKey`` / ``OneToOneField``. The declaration closest in the MRO
+        wins, like the field itself.
+        """
+        columns: Dict[str, str] = {}
+        seen: Set[str] = set()
+        for class_name in self.classes.mro(class_node.name) or [class_node.name]:
+            owner = self.classes.all.get(class_name)
+            if owner is None:
+                continue
+            for attr, field_type, call in self._django_field_calls(owner):
+                if attr in seen:
+                    continue
+                seen.add(attr)
+                db_column = next((k.value for k in call.keywords if k.arg == "db_column"), None)
+                if not (isinstance(db_column, ast.Constant) and isinstance(db_column.value, str)):
+                    continue
+                if field_type in ("ForeignKey", "OneToOneField"):
+                    columns[f"{attr}_id"] = db_column.value
+                elif field_type != "ManyToManyField":
+                    columns[attr] = db_column.value
+        return columns
 
     def default_table_name(self, class_node: ast.ClassDef) -> str:
         """Django's default ``<app_label>_<model name>`` (#271).
