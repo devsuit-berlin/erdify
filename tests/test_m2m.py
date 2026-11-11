@@ -114,8 +114,14 @@ class TestSQLAlchemySecondaryCoreTable:
         """A Core Table(...) with a three-FK composite PK is a link table (#118)."""
         (tmp_path / "models.py").write_text(
             "from sqlalchemy import Column, ForeignKey, Table\n"
-            "from sqlalchemy.orm import DeclarativeBase\n\n"
+            "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
             "class Base(DeclarativeBase):\n    pass\n\n"
+            "class Project(Base):\n    __tablename__ = 'project'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
+            "class Account(Base):\n    __tablename__ = 'account'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
+            "class Role(Base):\n    __tablename__ = 'role'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
             "project_member = Table(\n"
             '    "project_member",\n'
             "    Base.metadata,\n"

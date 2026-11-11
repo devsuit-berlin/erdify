@@ -66,6 +66,129 @@ def django_snippets() -> list[Snippet]:
     return found
 
 
+#: Words that mark a literal as a SQLAlchemy / SQLModel model source.
+SQLALCHEMY_WORDS = (
+    "from sqlalchemy",
+    "import sqlalchemy",
+    "from sqlmodel",
+    "import sqlmodel",
+    "DeclarativeBase",
+    "table=True",
+    "__tablename__",
+    "Mapped[",
+)
+SQLALCHEMY_IMPORTS = SQLALCHEMY_WORDS[:4]
+
+
+def sqlalchemy_snippets(headers: dict[str, str]) -> list[Snippet]:
+    """Sources in ``tests/test_*.py`` that define SQLAlchemy or SQLModel models.
+
+    A source is a string literal, or a concatenation (``HEADER + \"\"\"...\"\"\"``)
+    of literals and module-level string constants, folded into one source the
+    way the test builds it. It counts when it contains a ``class`` and one of
+    :data:`SQLALCHEMY_WORDS`, and no Django import (Django sources are
+    :func:`django_snippets`). A source without a SQLAlchemy / SQLModel import
+    is a body that a test helper prefixes: it gets the module-level constant
+    that ``headers`` names for its file prepended (``{"test_x.py": "HEADER"}``),
+    and stays as it is in a file without one.
+    """
+    found: list[Snippet] = []
+    for path in sorted(TESTS_DIR.glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        constants = _string_constants(tree)
+        header = constants.get(headers.get(path.name, ""), "")
+        seen: Counter[str] = Counter()
+        for scope, line, text in _sources(tree, (), constants):
+            if "class " not in text or not any(word in text for word in SQLALCHEMY_WORDS):
+                continue
+            if "from django" in text or "import django" in text:
+                continue
+            if not any(word in text for word in SQLALCHEMY_IMPORTS):
+                text = header + text
+            name = f"{path.name}::{'.'.join(scope) or '<module>'}"
+            seen[name] += 1
+            found.append(Snippet(name if seen[name] == 1 else f"{name}[{seen[name]}]", line, text))
+    return found
+
+
+def _string_constants(tree: ast.Module) -> dict[str, str]:
+    """Module-level names bound to a string (also a folded concatenation), last binding wins."""
+    constants: dict[str, str] = {}
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            value = _fold(node.value, constants)
+            if value is not None:
+                constants[node.targets[0].id] = value
+            else:
+                constants.pop(node.targets[0].id, None)
+    return constants
+
+
+def _fold(node: ast.expr, constants: dict[str, str]) -> str | None:
+    """The string ``node`` evaluates to, if it is literals and constants joined with ``+``."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name):
+        return constants.get(node.id)
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+        return constants.get(f"{node.value.id}.{node.attr}")  # self.X / cls.X
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _fold(node.left, constants), _fold(node.right, constants)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
+def _sources(
+    node: ast.AST, scope: tuple[str, ...], constants: dict[str, str]
+) -> Iterator[tuple[tuple[str, ...], int, str]]:
+    """Like :func:`_literals`, but a foldable concatenation is one source.
+
+    A concatenation that can't be folded (it involves a parameter or a call)
+    yields its literal parts on their own.
+    """
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.JoinedStr):
+            continue
+        if (
+            isinstance(child, ast.Expr)
+            and isinstance(child.value, ast.Constant)
+            and isinstance(child.value.value, str)
+        ):
+            continue  # docstrings
+        if isinstance(child, ast.ClassDef):
+            # A test class's string constants are reachable as self.X / cls.X.
+            members = _string_constants(ast.Module(body=child.body, type_ignores=[]))
+            inner = constants | {
+                f"{owner}.{name}": value
+                for name, value in members.items()
+                for owner in ("self", "cls")
+            }
+            yield from _sources(child, (*scope, child.name), inner)
+        elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield from _sources(child, (*scope, child.name), constants)
+        elif (
+            isinstance(child, ast.Assign)
+            and len(child.targets) == 1
+            and isinstance(child.targets[0], ast.Name)
+        ):
+            yield from _sources(child, (*scope, child.targets[0].id), constants)
+        elif isinstance(child, ast.BinOp) and isinstance(child.op, ast.Add):
+            text = _fold(child, constants)
+            if text is None:
+                yield from _sources(child, scope, constants)
+            else:
+                yield scope, child.lineno, text
+        elif isinstance(child, ast.Constant) and isinstance(child.value, str):
+            yield scope, child.lineno, child.value
+        else:
+            yield from _sources(child, scope, constants)
+
+
 def _literals(
     node: ast.AST, scope: tuple[str, ...]
 ) -> Iterator[tuple[tuple[str, ...], ast.Constant]]:

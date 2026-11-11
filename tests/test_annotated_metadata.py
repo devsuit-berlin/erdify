@@ -11,8 +11,8 @@ from erdify.parser import parse_models_directory
 HEADER = """
 from typing import Annotated, Optional, TypeAlias
 
-from sqlalchemy import ForeignKey, String
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -164,11 +164,12 @@ class Profile(Base):
 class Account(Base):
     __tablename__ = "account"
     id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id"))
     profile: Mapped["Profile"] = relationship()
 """,
         )
         assert ("Profile", "one", "profile") in entities["Account"].relationships
-        assert [f.name for f in entities["Account"].fields] == ["id"]
+        assert [f.name for f in entities["Account"].fields] == ["id", "profile_id"]
 
     def test_self_referencing_alias_does_not_loop(self, tmp_path: Path):
         entities = _parse(
@@ -403,6 +404,10 @@ class Account(Base):
         entities = _parse(
             tmp_path,
             """
+def make_status() -> str:
+    return "new"
+
+
 class Account(Base):
     __tablename__ = "account"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -434,7 +439,8 @@ class TestCopilotRound2:
             tmp_path,
             """
 intpk = Annotated[int, mapped_column(primary_key=True)]
-Base.type_annotation_map[intpk] = Integer
+TYPE_MAP: dict[object, object] = {}
+TYPE_MAP[intpk] = Integer
 
 
 class Account(Base):
@@ -462,6 +468,10 @@ class Account(Base):
         entities = _parse(
             tmp_path,
             """
+def make_status() -> str:
+    return "new"
+
+
 class Account(Base):
     __tablename__ = "account"
     id: Mapped[int] = mapped_column(primary_key=True)

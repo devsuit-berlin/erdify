@@ -73,6 +73,31 @@ without extra work.
 - CI repeats these tests on every supported Django series (`django` job in
   `test.yml`). Add a series there when Django releases one.
 
+`tests/test_ground_truth_sqlalchemy.py` is the SQLAlchemy / SQLModel
+counterpart (`tests/ground_truth/sqlalchemy_ref.py`): each source runs as a
+fresh module (SQLModel's shared registry is swapped per load), its mappers are
+configured, and the schema comes from `MetaData.tables` (Core association
+tables included) and the relationships from `sqlalchemy.inspect(Model)`
+(target, `"one"` / `"many"`, optionality, `back_populates`; `secondary=` and
+`backref=`-created sides are left out, as erdify draws them through the link
+table / doesn't declare them). Sources: the SQLAlchemy / SQLModel fixtures, the
+two docs examples, the **edge-case catalog** `tests/fixtures/sqlalchemy_edge_cases/`
+and every inline SQLAlchemy / SQLModel snippet (a `HEADER + """..."""`
+concatenation is folded into one source; `SNIPPET_HEADERS` names the header a
+test helper prepends to a bare body).
+
+- The same rules apply: a mismatch is an erdify bug (`KNOWN_DIFFERENCES` with
+  an issue), a documented limitation is listed in `LIMITATIONS` (both strict
+  xfails), and `EXPECTED_REJECTED` / `EXPECTED_UNLOADABLE` need a reason.
+- Test data must configure (SQLAlchemy's own validation, what
+  `configure_mappers()` does on first use): every relationship needs a foreign
+  key to join on. A deliberate configuration error is listed in
+  `EXPECTED_CHECK_ERRORS`; the fixtures, the docs examples and the catalog
+  always must configure.
+- New SQLAlchemy / SQLModel parsing support → add an edge-case module for it.
+- CI repeats these tests on every supported SQLAlchemy series (`sqlalchemy`
+  job in `test.yml`).
+
 ## Architecture
 
 erdify turns Python model files into ERD diagrams **without importing them or
