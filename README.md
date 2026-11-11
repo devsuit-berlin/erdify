@@ -98,7 +98,7 @@ The runnable sources live in [`docs/examples/`](https://github.com/devsuit-berli
 
 ## 📚 Documentation
 
-- [Installation](https://erdify.devsuit.io/installation/) — pip, uv, pipx, or run with uvx
+- [Installation](https://erdify.devsuit.io/installation/) — pip, uv, pipx, or run with uvx; [supported Python and framework versions](https://erdify.devsuit.io/installation/#supported-framework-versions)
 - [CLI & Python API](https://erdify.devsuit.io/usage/cli/) — all CLI options, running as a module, and the Python API
 - [Output Formats](https://erdify.devsuit.io/usage/output-formats/) — PlantUML & Mermaid, `--format`, `--inject` into Markdown, output naming
 - [Filtering & Key Inference](https://erdify.devsuit.io/usage/filtering/) — `--exclude`, `--exclude-paths`, `--include`, `--sources`, `--infer-keys`

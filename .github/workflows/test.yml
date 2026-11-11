@@ -153,16 +153,25 @@ jobs:
   # The SQLAlchemy / SQLModel ground-truth tests
   # (tests/test_ground_truth_sqlalchemy.py) execute every SQLAlchemy and
   # SQLModel model source, configure its mappers and compare the metadata with
-  # erdify's parse. The `test` matrix runs the locked SQLAlchemy; this job
-  # repeats those tests on each supported series, newest patch release first
-  # (`uv run --with`, like the Django job).
+  # erdify's parse; tests/test_fixtures_valid.py checks the fixtures import.
+  # The `test` matrix runs the locked versions; this job repeats those tests on
+  # each supported SQLAlchemy series (newest patch release, `uv run --with`,
+  # like the Django job) and on the oldest supported SQLModel, 0.0.22 (which
+  # requires SQLAlchemy < 2.1) as well as the locked one. Keep the supported
+  # versions in docs/installation.md in sync with this matrix.
   sqlalchemy:
-    name: SQLAlchemy ${{ matrix.sqlalchemy }} ground truth
+    name: SQLAlchemy ${{ matrix.sqlalchemy }} / SQLModel ${{ matrix.sqlmodel }} ground truth
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        sqlalchemy: ["2.0", "2.1"]
+        include:
+          - { sqlalchemy: "2.0", sqlmodel: "0.0.22" }
+          - { sqlalchemy: "2.0", sqlmodel: "locked" }
+          - { sqlalchemy: "2.1", sqlmodel: "locked" }
+    env:
+      SQLALCHEMY: ${{ matrix.sqlalchemy }}
+      SQLMODEL: ${{ matrix.sqlmodel }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -177,17 +186,26 @@ jobs:
           python-version: "3.13"
       - name: Install dependencies
         run: uv sync --frozen
-      - name: Assert the matrix SQLAlchemy is in use
-        env:
-          EXPECTED: ${{ matrix.sqlalchemy }}
-        run: >-
-          uv run --with "sqlalchemy~=${{ matrix.sqlalchemy }}.0" python -c
-          "import sqlalchemy, os; v = '.'.join(sqlalchemy.__version__.split('.')[:2]);
-          assert v == os.environ['EXPECTED'], sqlalchemy.__version__; print(sqlalchemy.__version__)"
-      - name: Run the SQLAlchemy ground-truth tests
-        run: >-
-          uv run --with "sqlalchemy~=${{ matrix.sqlalchemy }}.0"
-          pytest tests/test_ground_truth_sqlalchemy.py -rsx
+      - name: Assert the matrix versions are in use
+        run: |
+          extra=(--with "sqlalchemy~=$SQLALCHEMY.0")
+          [[ "$SQLMODEL" != locked ]] && extra+=(--with "sqlmodel==$SQLMODEL")
+          # On a `locked` leg, SQLModel must be the lockfile's version.
+          uv run "${extra[@]}" python -c "
+          import os, sqlalchemy, sqlmodel, tomllib
+          print('SQLAlchemy', sqlalchemy.__version__, '/ SQLModel', sqlmodel.__version__)
+          assert sqlalchemy.__version__.startswith(os.environ['SQLALCHEMY'] + '.')
+          expected = os.environ['SQLMODEL']
+          if expected == 'locked':
+              lock = tomllib.load(open('uv.lock', 'rb'))
+              expected = next(p['version'] for p in lock['package'] if p['name'] == 'sqlmodel')
+          assert sqlmodel.__version__ == expected, (sqlmodel.__version__, expected)
+          "
+      - name: Run the SQLAlchemy / SQLModel ground-truth tests
+        run: |
+          extra=(--with "sqlalchemy~=$SQLALCHEMY.0")
+          [[ "$SQLMODEL" != locked ]] && extra+=(--with "sqlmodel==$SQLMODEL")
+          uv run "${extra[@]}" pytest tests/test_ground_truth_sqlalchemy.py tests/test_fixtures_valid.py -rsx
 
   # README coverage badge. Datadog exposes no public badge endpoint, so the
   # percentage is published as a shields.io endpoint payload at

@@ -12,6 +12,9 @@ parsing details see [Django ORM](django.md).
 erdify also supports SQL DDL files (`.sql`) via the optional `erdify[sql]` extra —
 see [SQL DDL](sql.md) for details.
 
+The framework versions erdify follows, and which of them CI checks, are listed
+under [Supported framework versions](../installation.md#supported-framework-versions).
+
 ## One Schema, Five Frameworks
 
 The snippets below all describe the **same** `User` / `Order` schema — only the

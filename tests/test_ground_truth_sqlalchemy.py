@@ -25,6 +25,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import sqlmodel
+from packaging.version import Version
 
 from tests.ground_truth import sqlalchemy_ref
 from tests.ground_truth.schema import Schema, from_erdify
@@ -82,11 +84,6 @@ KNOWN_DIFFERENCES = {
     "test_annotated_metadata.py::test_assigned_plain_default_wins_over_metadata.entities": (
         "#294: `x: Mapped[T] = value` is not a column"
     ),
-    "sqlmodel_annotated_field": "#295: SQLModel applies Field() from Annotated metadata",
-    "test_annotated_metadata.py::TestMergeLikeSqlAlchemy"
-    ".test_sqlmodel_field_in_metadata_is_ignored": (
-        "#295: SQLModel applies Field() from Annotated metadata"
-    ),
     "enums": "#296: enum.IntEnum (and other Enum subclasses) are not drawn as enums",
     "imperative_table": "#297: a class mapped with __table__ = Table(...) is not drawn",
     "mixins": "#298: a relationship from a @declared_attr on a mixin is not read",
@@ -99,6 +96,30 @@ KNOWN_DIFFERENCES = {
     ),
     "test_inheritance.py::TestInconsistentHierarchy.test_self_named_base.src": (
         "#300: a model extending an earlier class of the same name inherits its fields"
+    ),
+}
+
+# The oldest supported SQLModel is 0.0.22 (docs/installation.md); CI runs these
+# tests on it and on the locked release. Where SQLModel itself changed, the
+# expected schema depends on the installed version.
+SQLMODEL_VERSION = Version(sqlmodel.__version__).release[:3]  # 0.0.49rc1 -> (0, 0, 49)
+
+# Catalog modules for a SQLModel feature, skipped before the release that added it.
+REQUIRES_SQLMODEL = {
+    "sqlmodel_annotated_field": ((0, 0, 32), "Field() in Annotated metadata"),
+}
+
+# Known differences that exist only from a SQLModel release on (before it,
+# erdify matches SQLModel): name -> (release, reason).
+SQLMODEL_DIFFERENCES = {
+    "sqlmodel_annotated_field": (
+        (0, 0, 32),
+        "#295: SQLModel 0.0.32+ applies Field() from Annotated metadata",
+    ),
+    "test_annotated_metadata.py::TestMergeLikeSqlAlchemy"
+    ".test_sqlmodel_field_in_metadata_is_ignored": (
+        (0, 0, 32),
+        "#295: SQLModel 0.0.32+ applies Field() from Annotated metadata",
     ),
 }
 
@@ -231,8 +252,15 @@ SNIPPETS = sqlalchemy_snippets(SNIPPET_HEADERS)
 def _param(name: str, value: object) -> object:
     marks = []
     reason = KNOWN_DIFFERENCES.get(name) or LIMITATIONS.get(name)
+    since, sqlmodel_reason = SQLMODEL_DIFFERENCES.get(name, ((), ""))
+    if not reason and since and SQLMODEL_VERSION >= since:
+        reason = sqlmodel_reason
     if reason:
         marks.append(pytest.mark.xfail(reason=reason, raises=AssertionError, strict=True))
+    required, feature = REQUIRES_SQLMODEL.get(name, ((), ""))
+    if required and SQLMODEL_VERSION < required:
+        release = ".".join(map(str, required))
+        marks.append(pytest.mark.skip(reason=f"{feature} needs SQLModel {release}+"))
     return pytest.param(value, id=name, marks=marks)
 
 
@@ -308,12 +336,16 @@ def test_known_lists_name_existing_sources() -> None:
     names = {s.id for s in SNIPPETS} | {p.stem for p in EDGE_CASES} | set(MODULES)
     listed = (
         set(KNOWN_DIFFERENCES)
+        | set(SQLMODEL_DIFFERENCES)
+        | set(REQUIRES_SQLMODEL)
         | set(LIMITATIONS)
         | set(EXPECTED_CHECK_ERRORS)
         | set(EXPECTED_REJECTED)
         | set(EXPECTED_UNLOADABLE)
     )
     assert not listed - names
+    # A version-gated difference listed unconditionally too would lose its gate.
+    assert not set(SQLMODEL_DIFFERENCES) & (set(KNOWN_DIFFERENCES) | set(LIMITATIONS))
 
 
 def test_most_sources_are_compared() -> None:
