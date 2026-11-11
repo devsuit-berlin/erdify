@@ -99,6 +99,11 @@ def load(source: str) -> Schema:
             }
             return _schema(module, classes, registries)
     finally:
+        # Also when the source failed partway: classes it mapped already must
+        # not stay in a live registry.
+        registries |= {
+            c.registry for c in _classes(module) if isinstance(vars(c).get("registry"), registry)
+        }
         for reg in registries:
             reg.dispose()
         del sys.modules[MODULE]
@@ -126,6 +131,9 @@ def _schema(module: types.ModuleType, classes: list[type], registries: set[regis
     }
     tables = {m.class_.__name__: _table(m.local_table, m if not checks else None) for m in mappers}
     mapped_tables = {m.local_table for m in mappers}
+    # Relationships can't be inspected when configuring failed; such a source
+    # (EXPECTED_CHECK_ERRORS) then keeps only Core tables that are
+    # association tables.
     secondaries = {
         r.secondary
         for m in mappers

@@ -101,7 +101,7 @@ def sqlalchemy_snippets(headers: dict[str, str]) -> list[Snippet]:
         for scope, line, text in _sources(tree, (), constants):
             if "class " not in text or not any(word in text for word in SQLALCHEMY_WORDS):
                 continue
-            if "django" in text:
+            if "from django" in text or "import django" in text:
                 continue
             if not any(word in text for word in SQLALCHEMY_IMPORTS):
                 text = header + text
