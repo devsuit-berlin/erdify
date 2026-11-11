@@ -307,8 +307,22 @@ class TestDjangoDefaultTableNames:
         assert self._tables(tmp_path) == {"OrderItem": "models_orderitem"}
 
     def test_models_directory_above_the_project_is_ignored(self, tmp_path: Path):
-        self._app(tmp_path / "models" / "project", "shop")
-        assert self._tables(tmp_path / "models" / "project") == {"OrderItem": "shop_orderitem"}
+        project = tmp_path / "models" / "project"
+        self._app(project, "shop")
+        self._package(project, project / "shop")
+        assert self._tables(project) == {"OrderItem": "shop_orderitem"}
+
+    def test_apps_py_above_the_package_is_ignored(self, tmp_path: Path):
+        (tmp_path / "apps.py").write_text(
+            "from django.apps import AppConfig\n\n\n"
+            "class Unrelated(AppConfig):\n"
+            '    label = "unrelated"\n',
+            encoding="utf-8",
+        )
+        project = tmp_path / "project"
+        self._app(project, "shop")
+        self._package(project, project / "shop")
+        assert self._tables(project) == {"OrderItem": "shop_orderitem"}
 
     def test_app_config_attributes_from_a_local_base(self, tmp_path: Path):
         apps_py = (

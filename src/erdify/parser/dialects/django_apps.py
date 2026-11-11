@@ -51,12 +51,17 @@ def app_package(model_file: Path) -> Path:
 
 
 def _package_chain(start: Path) -> List[Path]:
-    """``start`` and its ancestors while the current one is a Python package."""
+    """``start`` and those of its ancestors that are Python packages.
+
+    The walk stops below the first ancestor without an ``__init__.py``, so a
+    directory outside the package (an unrelated ``apps.py`` or ``models``
+    directory above the project) is never considered.
+    """
     chain = [start]
-    directory = start
+    directory = start.parent
     while (directory / "__init__.py").is_file() and directory.parent != directory:
-        directory = directory.parent
         chain.append(directory)
+        directory = directory.parent
     return chain
 
 
