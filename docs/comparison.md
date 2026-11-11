@@ -73,9 +73,12 @@ them is often the thing you want to find.
 - **You need the deployed schema, not the code.** eralchemy against a database
   URL, or `db2dbml`.
 - **Your models are attrs or msgspec.** erdantic supports both; erdify does not.
-- **Your Django models rely heavily on runtime configuration** — swappable user
-  models, apps assembled from settings, models registered by third-party
-  packages. `graph_models` sees all of it because Django is actually loaded.
+- **Your Django models rely heavily on runtime configuration** — apps assembled
+  from settings, models registered by third-party packages (e.g.
+  django-simple-history's `Historical*` tables), an `AUTH_USER_MODEL` erdify
+  can't infer. `graph_models` sees all of it because Django is actually loaded.
+  (erdify does handle custom user models on Django's abstract user bases and
+  relations to `django.contrib` models.)
 - **You want to design a schema before writing it.** DBML is a DSL you author by
   hand, and dbdiagram.io gives you a visual editor. It is a modelling tool, not
   a documentation generator: it does not read Python at all.

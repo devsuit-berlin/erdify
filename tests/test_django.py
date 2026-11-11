@@ -458,8 +458,8 @@ class Order(models.Model):
             "date_joined",
         ]
         assert sorted(member.relationships) == [
-            ("Group", "many_to_many", "groups"),
-            ("Permission", "many_to_many", "user_permissions"),
+            ("auth.Group", "many_to_many", "groups"),
+            ("auth.Permission", "many_to_many", "user_permissions"),
         ]
 
     def test_auth_user_model_resolves_to_the_only_custom_user(self, tmp_path: Path):
@@ -506,3 +506,41 @@ class Member(AbstractUser):
     pass
 """
         assert "Member" not in self._parse(tmp_path, source)
+
+    @pytest.mark.parametrize(
+        "child",
+        [
+            "class StaffMember(Member):\n    class Meta:\n        proxy = True\n",
+            "class Customer(Member):\n    loyalty = models.IntegerField()\n",
+        ],
+    )
+    def test_auth_user_model_ignores_proxy_and_child_models(self, tmp_path: Path, child: str):
+        source = self.CUSTOM_USER.replace(
+            "class Member(AbstractUser):\n    pass\n",
+            "class Member(AbstractUser):\n    pass\n\n\n" + child,
+        )
+        entities = self._parse(tmp_path, source)
+        assert self._fk(entities, "Order", "buyer_id") == "shop_member.id"
+
+    def test_project_model_named_group_gets_no_contrib_edge(self, tmp_path: Path):
+        source = (
+            self.CUSTOM_USER
+            + "\n\nclass Group(models.Model):\n    name = models.CharField(max_length=20)\n"
+        )
+        entities = self._parse(tmp_path, source)
+        out = PlantUMLGenerator(entities, {}).generate()
+        assert "Group" in entities
+        assert '"groups"' not in out
+
+    def test_raw_types_show_auto_field_for_contrib_targets(self, tmp_path: Path):
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(
+            "from django.db import models\n\n\n"
+            "class Note(models.Model):\n"
+            '    author = models.ForeignKey("auth.User", on_delete=models.CASCADE)\n',
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, django_raw_types=True)
+        fk = next(f for f in entities["Note"].fields if f.name == "author_id")
+        assert (fk.foreign_table, fk.type_str) == ("auth_user.id", "AutoField")

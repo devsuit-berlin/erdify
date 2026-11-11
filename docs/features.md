@@ -27,7 +27,7 @@ framework is detected and a worked example, see the
 | Markdown Embed | ✅ | `--inject` into Markdown between `erdify:start`/`erdify:end` markers |
 | SQLModel | ✅ | `Field()` / `Relationship()` |
 | SQLAlchemy 2.0 | ✅ | `Mapped[...]` (also qualified, `orm.Mapped[...]`, and `WriteOnlyMapped` / `DynamicMapped`) / `mapped_column()`, also inside `Annotated[...]` metadata and through module-level column type aliases (`intpk = Annotated[int, mapped_column(primary_key=True)]`) |
-| Django ORM | ✅ | `models.Model`, `ForeignKey` / `OneToOneField` / `ManyToManyField` |
+| Django ORM | ✅ | `models.Model`, `ForeignKey` / `OneToOneField` / `ManyToManyField`; default table names `<app_label>_<model>`; custom user models on `AbstractUser` / `AbstractBaseUser` + `PermissionsMixin` get the inherited fields; relations to `auth.User`, `settings.AUTH_USER_MODEL` and other `django.contrib` models reference their real tables |
 | Pydantic | ✅ | `BaseModel` subclasses, nested refs as relationships; `--base-classes` adds bases defined outside the scan (e.g. django-ninja's `Schema`) |
 | Dataclass | ✅ | `@dataclass`, nested refs as relationships |
 | SQL DDL | ✅ | via `erdify[sql]` (sqlglot); `CREATE TABLE` + FK/PK + enums; `CREATE INDEX` is JSON-only (see Indexes note above) |

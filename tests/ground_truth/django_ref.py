@@ -158,6 +158,18 @@ def table_name(model: type[models.Model]) -> str:
     return str(model._meta.db_table)
 
 
+def _model_ref(model: type[models.Model]) -> str:
+    """How erdify names a relation target: the class, qualified outside the source's app.
+
+    A contrib model (``auth.Group``) is never drawn, so erdify keeps its app
+    label and a project model with the same class name can't take its edges.
+    """
+    meta = model._meta
+    return (
+        meta.object_name if meta.app_label == APP_LABEL else f"{meta.app_label}.{meta.object_name}"
+    )
+
+
 def _meta_unique(model: type[models.Model]) -> set[Any]:
     """Fields made unique on their own by ``Meta`` rather than ``unique=True``.
 
@@ -200,7 +212,7 @@ def _table(model: type[models.Model]) -> Table:
             fk=fk,
         )
     m2m = frozenset(
-        (f.name, f.related_model._meta.concrete_model.__name__)
+        (f.name, _model_ref(f.related_model._meta.concrete_model))
         for f in meta.local_many_to_many
         if f.remote_field.through._meta.auto_created
     )

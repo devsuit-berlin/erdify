@@ -603,7 +603,9 @@ class DjangoDialect(Dialect):
         cached = self._target_column_cache.get(key)
         if cached is not None:
             return cached
-        default = (to_field or "id", self._django_display_type("BigAutoField"))
+        # contrib apps (auth, contenttypes) keep AutoField primary keys.
+        auto_field = "AutoField" if target in CONTRIB_TABLES else "BigAutoField"
+        default = (to_field or "id", self._django_display_type(auto_field))
         node = self.classes.all.get(target)
         if node is None or key in stack:
             return default
@@ -790,8 +792,9 @@ class DjangoDialect(Dialect):
             return None
         if any(keyword.arg == "through" for keyword in call.keywords):
             return None
-        # A contrib target ("auth.Group") is named by its class, like any model.
-        return _Rel(target.rpartition(".")[2], "many_to_many", name, False)
+        # A contrib target stays qualified ("auth.Group"): contrib models aren't
+        # drawn, and a project model sharing the class name must not get the edge.
+        return _Rel(target, "many_to_many", name, False)
 
     def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
         """Resolve a relationship field's target from its first positional or ``to=`` arg.
@@ -862,11 +865,15 @@ class DjangoDialect(Dialect):
         itself lives in ``settings.py``, which erdify doesn't read.
         """
         if self._user_model_name is None:
+            # Root user models only: a proxy or multi-table child of the user
+            # model builds on AbstractBaseUser too, but is not another candidate.
             users = [
                 name
                 for name, node in self.classes.all.items()
                 if self.ctx.file_of(node) is not None
                 and self._is_concrete_django_model(name)
+                and not self._meta_flag(node, "proxy")
+                and not self._concrete_parents(node)
                 and self._builds_on(node, "AbstractBaseUser", set())
             ]
             self._user_model_name = users[0] if len(users) == 1 else DEFAULT_USER_MODEL
