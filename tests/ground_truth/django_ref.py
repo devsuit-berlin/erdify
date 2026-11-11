@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import enum
 import types
+from unittest import mock
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
@@ -118,7 +119,8 @@ def load(source: str) -> Schema:
     except SyntaxError as exc:
         raise Unloadable(f"SyntaxError: {exc}") from exc
     user_model = _user_model(tree)
-    swap = override_settings(AUTH_USER_MODEL=f"{APP_LABEL}.{user_model}") if user_model else None
+    user_label = f"{_model_app_label(tree, user_model)}.{user_model}" if user_model else None
+    swap = override_settings(AUTH_USER_MODEL=user_label) if user_label else None
     labels = sorted(_app_labels(tree) - {APP_LABEL, *CONTRIB})
     with isolate_apps(APP, *CONTRIB.values(), *map(_label_config, labels)) as registry:
         # The contrib modules were imported (and their models registered) by
@@ -126,12 +128,20 @@ def load(source: str) -> Schema:
         for label in CONTRIB:
             for model in global_apps.get_app_config(label).get_models(include_auto_created=True):
                 registry.all_models[label][model._meta.model_name] = model
+        # get_user_model() looks the user model up in the global registry,
+        # which doesn't hold the source's models: resolve it in the isolated one.
+        lookup = mock.patch(
+            "django.contrib.auth.get_user_model",
+            lambda: registry.get_model(settings.AUTH_USER_MODEL),
+        )
         if swap is not None:
             swap.enable()
+            lookup.start()
         try:
             return _load(tree, namespace, registry, [APP_LABEL, *labels])
         finally:
             if swap is not None:
+                lookup.stop()
                 swap.disable()
             # The isolated registry wrote reverse-relation caches into the
             # shared contrib models' _meta (auth.User, ContentType, ...).
@@ -236,6 +246,25 @@ MODEL_CHECKS = (
 )
 
 USER_BASES = {"AbstractUser", "AbstractBaseUser"}
+
+
+def _model_app_label(tree: ast.Module, name: str) -> str:
+    """The app label the source's class ``name`` is registered under.
+
+    Its own literal ``Meta.app_label``, else one inherited from a base of the
+    source (an abstract base's ``Meta``), else the source's app.
+    """
+    classes = {n.name: n for n in tree.body if isinstance(n, ast.ClassDef)}
+    pending, seen = [name], set()
+    while pending:
+        node = classes.get(pending.pop(0))
+        if node is None or node.name in seen:
+            continue
+        seen.add(node.name)
+        for label in _app_labels(ast.Module(body=[node], type_ignores=[])):
+            return label
+        pending.extend(getattr(b, "id", "") for b in node.bases)
+    return APP_LABEL
 
 
 def _user_model(tree: ast.Module) -> str | None:

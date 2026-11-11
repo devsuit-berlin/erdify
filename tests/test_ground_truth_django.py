@@ -355,3 +355,45 @@ def test_reference_finds_the_sources_user_model(bodies: list[str], user: str | N
 
     source = "\n\n".join(bodies)
     assert django_ref._user_model(ast.parse(source)) == user
+
+
+USER_IN_OTHER_APP = """
+from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+
+
+class Member(AbstractUser):
+    class Meta:
+        app_label = "sales"
+
+
+class Order(models.Model):
+    buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+"""
+
+USER_VIA_GET_USER_MODEL = """
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+
+
+class Member(AbstractUser):
+    pass
+
+
+class Order(models.Model):
+    buyer = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
+"""
+
+
+def test_reference_swaps_in_a_user_model_of_another_app() -> None:
+    schema = django_ref.load(USER_IN_OTHER_APP)
+    assert schema.checks == ()
+    assert schema.tables["Order"].columns["buyer_id"].fk == "sales_member.id"
+
+
+def test_reference_resolves_get_user_model_in_the_isolated_registry() -> None:
+    schema = django_ref.load(USER_VIA_GET_USER_MODEL)
+    assert schema.checks == ()
+    assert schema.tables["Order"].columns["buyer_id"].fk == "gt_member.id"
