@@ -116,6 +116,7 @@ erdify/
 │   └── sql_parser.py    # SQL DDL frontend (optional, erdify[sql] / sqlglot)
 ├── tests/
 │   ├── fixtures/        # Test model files (one dir per scenario/framework)
+│   ├── ground_truth/    # Loads model sources with the real framework for comparison
 │   ├── conftest.py      # Pytest fixtures
 │   └── test_*.py        # Unit + integration tests
 └── pyproject.toml
@@ -159,6 +160,25 @@ For integration tests, we use golden files (expected output files):
 ```bash
 # If you intentionally change the output format, update golden files:
 erdify tests/fixtures/ecommerce --title 'E-Commerce ERD' -o tests/fixtures/ecommerce/expected.puml
+```
+
+### Ground-Truth Tests
+
+Golden files only show that the output didn't change. The ground-truth tests
+check that it is *right*: `tests/test_ground_truth_django.py` loads every Django
+model source the suite uses (fixtures, `docs/examples/django`, the edge-case
+catalog in `tests/fixtures/django_edge_cases/`, and every inline snippet in
+`tests/test_*.py`) with Django itself and compares the schema Django builds with
+erdify's parse. A Django snippet you add to a test is picked up automatically.
+If it shows a real erdify bug you aren't fixing in the same change, open an
+issue and list the source in `KNOWN_DIFFERENCES`. A source Django can't load or
+rejects must be listed in `EXPECTED_UNLOADABLE` / `EXPECTED_REJECTED`; nothing is
+skipped silently.
+
+```bash
+uv run pytest tests/test_ground_truth_django.py -rsx
+# Against another Django series:
+uv run --with "django~=6.1.0" pytest tests/test_ground_truth_django.py
 ```
 
 ### Adding New Test Fixtures
