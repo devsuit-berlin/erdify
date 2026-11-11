@@ -131,9 +131,13 @@ def _schema(module: types.ModuleType, classes: list[type], registries: set[regis
         for m in reg.mappers
         if m.class_.__module__ == MODULE and _has_own_table(m)
     ]
-    metadatas = {reg.metadata for reg in registries} | {
-        v for v in vars(module).values() if isinstance(v, MetaData)
-    }
+    # Every MetaData the source can reach: the registries', module-level ones,
+    # and the one of each module-level Table (also an inline MetaData()).
+    metadatas = (
+        {reg.metadata for reg in registries}
+        | {v for v in vars(module).values() if isinstance(v, MetaData)}
+        | {v.metadata for v in vars(module).values() if isinstance(v, Table)}
+    )
     tables = {m.class_.__name__: _table(m.local_table, m if not checks else None) for m in mappers}
     mapped_tables = {m.local_table for m in mappers}
     names = {id(v): k for k, v in vars(module).items() if isinstance(v, Table)}
