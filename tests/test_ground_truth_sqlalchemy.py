@@ -77,6 +77,7 @@ KNOWN_DIFFERENCES = {
         "#292: mapped_column('name') names the column"
     ),
     "joined_inheritance": "#293: a joined-table subclass has only its own table's columns",
+    "single_table_inheritance": "#302: single-table subclass columns belong to the parent table",
     "mapped_as_dataclass": "#294: `x: Mapped[T] = value` is not a column",
     "test_annotated_metadata.py::test_assigned_plain_default_wins_over_metadata.entities": (
         "#294: `x: Mapped[T] = value` is not a column"
@@ -107,6 +108,13 @@ LIMITATIONS = {
     "classic_columns": "limitations.md: classic Column() attributes are not read",
     "composite_foreign_key": "limitations.md: composite foreign keys are not read",
     "schema_qualified": "limitations.md: schema= is ignored",
+    # SQLALCHEMY_TABLE_ARGS puts one model in a schema ("app").
+    "test_cardinality.py::SQLALCHEMY_TABLE_ARGS": "limitations.md: schema= is ignored",
+    "test_cardinality.py::TestNullableForeignKey.test_explicit_nullable_overrides_annotation"
+    ".src": "limitations.md: schema= is ignored",
+    "test_cardinality.py::TestNullableForeignKey.test_nullable_none_keeps_annotation.src": (
+        "limitations.md: schema= is ignored"
+    ),
     "bare_relationship": "limitations.md: relationships need an annotation",
     "sqlmodel_sa_column_foreign_key": "limitations.md: foreign keys hidden in sa_column",
     "test_column_annotations.py::TestSqlAlchemyDetection"

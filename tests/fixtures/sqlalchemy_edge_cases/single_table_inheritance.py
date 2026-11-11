@@ -12,15 +12,17 @@ class Vehicle(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str]
-    wheels: Mapped[int | None]
-    payload: Mapped[int | None]
 
     __mapper_args__ = {"polymorphic_identity": "vehicle", "polymorphic_on": "kind"}
 
 
 class Car(Vehicle):
+    wheels: Mapped[int | None]
+
     __mapper_args__ = {"polymorphic_identity": "car"}
 
 
 class Truck(Vehicle):
+    payload: Mapped[int | None]
+
     __mapper_args__ = {"polymorphic_identity": "truck"}

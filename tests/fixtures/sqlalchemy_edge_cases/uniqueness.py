@@ -1,6 +1,6 @@
 """Uniqueness: unique=, unique indexes, UniqueConstraint and Index in __table_args__."""
 
-from sqlalchemy import Index, String, UniqueConstraint
+from sqlalchemy import Index, String, UniqueConstraint, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -30,3 +30,13 @@ class Product(Base):
     ean: Mapped[str]
     code: Mapped[str | None]
     unique_false: Mapped[str] = mapped_column(unique=False)
+
+
+class Voucher(Base):
+    """An expression index is not uniqueness of the column ("skip" may repeat)."""
+
+    __tablename__ = "voucher"
+    __table_args__ = (Index("ix_voucher_code", func.nullif(text("code"), "skip"), unique=True),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str]

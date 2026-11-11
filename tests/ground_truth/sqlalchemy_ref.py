@@ -21,6 +21,7 @@ from unittest import mock
 import sqlmodel.main
 from sqlalchemy import MetaData, Table, UniqueConstraint
 from sqlalchemy import exc as sa_exc
+from sqlalchemy import schema as sa_schema
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapper, RelationshipDirection, RelationshipProperty, registry
 from sqlmodel import SQLModel
@@ -254,8 +255,16 @@ def _unique_columns(table: Table) -> set[str]:
             index.dialect_options[dialect].get("where") is not None
             for dialect in ("postgresql", "sqlite")
         )
-        if index.unique and not partial and len(index.expressions) == 1 and len(index.columns) == 1:
-            names.update(c.name for c in index.columns)
+        # The indexed expression must be the column itself: an index on
+        # func.nullif(code, "skip") lets "skip" repeat (it becomes NULL).
+        expressions = list(index.expressions)
+        if (
+            index.unique
+            and not partial
+            and len(expressions) == 1
+            and isinstance(expressions[0], sa_schema.Column)
+        ):
+            names.add(expressions[0].name)
     return names
 
 
@@ -268,7 +277,8 @@ def _fk(column: Any) -> str | None:
             target = fk.column
         except sa_exc.NoReferencedTableError as exc:
             raise Unloadable(f"foreign key to a table outside the source: {exc}") from exc
-        targets.append(f"{target.table.name}.{target.name}")
+        # fullname: a table in a database schema is "schema.table".
+        targets.append(f"{target.table.fullname}.{target.name}")
     return sorted(targets)[0]
 
 
@@ -284,7 +294,7 @@ def _table(table: Table, mapper: Mapper[Any] | None) -> SchemaTable:
         for c in table.columns
     }
     relationships = {} if mapper is None else _relationships(mapper)
-    return SchemaTable(table=table.name, columns=columns, relationships=relationships)
+    return SchemaTable(table=table.fullname, columns=columns, relationships=relationships)
 
 
 def _relationships(mapper: Mapper[Any]) -> dict[str, Relationship]:
