@@ -645,3 +645,25 @@ class Member(AbstractUser):
             "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
         )
         assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
+
+    REDEFINED_AFTER_USE = """
+from django.contrib.auth.models import Group
+from django.db import models
+
+
+class Membership(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE)
+
+
+class Group(models.Model):
+    pass
+
+
+class Team(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE)
+"""
+
+    def test_field_keeps_the_binding_from_its_declaration(self, tmp_path: Path):
+        entities = self._parse(tmp_path, self.REDEFINED_AFTER_USE)
+        assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
+        assert self._fk(entities, "Team", "group_id") == "shop_group.id"

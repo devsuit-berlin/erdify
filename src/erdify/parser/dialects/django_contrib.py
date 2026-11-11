@@ -88,8 +88,12 @@ def imported_contrib_names(trees: Iterable[ast.Module]) -> Set[str]:
     return names
 
 
-def contrib_bindings(tree: ast.Module) -> Dict[str, str]:
-    """Local name -> qualified contrib model, as the module binds it at the end.
+def contrib_bindings(tree: ast.Module, before_line: int | None = None) -> Dict[str, str]:
+    """Local name -> qualified contrib model, as the module binds it.
+
+    With ``before_line``, only statements that start before that line count:
+    the bindings a class body sees where it is declared (a field captures
+    the class its name refers to at that point, like Python).
 
     ``from django.contrib.auth.models import Group as AuthGroup`` binds
     ``AuthGroup`` to ``"auth.Group"``. Only module-level statements count
@@ -100,6 +104,8 @@ def contrib_bindings(tree: ast.Module) -> Dict[str, str]:
     """
     bindings: Dict[str, str] = {}
     for node in _module_statements(tree.body):
+        if before_line is not None and node.lineno >= before_line:
+            break
         if isinstance(node, ast.ImportFrom):
             known = CONTRIB_MODULES.get(node.module or "", set())
             for alias in node.names:

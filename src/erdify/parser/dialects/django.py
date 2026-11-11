@@ -80,7 +80,7 @@ class DjangoDialect(Dialect):
         self._app_labels: Dict[Path, str] = {}
         self._user_model_name: str | None = None
         self._declaring: Dict[int, ast.ClassDef] | None = None
-        self._bindings: Dict[int, Dict[str, str]] = {}
+        self._bindings: Dict[Tuple[int, int], Dict[str, str]] = {}
 
     @classmethod
     def builtin_classes(
@@ -855,7 +855,7 @@ class DjangoDialect(Dialect):
         return expr_name(node)
 
     def _module_bindings(self, call: ast.Call) -> Dict[str, str]:
-        """Contrib names imported by the module that declares the field ``call``.
+        """Contrib names the declaring module binds where the field ``call`` is declared.
 
         The declaring class may be an abstract base in another file than the
         model being built, so its own module's imports are the ones that count.
@@ -869,11 +869,14 @@ class DjangoDialect(Dialect):
             }
         owner = self._declaring.get(id(call))
         tree = self.ctx.tree_of(owner) if owner is not None else None
-        if tree is None:
+        if owner is None or tree is None:
             return {}
-        if id(tree) not in self._bindings:
-            self._bindings[id(tree)] = contrib_bindings(tree)
-        return self._bindings[id(tree)]
+        # The bindings where the class is declared: a later rebinding of the
+        # name doesn't change a field that already captured it.
+        key = (id(tree), owner.lineno)
+        if key not in self._bindings:
+            self._bindings[key] = contrib_bindings(tree, owner.lineno)
+        return self._bindings[key]
 
     def _user_model(self) -> str:
         """The model ``AUTH_USER_MODEL`` names, as far as the source tells.
