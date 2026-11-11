@@ -45,6 +45,23 @@ an abstract base, or the `to_field=` column, and takes that column's type
 outside the parsed files is assumed to reference its implicit `id` (or the
 `to_field=` column), typed as Django's default auto field.
 
+## Table names
+
+Without `Meta.db_table`, the table gets Django's default name,
+`<app_label>_<model name>`, where the model name is the class name
+lower-cased: `OrderItem` in the app `shop` is `shop_orderitem`. erdify reads the
+app label from source, in Django's order:
+
+1. `class Meta: app_label = "..."` on the model.
+2. The app's `AppConfig` in `apps.py`: a literal `label`, else the last part of
+   a literal `name` (`name = "project.shop"` → `shop`). With several configs,
+   the one marked `default = True`.
+3. The name of the app package: the directory holding `models.py`, or the
+   parent of a `models/` package (`shop/models/order.py` → `shop`).
+
+A model outside the scanned files (a relation target erdify can't see) shows
+the lower-cased class name, without a prefix.
+
 ## Inheritance
 
 Inheritance follows Django's three model inheritance styles:
@@ -60,7 +77,7 @@ class Place(models.Model):
     name = models.CharField(max_length=50)
 
 
-class Restaurant(Place):             # place_ptr_id PK,FK -> place.id
+class Restaurant(Place):             # place_ptr_id PK,FK -> <app>_place.id
     serves_pizza = models.BooleanField()
 ```
 

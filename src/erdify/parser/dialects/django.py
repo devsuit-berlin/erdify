@@ -1,12 +1,14 @@
 """Django ORM: ``models.Model`` subclasses with ``*Field`` class attributes."""
 
 import ast
+from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import expr_name
-from ..common import _Rel, is_enum_class, to_snake_case
+from ..common import _Rel, is_enum_class
 from .base import Dialect, ParseContext
+from .django_apps import app_label, app_package
 
 #: Django relationship field constructs (everything else ending in "Field" is a column).
 DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
@@ -67,6 +69,7 @@ class DjangoDialect(Dialect):
         self._base_parents_cache: Dict[str, List[str]] = {}
         self._lower_names: Dict[str, str] | None = None
         self._links_cache: Dict[str, List[Tuple[str, str]]] = {}
+        self._app_labels: Dict[Path, str] = {}
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         return self._inherits_django_model(class_node)
@@ -82,6 +85,30 @@ class DjangoDialect(Dialect):
             if isinstance(db_table, str):
                 table_name = db_table
         return table_name
+
+    def default_table_name(self, class_node: ast.ClassDef) -> str:
+        """Django's default ``<app_label>_<model name>`` (#271).
+
+        The model name is the class name lower-cased, not snake_case
+        (``OrderItem`` -> ``orderitem``). Without a known app label (a class
+        whose file is unknown) only the model name is returned.
+        """
+        label = self._app_label(class_node)
+        model_name = class_node.name.lower()
+        return f"{label}_{model_name}" if label else model_name
+
+    def _app_label(self, class_node: ast.ClassDef) -> str | None:
+        """``Meta.app_label``, else the label of the app the model's file is in."""
+        label = self._meta_value(class_node, "app_label")
+        if isinstance(label, str) and label:
+            return label
+        model_file = self.ctx.file_of(class_node)
+        if model_file is None:
+            return None
+        package = app_package(model_file)
+        if package not in self._app_labels:
+            self._app_labels[package] = app_label(package)
+        return self._app_labels[package]
 
     def class_fields(
         self, class_node: ast.ClassDef, concrete: str
@@ -299,16 +326,27 @@ class DjangoDialect(Dialect):
         return bool(value) if isinstance(value, bool) else False
 
     def _meta_value(self, class_node: ast.ClassDef, attr: str) -> object | None:
-        """Read a constant attribute (e.g. ``db_table``) from a model's ``class Meta``."""
+        """Read a constant attribute (e.g. ``db_table``) from a model's ``class Meta``.
+
+        Plain and annotated assignments (``app_label: str = "sales"``) count;
+        the last one wins, as in Python, and a non-literal last one makes the
+        value unknown (None).
+        """
         meta = self._get_meta_class(class_node)
         if meta is None:
             return None
+        value: object | None = None
         for node in meta.body:
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == attr:
-                        return node.value.value
-        return None
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                targets = [node.target]
+            else:
+                continue
+            if any(isinstance(t, ast.Name) and t.id == attr for t in targets):
+                assigned = node.value
+                value = assigned.value if isinstance(assigned, ast.Constant) else None
+        return value
 
     def _django_self_owner(self, name: str, merge_order: List[str]) -> str:
         """The model a Django ``"self"`` relation declared in class ``name`` points at.
@@ -622,13 +660,19 @@ class DjangoDialect(Dialect):
         return attr, self._parse_django_column(attr, field_type, call).type_str
 
     def _django_target_table(self, class_name: str) -> str:
-        """Resolve a target class name to its table name (Meta.db_table or snake_case)."""
+        """Resolve a target class name to its table name.
+
+        ``Meta.db_table`` or Django's default name for a parsed model; the
+        lower-cased class name for a model outside the parsed files, whose app
+        is unknown.
+        """
         node = self.classes.all.get(class_name)
-        if node is not None:
-            db_table = self._meta_value(node, "db_table")
-            if isinstance(db_table, str):
-                return db_table
-        return to_snake_case(class_name)
+        if node is None:
+            return class_name.lower()
+        db_table = self._meta_value(node, "db_table")
+        if isinstance(db_table, str):
+            return db_table
+        return self.default_table_name(node)
 
     @staticmethod
     def _django_field_type(call: ast.Call) -> str | None:

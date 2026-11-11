@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from erdify.generator import PlantUMLGenerator
 from erdify.parser import parse_models_directory
 
@@ -82,9 +84,10 @@ class TestDjangoRawTypes:
         entities, _ = parse_models_directory(django_models_dir)
         assert entities["Post"].table_name == "blog_post"
 
-    def test_default_table_name_is_snake_case(self, django_models_dir: Path):
+    def test_default_table_name_is_app_label_and_lower_case_name(self, django_models_dir: Path):
+        """Django's ``<app_label>_<model name>``; the app is the fixture package (#271)."""
         entities, _ = parse_models_directory(django_models_dir)
-        assert entities["Author"].table_name == "author"
+        assert entities["Author"].table_name == "django_author"
 
 
 class TestDjangoForeignKey:
@@ -93,7 +96,7 @@ class TestDjangoForeignKey:
         post_fields = {f.name: f for f in entities["Post"].fields}
         assert "author_id" in post_fields
         assert post_fields["author_id"].is_foreign_key is True
-        assert post_fields["author_id"].foreign_table == "author.id"
+        assert post_fields["author_id"].foreign_table == "django_author.id"
 
     def test_foreign_key_renders_n_to_one(self, django_models_dir: Path):
         entities, enums = parse_models_directory(django_models_dir)
@@ -174,3 +177,239 @@ class TestDjangoSourcesFilter:
     def test_excluding_django_yields_no_entities(self, django_models_dir: Path):
         entities, _ = parse_models_directory(django_models_dir, sources=["sqlmodel"])
         assert entities == {}
+
+
+class TestDjangoDefaultTableNames:
+    """#271: a table without Meta.db_table is ``<app_label>_<model name, lower-cased>``."""
+
+    MODELS = "from django.db import models\n\n\nclass OrderItem(models.Model):\n    pass\n"
+
+    def _tables(self, root: Path) -> dict[str, str]:
+        entities, _ = parse_models_directory(root)
+        return {name: entity.table_name for name, entity in entities.items()}
+
+    def _app(self, root: Path, name: str, apps_py: str | None = None) -> Path:
+        app = root / name
+        app.mkdir(parents=True)
+        (app / "models.py").write_text(self.MODELS, encoding="utf-8")
+        if apps_py is not None:
+            (app / "apps.py").write_text(apps_py, encoding="utf-8")
+        return app
+
+    def test_package_name_and_lower_case_model_name(self, tmp_path: Path):
+        self._app(tmp_path, "shop")
+        assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
+
+    def test_app_config_label(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class ShopConfig(AppConfig):\n"
+            '    name = "project.shop"\n'
+            '    label = "store"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "store_orderitem"}
+
+    def test_app_config_name_without_label(self, tmp_path: Path):
+        apps_py = (
+            "from django import apps\n\n\n"
+            "class ShopConfig(apps.AppConfig):\n"
+            '    name = "project.retail"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "retail_orderitem"}
+
+    def test_several_configs_use_the_default_one(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class First(AppConfig):\n"
+            '    label = "first"\n\n\n'
+            "class Second(AppConfig):\n"
+            "    default = True\n"
+            '    label = "second"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "second_orderitem"}
+
+    def test_several_configs_without_default_fall_back_to_the_package(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class First(AppConfig):\n"
+            '    label = "first"\n\n\n'
+            "class Second(AppConfig):\n"
+            '    label = "second"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
+
+    @pytest.mark.parametrize("apps_py", ["class Broken(:\n", "label = 1\x00\n"])
+    def test_unreadable_apps_py_falls_back_to_the_package(self, tmp_path: Path, apps_py: str):
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
+
+    def test_config_marked_not_default_is_ignored(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class ShopConfig(AppConfig):\n"
+            "    default = False\n"
+            '    label = "store"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
+
+    def test_remaining_config_after_dropping_non_defaults(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class First(AppConfig):\n"
+            "    default = False\n"
+            '    label = "first"\n\n\n'
+            "class Second(AppConfig):\n"
+            '    label = "second"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "second_orderitem"}
+
+    @pytest.mark.parametrize("arg", [".", "models.py"])
+    def test_relative_input_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arg: str):
+        app = self._app(tmp_path, "shop")
+        monkeypatch.chdir(app)
+        assert self._tables(Path(arg)) == {"OrderItem": "shop_orderitem"}
+
+    def _package(self, *parts: Path) -> None:
+        for part in parts:
+            part.mkdir(parents=True, exist_ok=True)
+            (part / "__init__.py").write_text("", encoding="utf-8")
+
+    def test_nested_models_package_belongs_to_the_app(self, tmp_path: Path):
+        shop = tmp_path / "shop"
+        nested = shop / "models" / "billing"
+        self._package(shop, shop / "models", nested)
+        (nested / "invoice.py").write_text(self.MODELS, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/models/**/*.py"])
+        assert entities["OrderItem"].table_name == "shop_orderitem"
+
+    @pytest.mark.parametrize("inner", [("models",), ("models", "billing")])
+    def test_models_py_inside_a_models_package(self, tmp_path: Path, inner: tuple[str, ...]):
+        shop = tmp_path / "shop"
+        directory = shop.joinpath(*inner)
+        self._package(shop, *(shop.joinpath(*inner[: i + 1]) for i in range(len(inner))))
+        (directory / "models.py").write_text(self.MODELS, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/models.py"])
+        assert entities["OrderItem"].table_name == "shop_orderitem"
+
+    def test_app_named_models(self, tmp_path: Path):
+        app = self._app(
+            tmp_path,
+            "models",
+            "from django.apps import AppConfig\n\n\nclass C(AppConfig):\n    pass\n",
+        )
+        self._package(app)
+        assert self._tables(tmp_path) == {"OrderItem": "models_orderitem"}
+
+    def test_models_directory_above_the_project_is_ignored(self, tmp_path: Path):
+        project = tmp_path / "models" / "project"
+        self._app(project, "shop")
+        self._package(project, project / "shop")
+        assert self._tables(project) == {"OrderItem": "shop_orderitem"}
+
+    def test_apps_py_above_the_package_is_ignored(self, tmp_path: Path):
+        (tmp_path / "apps.py").write_text(
+            "from django.apps import AppConfig\n\n\n"
+            "class Unrelated(AppConfig):\n"
+            '    label = "unrelated"\n',
+            encoding="utf-8",
+        )
+        project = tmp_path / "project"
+        self._app(project, "shop")
+        self._package(project, project / "shop")
+        assert self._tables(project) == {"OrderItem": "shop_orderitem"}
+
+    def test_app_config_attributes_from_a_local_base(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class BaseConfig(AppConfig):\n"
+            "    default = False\n"
+            '    label = "store"\n\n\n'
+            "class ShopConfig(BaseConfig):\n"
+            "    default = True\n"
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "store_orderitem"}
+
+    def test_last_assignment_wins(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class ShopConfig(AppConfig):\n"
+            '    label = "shop"\n'
+            '    label = "store"\n'
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "store_orderitem"}
+
+    def test_non_literal_last_assignment_falls_back(self, tmp_path: Path):
+        apps_py = (
+            "from django.apps import AppConfig\n\n\n"
+            "class ShopConfig(AppConfig):\n"
+            '    label = "store"\n'
+            "    label = compute_label()\n"
+        )
+        self._app(tmp_path, "shop", apps_py)
+        assert self._tables(tmp_path) == {"OrderItem": "shop_orderitem"}
+
+    def test_models_package_belongs_to_its_parent_app(self, tmp_path: Path):
+        models_pkg = tmp_path / "shop" / "models"
+        models_pkg.mkdir(parents=True)
+        (models_pkg / "order.py").write_text(self.MODELS, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/models/*.py"])
+        assert entities["OrderItem"].table_name == "shop_orderitem"
+
+    ANNOTATED_APP_LABEL = """
+from django.db import models
+
+
+class OrderItem(models.Model):
+    class Meta:
+        app_label: str = "sales"
+"""
+
+    REASSIGNED_APP_LABEL = """
+from django.db import models
+
+
+class OrderItem(models.Model):
+    class Meta:
+        app_label = "shop"
+        app_label = "sales"
+"""
+
+    @pytest.mark.parametrize("source", [ANNOTATED_APP_LABEL, REASSIGNED_APP_LABEL])
+    def test_meta_app_label_annotated_or_reassigned(self, tmp_path: Path, source: str):
+        app = self._app(tmp_path, "shop")
+        (app / "models.py").write_text(source, encoding="utf-8")
+        assert self._tables(tmp_path) == {"OrderItem": "sales_orderitem"}
+
+    def test_meta_app_label_wins(self, tmp_path: Path):
+        app = self._app(tmp_path, "shop")
+        (app / "models.py").write_text(
+            "from django.db import models\n\n\n"
+            "class OrderItem(models.Model):\n"
+            "    class Meta:\n"
+            '        app_label = "sales"\n',
+            encoding="utf-8",
+        )
+        assert self._tables(tmp_path) == {"OrderItem": "sales_orderitem"}
+
+    def test_foreign_key_uses_the_target_app(self, tmp_path: Path):
+        self._app(tmp_path, "shop")
+        billing = tmp_path / "billing"
+        billing.mkdir()
+        (billing / "models.py").write_text(
+            "from django.db import models\n\n\n"
+            "class Invoice(models.Model):\n"
+            '    item = models.ForeignKey("shop.OrderItem", on_delete=models.CASCADE)\n',
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert entities["Invoice"].table_name == "billing_invoice"
+        fk = next(f for f in entities["Invoice"].fields if f.name == "item_id")
+        assert fk.foreign_table == "shop_orderitem.id"

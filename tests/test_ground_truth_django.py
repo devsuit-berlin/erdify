@@ -35,13 +35,6 @@ EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
 
 # erdify output that differs from Django's schema, pending a fix.
 KNOWN_DIFFERENCES = {
-    "test_django_mti.py::TestParentLink.test_ptr_name_is_lowercased_model_name.entities": (
-        "#271: default table name is snake_case, Django lower-cases the class name"
-    ),
-    "test_inheritance.py::TestDjangoConcreteParentSelfReference"
-    ".test_abstract_base_under_concrete_parent.src": (
-        "#271: default table name is snake_case, Django lower-cases the class name"
-    ),
     "test_inheritance.py::DJANGO_DIAMOND": (
         "#272: diamond abstract inheritance follows Python's MRO, Django keeps the first copy"
     ),
@@ -53,12 +46,11 @@ KNOWN_DIFFERENCES = {
     # Edge-case catalog (tests/fixtures/django_edge_cases).
     "abstract_meta_inheritance": "#279: Meta.db_table inherited from an abstract base",
     "auth_user_model": "#278: settings.AUTH_USER_MODEL gets an invented table name",
-    "composite_primary_key": "#276: CompositePrimaryKey is not supported (and #271)",
+    "composite_primary_key": "#276: CompositePrimaryKey is not supported",
     "custom_user": "#277: a model based on AbstractUser is missing from the diagram",
     "db_column": "#275: db_column is ignored",
     "meta_constraints": "#274: a single-field Meta.constraints UniqueConstraint is not read",
     "generic_relations": "#278: ContentType's table is django_content_type",
-    "relation_options": "#271: default table name is snake_case, Django lower-cases the class name",
 }
 
 # Sources where Django itself builds an inconsistent model, so there is no
@@ -88,6 +80,9 @@ EXPECTED_REJECTED = {
 # Sources that are not a self-contained Django module, so there is nothing to
 # load them into. Each is a deliberate test of erdify on partial input.
 EXPECTED_UNLOADABLE = {
+    "test_django.py::TestDjangoDefaultTableNames.test_foreign_key_uses_the_target_app": (
+        "relation to a model in another app's file"
+    ),
     "test_base_classes.py::TestModelDerivedSchemas.DJANGO_MODEL": "imports django-ninja",
     "test_cardinality.py::TestDjangoInheritedOverride.BASE": "str.format template",
     "test_cardinality.py::TestDeclaredRelationshipNullability.DJANGO": "str.format template",
@@ -114,12 +109,20 @@ def _assert_same(actual: Schema, expected: Schema) -> None:
     assert actual.enums == expected.enums
 
 
+def _erdify(source: str, tmp_path: Path) -> Schema:
+    """Parse ``source`` with erdify as the ``models.py`` of an app labelled like the reference's."""
+    app = tmp_path / django_ref.APP_LABEL
+    app.mkdir()
+    (app / "models.py").write_text(source, encoding="utf-8")
+    return from_erdify(app, "django")
+
+
 @pytest.mark.parametrize("name", sorted(MODULES))
-def test_module_matches_django(name: str) -> None:
-    path = MODULES[name]
-    expected = django_ref.load((path / "models.py").read_text(encoding="utf-8"))
+def test_module_matches_django(name: str, tmp_path: Path) -> None:
+    source = (MODULES[name] / "models.py").read_text(encoding="utf-8")
+    expected = django_ref.load(source)
     assert expected.tables, "the reference loader found no models"
-    _assert_same(from_erdify(path, "django"), expected)
+    _assert_same(_erdify(source, tmp_path), expected)
 
 
 def _check(name: str, source: str, tmp_path: Path) -> None:
@@ -138,8 +141,7 @@ def _check(name: str, source: str, tmp_path: Path) -> None:
         if name in EXPECTED_UNLOADABLE:
             pytest.skip(f"not a self-contained Django module ({EXPECTED_UNLOADABLE[name]})")
         pytest.fail(f"Django cannot load {name}: {exc}. Fix it or list it in EXPECTED_UNLOADABLE.")
-    (tmp_path / "models.py").write_text(source, encoding="utf-8")
-    _assert_same(from_erdify(tmp_path, "django"), expected)
+    _assert_same(_erdify(source, tmp_path), expected)
 
 
 @pytest.mark.parametrize("snippet", [_param(s.id, s) for s in SNIPPETS])

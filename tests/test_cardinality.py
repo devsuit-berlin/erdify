@@ -102,9 +102,16 @@ class Profile(models.Model):
 """
 
 
+def _app(tmp_path: Path) -> Path:
+    """A Django app package named ``app``: default table names are ``app_<model>``."""
+    app = tmp_path / "app"
+    app.mkdir(exist_ok=True)
+    return app
+
+
 def _parse(tmp_path: Path, source: str) -> dict:
-    (tmp_path / "models.py").write_text(source)
-    entities, _ = parse_models_directory(tmp_path)
+    (_app(tmp_path) / "models.py").write_text(source)
+    entities, _ = parse_models_directory(tmp_path / "app")
     return entities
 
 
@@ -686,7 +693,7 @@ class Settings(OwnedBase):
         assert "Settings ||--|| Account" not in out
         if "owner_id" in fields:
             fk = _field(entities, "Settings", "owner_id")
-            assert fk.foreign_table and fk.foreign_table.startswith("other.")
+            assert fk.foreign_table and fk.foreign_table.startswith("app_other.")
 
 
 class TestDjangoForeignKeyTarget:
@@ -744,33 +751,33 @@ class Link(models.Model):
     def test_explicit_pk(self, tmp_path: Path):
         for entity, name in (("Settings", "owner_id"), ("Ref", "acc_id")):
             fk = self._fk(tmp_path, entity, name)
-            assert fk.foreign_table == "account.code"
+            assert fk.foreign_table == "app_account.code"
             assert fk.type_str == "int"
 
     def test_to_field(self, tmp_path: Path):
         fk = self._fk(tmp_path, "Ref", "by_slug_id")
-        assert fk.foreign_table == "account.slug"
+        assert fk.foreign_table == "app_account.slug"
         assert fk.type_str == "str"
 
     def test_pk_that_is_a_foreign_key(self, tmp_path: Path):
-        assert self._fk(tmp_path, "Ref", "settings_id").foreign_table == "settings.owner_id"
+        assert self._fk(tmp_path, "Ref", "settings_id").foreign_table == "app_settings.owner_id"
 
     def test_inherited_pk(self, tmp_path: Path):
         entities = _parse(tmp_path, self.SRC)
         fk = _field(entities, "Link", "doc_id")
-        assert fk.foreign_table == "doc.uid"
+        assert fk.foreign_table == "app_doc.uid"
         assert fk.type_str == _field(entities, "Doc", "uid").type_str
 
     def test_implicit_id_and_unknown_targets_fall_back(self, tmp_path: Path):
         entities = _parse(tmp_path, self.SRC)
-        assert _field(entities, "ToPlain", "plain_id").foreign_table == "plain.id"
+        assert _field(entities, "ToPlain", "plain_id").foreign_table == "app_plain.id"
         assert _field(entities, "ToPlain", "external_id").foreign_table == "external.id"
-        assert _field(entities, "ToPlain", "unknown_field_id").foreign_table == "plain.nope"
+        assert _field(entities, "ToPlain", "unknown_field_id").foreign_table == "app_plain.nope"
 
     def test_json(self, tmp_path: Path):
         doc = json.loads(generate_json(_parse(tmp_path, self.SRC)))
         settings = next(e for e in doc["entities"] if e["name"] == "Settings")
-        assert settings["fields"][0]["foreign_table"] == "account.code"
+        assert settings["fields"][0]["foreign_table"] == "app_account.code"
 
     def test_cyclic_primary_keys_terminate(self, tmp_path: Path):
         src = """
@@ -785,8 +792,8 @@ class B(models.Model):
     a = models.OneToOneField(A, on_delete=models.CASCADE, primary_key=True)
 """
         entities = _parse(tmp_path, src)
-        assert _field(entities, "A", "b_id").foreign_table == "b.a_id"
-        assert _field(entities, "B", "a_id").foreign_table == "a.b_id"
+        assert _field(entities, "A", "b_id").foreign_table == "app_b.a_id"
+        assert _field(entities, "B", "a_id").foreign_table == "app_a.b_id"
 
     def test_pk_with_unresolvable_target(self, tmp_path: Path):
         src = """
@@ -800,7 +807,7 @@ class A(models.Model):
 class C(models.Model):
     a = models.ForeignKey(A, on_delete=models.CASCADE)
 """
-        assert _field(_parse(tmp_path, src), "C", "a_id").foreign_table == "a.b_id"
+        assert _field(_parse(tmp_path, src), "C", "a_id").foreign_table == "app_a.b_id"
 
     def test_to_field_naming_a_foreign_key(self, tmp_path: Path):
         src = """
@@ -819,7 +826,7 @@ class Note(models.Model):
     profile = models.ForeignKey(Profile, on_delete=models.CASCADE, to_field="account")
 """
         fk = _field(_parse(tmp_path, src), "Note", "profile_id")
-        assert fk.foreign_table == "profile.account_id"
+        assert fk.foreign_table == "app_profile.account_id"
         assert fk.type_str == "str"
 
     @pytest.mark.parametrize("to_field", ["account", "account_id"])
@@ -841,7 +848,7 @@ class Note(models.Model):
     profile = models.ForeignKey(Profile, on_delete=models.CASCADE, to_field="{to_field}")
 """
         fk = _field(_parse(tmp_path, src), "Note", "profile_id")
-        assert fk.foreign_table == "profile.account_id"
+        assert fk.foreign_table == "app_profile.account_id"
         assert fk.type_str == "str"
 
     def test_type_follows_choices_enum(self, tmp_path: Path):
@@ -883,7 +890,7 @@ class Ref(models.Model):
         entities = _parse(tmp_path, src)
         assert _field(entities, "Item", "parent_id").type_str == "str"
         fk = _field(entities, "Ref", "item_id")
-        assert fk.foreign_table == "item.parent_id"
+        assert fk.foreign_table == "app_item.parent_id"
         assert fk.type_str == "str"
 
     def test_removed_inherited_pk_falls_back_to_id(self, tmp_path: Path):
@@ -909,7 +916,7 @@ class Ref(models.Model):
         entities = _parse(tmp_path, src)
         assert [f.name for f in entities["Item"].fields] == ["id"]
         fk = _field(entities, "Ref", "item_id")
-        assert fk.foreign_table == "item.id"
+        assert fk.foreign_table == "app_item.id"
         assert fk.type_str == "int"
 
 

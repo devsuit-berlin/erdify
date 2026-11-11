@@ -2,11 +2,12 @@
 
 import ast
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, ClassVar, Dict, Iterable, List, Mapping, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import is_call_to
-from ..common import _ClassMembers, _Rel
+from ..common import _ClassMembers, _Rel, to_snake_case
 from ..inheritance import ClassIndex, merge_members, reorder
 
 
@@ -24,6 +25,7 @@ class ParseContext:
         aliases_for: Column type aliases visible where a class is defined
             (``intpk = Annotated[int, mapped_column(primary_key=True)]``,
             #241, #249, #250).
+        file_of: The file a class is defined in, or None if unknown.
     """
 
     classes: ClassIndex = field(default_factory=lambda: ClassIndex({}))
@@ -32,6 +34,7 @@ class ParseContext:
     base_classes: Set[str] = field(default_factory=set)
     dialects: List["Dialect"] = field(default_factory=list)
     aliases_for: Callable[[ast.ClassDef], Mapping[str, ast.expr]] = lambda _class_node: {}
+    file_of: Callable[[ast.ClassDef], Path | None] = lambda _class_node: None
 
     def all_dialects(self) -> List["Dialect"]:
         """Every dialect, in classification order, bound to this context."""
@@ -120,6 +123,10 @@ class Dialect:
                     if isinstance(target, ast.Name) and target.id == "__tablename__":
                         table_name = str(node.value.value)
         return table_name
+
+    def default_table_name(self, class_node: ast.ClassDef) -> str:
+        """The table name of a class that declares none; the snake_case class name."""
+        return to_snake_case(class_node.name)
 
     def class_fields(
         self, class_node: ast.ClassDef, concrete: str

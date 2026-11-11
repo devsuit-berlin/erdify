@@ -9,7 +9,7 @@ from typing import Callable, Dict, List, Mapping, Tuple
 
 from ..config import EntityInfo, EnumInfo, is_structural_link_table
 from .aliases import AliasResolver
-from .common import is_enum_class, to_snake_case
+from .common import is_enum_class
 from .dialects import ParseContext
 from .discovery import discover_model_files
 from .inheritance import ClassIndex
@@ -247,6 +247,7 @@ class ASTDatabaseParser:
             django_raw_types=self.django_raw_types,
             base_classes=self.base_classes,
             aliases_for=self._alias_lookup(),
+            file_of=lambda class_node: self._class_files.get(id(class_node)),
         )
 
     def _alias_lookup(self) -> "Callable[[ast.ClassDef], Mapping[str, ast.expr]]":
@@ -270,7 +271,7 @@ class ASTDatabaseParser:
     def _parse_table_class(self, class_node: ast.ClassDef, source: str) -> None:
         """Parse a table class and all its inherited fields."""
         dialect = self._ctx.dialect(source)
-        table_name = dialect.table_name(class_node) or to_snake_case(class_node.name)
+        table_name = dialect.table_name(class_node) or dialect.default_table_name(class_node)
 
         # Get base classes
         base_classes: List[str] = []

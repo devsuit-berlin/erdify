@@ -68,7 +68,7 @@ class TestJsonFormat:
 
         assert fields["id"]["primary_key"] is True
         assert fields["author_id"]["foreign_key"] is True
-        assert fields["author_id"]["foreign_table"] == "author.id"
+        assert fields["author_id"]["foreign_table"] == "django_author.id"
 
     def test_relationships_are_objects(self, django_models_dir: Path):
         entities, enums = parse_models_directory(django_models_dir)

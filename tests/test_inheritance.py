@@ -11,9 +11,16 @@ from erdify.generator import generate_mermaid
 from erdify.parser import parse_models_directory
 
 
+def _app(tmp_path: Path) -> Path:
+    """A Django app package named ``app``: default table names are ``app_<model>``."""
+    app = tmp_path / "app"
+    app.mkdir(exist_ok=True)
+    return app
+
+
 def _parse(tmp_path: Path, source: str) -> dict:
-    (tmp_path / "models.py").write_text(source)
-    entities, _ = parse_models_directory(tmp_path)
+    (_app(tmp_path) / "models.py").write_text(source)
+    entities, _ = parse_models_directory(tmp_path / "app")
     return entities
 
 
@@ -67,7 +74,7 @@ class TestDiamond:
         assert settings.relationships == []
         owner = _field(entities, "Settings", "owner_id")
         assert owner.is_primary_key
-        assert owner.foreign_table is not None and owner.foreign_table.startswith("other.")
+        assert owner.foreign_table is not None and owner.foreign_table.startswith("app_other.")
 
     def test_django_single_edge(self, tmp_path: Path):
         out = generate_mermaid(_parse(tmp_path, DJANGO_DIAMOND))
@@ -520,9 +527,9 @@ class Leaf(TreeBase):
     def test_foreign_key(self, tmp_path: Path):
         entities = _parse(tmp_path, self.SRC)
         node = _field(entities, "Node", "parent_id")
-        assert node.foreign_table == "node.code"
+        assert node.foreign_table == "app_node.code"
         assert node.type_str == "str"
-        assert _field(entities, "Leaf", "parent_id").foreign_table == "leaf.id"
+        assert _field(entities, "Leaf", "parent_id").foreign_table == "app_leaf.id"
         out = generate_mermaid(entities)
         assert 'Node }o--o| Node : "parent_id"' in out
         assert 'Leaf }o--o| Leaf : "parent_id"' in out
@@ -550,7 +557,7 @@ class Child(Parent):
     extra = models.IntegerField()
 """
         entities = _parse(tmp_path, src)
-        assert _field(entities, "Parent", "parent_id").foreign_table == "parent.id"
+        assert _field(entities, "Parent", "parent_id").foreign_table == "app_parent.id"
         assert entities["Parent"].relationships == [("Parent", "many_to_many", "peers")]
         # The child's table holds only its own field and the parent link.
         assert [f.name for f in entities["Child"].fields] == ["parent_ptr_id", "extra"]
@@ -577,7 +584,7 @@ class SpecialNode(Node):
     extra = models.IntegerField()
 """
         entities = _parse(tmp_path, src)
-        assert _field(entities, "Node", "parent_id").foreign_table == "node.id"
+        assert _field(entities, "Node", "parent_id").foreign_table == "app_node.id"
         assert [f.name for f in entities["SpecialNode"].fields] == ["node_ptr_id", "extra"]
 
 
@@ -726,7 +733,7 @@ class Node(TreeMixin, models.Model):
     pass
 """
         entities = _parse(tmp_path, src)
-        assert _field(entities, "Node", "parent_id").foreign_table == "node.id"
+        assert _field(entities, "Node", "parent_id").foreign_table == "app_node.id"
 
     def test_target_column_binds_self_like_the_entity(self, tmp_path: Path):
         """``to_field`` through an inherited ``"self"`` FK follows the same owner."""
@@ -749,9 +756,9 @@ class Ref(models.Model):
     x = models.ForeignKey(Node, on_delete=models.CASCADE, to_field="parent")
 """
         entities = _parse(tmp_path, src)
-        assert _field(entities, "Node", "parent_id").foreign_table == "node.id"
+        assert _field(entities, "Node", "parent_id").foreign_table == "app_node.id"
         fk = _field(entities, "Ref", "x_id")
-        assert fk.foreign_table == "node.parent_id"
+        assert fk.foreign_table == "app_node.parent_id"
         assert fk.type_str == "int"
 
 

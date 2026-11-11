@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Django models without `Meta.db_table` now get the table name Django creates,
+  `<app_label>_<model name>`: the class name lower-cased (`OrderItem` →
+  `shop_orderitem`, not `order_item`) and prefixed with the app label. The app
+  label is read from source: `Meta.app_label`, else the app's `AppConfig` in
+  `apps.py` (a literal `label`, or the last part of `name`), else the name of
+  the app package (the directory holding `models.py`, or the parent of a
+  `models/` package). Foreign keys reference the same names
+  ([#271](https://github.com/devsuit-berlin/erdify/issues/271)).
+
+### Output changes
+
+Every Django model without `Meta.db_table` changes its table name, in the
+diagram, in JSON `table_name` / `foreign_table`, and for `--exclude` patterns
+matched against table names. Regenerate the diagram once if you gate CI on
+`--check`, and update `--exclude` patterns that name Django tables.
+
 ## [1.4.2] - 2026-11-06
 
 ### Fixed
