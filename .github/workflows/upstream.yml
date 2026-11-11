@@ -63,7 +63,10 @@ jobs:
       - name: Resolve the newest releases
         id: newest
         run: |
-          uv lock --upgrade && uv sync
+          # Separate commands: under `bash -e`, a failure on the left of `&&`
+          # would not stop the step, and the tests would run on the old lock.
+          uv lock --upgrade
+          uv sync
           with=()
           for package in sqlmodel pydantic sqlglot django; do
             version=$(curl -fsS "https://pypi.org/pypi/$package/json" | python3 -c "import json, sys; print(json.load(sys.stdin)['info']['version'])")
