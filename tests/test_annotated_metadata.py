@@ -452,6 +452,23 @@ class Account(Base):
     assert [f.name for f in entities["Account"].fields] == ["id", "created"]
 
 
+def test_assigned_name_is_still_a_column(tmp_path: Path):
+    """A module-level `fk = mapped_column(...)` assigned by name is a column."""
+    entities = _parse(
+        tmp_path,
+        """
+owner_fk = mapped_column()
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = owner_fk
+""",
+    )
+    assert [f.name for f in entities["Account"].fields] == ["id", "owner_id"]
+
+
 def test_assigned_none_keeps_metadata_default(tmp_path: Path):
     """`= None` is unset in SQLAlchemy: the default in the metadata applies."""
     entities = _parse(

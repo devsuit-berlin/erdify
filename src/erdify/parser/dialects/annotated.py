@@ -84,15 +84,17 @@ class AnnotatedDialect(Dialect):
     def _may_map_column(value: ast.expr | None) -> bool:
         """Whether SQLAlchemy may map a column for a ``Mapped`` attribute assigned ``value``.
 
-        Nothing, ``None`` or a call may; any other value (``= "a"``, ``= 3``,
-        ``= Status.NEW``) is a plain class attribute. Every call counts, since a
-        project helper may return ``mapped_column()``; a plain-value call such
-        as ``= datetime(2020, 1, 1)`` is therefore still drawn as a column.
+        Nothing, ``None``, a call or a bare name may; any other value
+        (``= "a"``, ``= 3``, ``= Status.NEW``) is a plain class attribute. Every
+        call and name counts, since a project helper may return
+        ``mapped_column()`` and a module-level ``fk = mapped_column(...)`` may
+        be assigned; a plain-value call such as ``= datetime(2020, 1, 1)`` is
+        therefore still drawn as a column.
         """
         return (
             value is None
             or (isinstance(value, ast.Constant) and value.value is None)
-            or isinstance(value, ast.Call)
+            or isinstance(value, (ast.Call, ast.Name))
         )
 
     @staticmethod
