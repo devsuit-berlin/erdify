@@ -36,7 +36,7 @@ Where a framework changed what it builds in a release, erdify's diagram is
 checked against both sides of that release, and that release is itself a CI
 leg.
 
-The newest releases are also tested every day by a scheduled workflow, without
+The newest releases are also tested every week by a scheduled workflow, without
 waiting for the lockfile: the whole test suite runs on the newest SQLModel,
 Pydantic, sqlglot and Django releases and the newest SQLAlchemy they accept,
 and a Django or SQLAlchemy series that is out but missing from the CI matrix is

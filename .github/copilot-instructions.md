@@ -102,7 +102,7 @@ test helper prepends to a bare body).
   that added the feature) and `SQLMODEL_DIFFERENCES` (a known difference from a
   release on).
 
-- `.github/workflows/upstream.yml` (daily, not a required check) runs the
+- `.github/workflows/upstream.yml` (weekly, not a required check) runs the
   whole suite on the newest releases (newest SQLModel / Pydantic / sqlglot /
   Django from PyPI on top of `uv lock --upgrade`) and
   `scripts/check_upstream_series.py`, which fails when a Django / SQLAlchemy

@@ -24,7 +24,8 @@ name: Upstream releases
 
 on:
   schedule:
-    - cron: "0 5 * * *"
+    # Weekly, Mondays 05:00 UTC (Dependabot moves the lock on Wednesdays).
+    - cron: "0 5 * * 1"
   workflow_dispatch:
 
 permissions:
