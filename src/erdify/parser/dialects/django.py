@@ -2,13 +2,21 @@
 
 import ast
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import expr_name
 from ..common import _Rel, is_enum_class
 from .base import Dialect, ParseContext
 from .django_apps import app_label, app_package
+from .django_contrib import (
+    CONTRIB_TABLES,
+    DEFAULT_USER_MODEL,
+    abstract_user_bases,
+    contrib_bindings,
+    contrib_target,
+    imported_contrib_names,
+)
 
 #: Django relationship field constructs (everything else ending in "Field" is a column).
 DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
@@ -70,6 +78,16 @@ class DjangoDialect(Dialect):
         self._lower_names: Dict[str, str] | None = None
         self._links_cache: Dict[str, List[Tuple[str, str]]] = {}
         self._app_labels: Dict[Path, str] = {}
+        self._user_model_name: str | None = None
+        self._declaring: Dict[int, ast.ClassDef] | None = None
+        self._bindings: Dict[Tuple[int, int], Dict[str, str]] = {}
+
+    @classmethod
+    def builtin_classes(
+        cls, trees: Iterable[ast.Module], defined: Set[str]
+    ) -> Dict[str, ast.ClassDef]:
+        """Django's abstract user bases, when a scanned file imports them (#277)."""
+        return abstract_user_bases(imported_contrib_names(trees), defined)
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         return self._inherits_django_model(class_node)
@@ -586,7 +604,9 @@ class DjangoDialect(Dialect):
         cached = self._target_column_cache.get(key)
         if cached is not None:
             return cached
-        default = (to_field or "id", self._django_display_type("BigAutoField"))
+        # contrib apps (auth, contenttypes) keep AutoField primary keys.
+        auto_field = "AutoField" if target in CONTRIB_TABLES else "BigAutoField"
+        default = (to_field or "id", self._django_display_type(auto_field))
         node = self.classes.all.get(target)
         if node is None or key in stack:
             return default
@@ -662,13 +682,14 @@ class DjangoDialect(Dialect):
     def _django_target_table(self, class_name: str) -> str:
         """Resolve a target class name to its table name.
 
-        ``Meta.db_table`` or Django's default name for a parsed model; the
-        lower-cased class name for a model outside the parsed files, whose app
-        is unknown.
+        ``Meta.db_table`` or Django's default name for a parsed model; the real
+        table of a ``django.contrib`` model (``auth.User`` -> ``auth_user``,
+        #278); the lower-cased class name for any other model outside the
+        parsed files, whose app is unknown.
         """
         node = self.classes.all.get(class_name)
         if node is None:
-            return class_name.lower()
+            return CONTRIB_TABLES.get(class_name, class_name.lower())
         db_table = self._meta_value(node, "db_table")
         if isinstance(db_table, str):
             return db_table
@@ -772,6 +793,8 @@ class DjangoDialect(Dialect):
             return None
         if any(keyword.arg == "through" for keyword in call.keywords):
             return None
+        # A contrib target stays qualified ("auth.Group"): contrib models aren't
+        # drawn, and a project model sharing the class name must not get the edge.
         return _Rel(target, "many_to_many", name, False)
 
     def _resolve_django_relationship_target(self, call: ast.Call, current_class: str) -> str | None:
@@ -782,14 +805,15 @@ class DjangoDialect(Dialect):
         relation to it targets the concrete model it proxies.
         """
         target = None
+        bindings = self._module_bindings(call)
         if call.args:
-            target = self._resolve_django_target(call.args[0], current_class)
+            target = self._resolve_django_target(call.args[0], current_class, bindings)
         else:
             for keyword in call.keywords:
                 if keyword.arg == "to":
-                    target = self._resolve_django_target(keyword.value, current_class)
+                    target = self._resolve_django_target(keyword.value, current_class, bindings)
                     break
-        if target is not None and target not in self.classes.all:
+        if target is not None and "." not in target and target not in self.classes.all:
             target = self._class_names_by_lower().get(target.lower(), target)
         if target is not None and target in self.classes.all:
             if self._meta_flag(self.classes.all[target], "proxy"):
@@ -805,16 +829,87 @@ class DjangoDialect(Dialect):
             self._lower_names = {low: names[0] for low, names in counts.items() if len(names) == 1}
         return self._lower_names
 
-    @staticmethod
-    def _resolve_django_target(node: ast.expr, current_class: str) -> str | None:
+    def _resolve_django_target(
+        self, node: ast.expr, current_class: str, bindings: Dict[str, str]
+    ) -> str | None:
         """Resolve a Django relationship target to a class name.
 
         Handles ``"self"``, ``"app.Model"`` / ``"Model"`` string references and a
-        direct class reference (``ForeignKey(Author, ...)``).
+        direct class reference (``ForeignKey(Author, ...)``). A ``django.contrib``
+        model is returned qualified (``"auth.User"``): from a string naming its
+        app, a name the declaring module imports from contrib (``bindings``;
+        it wins over a scanned class of the same name), or the user model
+        (``settings.AUTH_USER_MODEL``, ``get_user_model()``, #278).
         """
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             value = node.value
             if value == "self":
                 return current_class
-            return value.split(".")[-1]
+            return contrib_target(value) or value.split(".")[-1]
+        if isinstance(node, ast.Attribute) and node.attr == "AUTH_USER_MODEL":
+            return self._user_model()
+        if isinstance(node, ast.Call) and expr_name(node.func) == "get_user_model":
+            return self._user_model()
+        if isinstance(node, ast.Name) and node.id in bindings:
+            return bindings[node.id]
         return expr_name(node)
+
+    def _module_bindings(self, call: ast.Call) -> Dict[str, str]:
+        """Contrib names the declaring module binds where the field ``call`` is declared.
+
+        The declaring class may be an abstract base in another file than the
+        model being built, so its own module's imports are the ones that count.
+        """
+        if self._declaring is None:
+            self._declaring = {
+                id(node): owner
+                for owner in self.classes.all.values()
+                for node in ast.walk(owner)
+                if isinstance(node, ast.Call)
+            }
+        owner = self._declaring.get(id(call))
+        tree = self.ctx.tree_of(owner) if owner is not None else None
+        if owner is None or tree is None:
+            return {}
+        # The bindings where the class is declared: a later rebinding of the
+        # name doesn't change a field that already captured it.
+        key = (id(tree), owner.lineno)
+        if key not in self._bindings:
+            self._bindings[key] = contrib_bindings(tree, owner.lineno)
+        return self._bindings[key]
+
+    def _user_model(self) -> str:
+        """The model ``AUTH_USER_MODEL`` names, as far as the source tells.
+
+        The one scanned concrete model built on ``AbstractBaseUser`` (also via
+        ``AbstractUser``), else Django's default ``auth.User``. The setting
+        itself lives in ``settings.py``, which erdify doesn't read.
+        """
+        if self._user_model_name is None:
+            # Root user models only: a proxy or multi-table child of the user
+            # model builds on AbstractBaseUser too, but is not another candidate.
+            users = [
+                name
+                for name, node in self.classes.all.items()
+                if self.ctx.file_of(node) is not None
+                and self._is_concrete_django_model(name)
+                and not self._meta_flag(node, "proxy")
+                and not self._concrete_parents(node)
+                and self._builds_on(node, "AbstractBaseUser", set())
+            ]
+            self._user_model_name = users[0] if len(users) == 1 else DEFAULT_USER_MODEL
+        return self._user_model_name
+
+    def _builds_on(self, node: ast.ClassDef, base_name: str, seen: Set[str]) -> bool:
+        """Whether ``base_name`` is among the class's ancestors (by name)."""
+        for base in node.bases:
+            name = expr_name(base)
+            if name is None or name in seen:
+                continue
+            seen.add(name)
+            if name == base_name:
+                return True
+            parent = self.classes.all.get(name)
+            if parent is not None and self._builds_on(parent, base_name, seen):
+                return True
+        return False

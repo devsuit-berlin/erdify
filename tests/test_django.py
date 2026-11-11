@@ -413,3 +413,257 @@ class OrderItem(models.Model):
         assert entities["Invoice"].table_name == "billing_invoice"
         fk = next(f for f in entities["Invoice"].fields if f.name == "item_id")
         assert fk.foreign_table == "shop_orderitem.id"
+
+
+class TestDjangoContribAuth:
+    """#277 / #278: django.contrib.auth bases and relation targets."""
+
+    def _parse(self, tmp_path: Path, source: str) -> dict:
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(source, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return entities
+
+    def _fk(self, entities: dict, model: str, column: str) -> str | None:
+        return next(f for f in entities[model].fields if f.name == column).foreign_table
+
+    CUSTOM_USER = """
+from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+
+
+class Member(AbstractUser):
+    pass
+
+
+class Order(models.Model):
+    buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+"""
+
+    def test_custom_user_inherits_the_abstract_user_fields(self, tmp_path: Path):
+        member = self._parse(tmp_path, self.CUSTOM_USER)["Member"]
+        assert [f.name for f in member.fields] == [
+            "id",
+            "password",
+            "last_login",
+            "is_superuser",
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "is_staff",
+            "is_active",
+            "date_joined",
+        ]
+        assert sorted(member.relationships) == [
+            ("auth.Group", "many_to_many", "groups"),
+            ("auth.Permission", "many_to_many", "user_permissions"),
+        ]
+
+    def test_auth_user_model_resolves_to_the_only_custom_user(self, tmp_path: Path):
+        entities = self._parse(tmp_path, self.CUSTOM_USER)
+        assert self._fk(entities, "Order", "buyer_id") == "shop_member.id"
+
+    def test_auth_user_model_without_a_custom_user_is_auth_user(self, tmp_path: Path):
+        source = self.CUSTOM_USER.replace("class Member(AbstractUser):\n    pass\n", "")
+        entities = self._parse(tmp_path, source)
+        assert self._fk(entities, "Order", "buyer_id") == "auth_user.id"
+
+    def test_auth_user_model_with_several_custom_users_is_auth_user(self, tmp_path: Path):
+        source = self.CUSTOM_USER.replace(
+            "class Member(AbstractUser):\n    pass\n",
+            "class Member(AbstractUser):\n    pass\n\n\nclass Staff(AbstractUser):\n    pass\n",
+        )
+        entities = self._parse(tmp_path, source)
+        assert self._fk(entities, "Order", "buyer_id") == "auth_user.id"
+
+    def test_locally_defined_base_is_not_replaced(self, tmp_path: Path):
+        source = """
+from django.db import models
+
+
+class AbstractUser(models.Model):
+    handle = models.CharField(max_length=20)
+
+    class Meta:
+        abstract = True
+
+
+class Member(AbstractUser):
+    pass
+"""
+        member = self._parse(tmp_path, source)["Member"]
+        assert [f.name for f in member.fields] == ["id", "handle"]
+
+    def test_bases_are_only_added_when_imported_from_contrib(self, tmp_path: Path):
+        source = """
+from accounts.base import AbstractUser
+
+
+class Member(AbstractUser):
+    pass
+"""
+        assert "Member" not in self._parse(tmp_path, source)
+
+    @pytest.mark.parametrize(
+        "child",
+        [
+            "class StaffMember(Member):\n    class Meta:\n        proxy = True\n",
+            "class Customer(Member):\n    loyalty = models.IntegerField()\n",
+        ],
+    )
+    def test_auth_user_model_ignores_proxy_and_child_models(self, tmp_path: Path, child: str):
+        source = self.CUSTOM_USER.replace(
+            "class Member(AbstractUser):\n    pass\n",
+            "class Member(AbstractUser):\n    pass\n\n\n" + child,
+        )
+        entities = self._parse(tmp_path, source)
+        assert self._fk(entities, "Order", "buyer_id") == "shop_member.id"
+
+    def test_project_model_named_group_gets_no_contrib_edge(self, tmp_path: Path):
+        source = (
+            self.CUSTOM_USER
+            + "\n\nclass Group(models.Model):\n    name = models.CharField(max_length=20)\n"
+        )
+        entities = self._parse(tmp_path, source)
+        out = PlantUMLGenerator(entities, {}).generate()
+        assert "Group" in entities
+        assert '"groups"' not in out
+
+    def test_raw_types_show_auto_field_for_contrib_targets(self, tmp_path: Path):
+        app = tmp_path / "shop"
+        app.mkdir()
+        (app / "models.py").write_text(
+            "from django.db import models\n\n\n"
+            "class Note(models.Model):\n"
+            '    author = models.ForeignKey("auth.User", on_delete=models.CASCADE)\n',
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, django_raw_types=True)
+        fk = next(f for f in entities["Note"].fields if f.name == "author_id")
+        assert (fk.foreign_table, fk.type_str) == ("auth_user.id", "AutoField")
+
+    def _apps(self, tmp_path: Path, files: dict[str, str]) -> dict:
+        for app, source in files.items():
+            (tmp_path / app).mkdir()
+            (tmp_path / app / "models.py").write_text(source, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return entities
+
+    def test_contrib_import_wins_over_a_project_model_of_that_name(self, tmp_path: Path):
+        entities = self._apps(
+            tmp_path,
+            {
+                "teams": "from django.db import models\n\n\nclass Group(models.Model):\n    pass\n",
+                "shop": "from django.contrib.auth.models import Group\n"
+                "from django.db import models\n\n\n"
+                "class Membership(models.Model):\n"
+                "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+            },
+        )
+        assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
+
+    def test_another_modules_contrib_import_does_not_leak(self, tmp_path: Path):
+        entities = self._apps(
+            tmp_path,
+            {
+                "accounts": "from django.contrib.auth.models import Group\n"
+                "from django.db import models\n\n\n"
+                "class Profile(models.Model):\n"
+                "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+                "billing": "from directory.models import Group\n"
+                "from django.db import models\n\n\n"
+                "class Invoice(models.Model):\n"
+                "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+            },
+        )
+        assert self._fk(entities, "Profile", "group_id") == "auth_group.id"
+        assert self._fk(entities, "Invoice", "group_id") == "group.id"
+
+    def test_aliased_contrib_import(self, tmp_path: Path):
+        entities = self._parse(
+            tmp_path,
+            "from django.contrib.auth.models import Group as AuthGroup\n"
+            "from django.db import models\n\n\n"
+            "class Membership(models.Model):\n"
+            "    group = models.ForeignKey(AuthGroup, on_delete=models.CASCADE)\n",
+        )
+        assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
+
+    def test_inherited_field_uses_the_declaring_modules_imports(self, tmp_path: Path):
+        entities = self._apps(
+            tmp_path,
+            {
+                "core": "from django.contrib.auth.models import User\n"
+                "from django.db import models\n\n\n"
+                "class Owned(models.Model):\n"
+                "    owner = models.ForeignKey(User, on_delete=models.CASCADE)\n\n"
+                "    class Meta:\n"
+                "        abstract = True\n",
+                "shop": "from core.models import Owned\n\n\nclass Document(Owned):\n    pass\n",
+            },
+        )
+        assert self._fk(entities, "Document", "owner_id") == "auth_user.id"
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # imported only inside a function: not a module binding
+            "from django.db import models\n\n\n"
+            "def helper():\n"
+            "    from django.contrib.auth.models import Group\n"
+            "    return Group\n\n\n"
+            "class Group(models.Model):\n    pass\n\n\n"
+            "class Membership(models.Model):\n"
+            "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+            # imported, then redefined locally: the local class wins
+            "from django.contrib.auth.models import Group\n"
+            "from django.db import models\n\n\n"
+            "class Group(models.Model):\n    pass\n\n\n"
+            "class Membership(models.Model):\n"
+            "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+        ],
+        ids=["function_scope_import", "redefined_after_import"],
+    )
+    def test_local_group_is_not_overridden(self, tmp_path: Path, source: str):
+        entities = self._parse(tmp_path, source)
+        assert self._fk(entities, "Membership", "group_id") == "shop_group.id"
+
+    def test_import_in_try_block_with_fallback(self, tmp_path: Path):
+        entities = self._parse(
+            tmp_path,
+            "try:\n"
+            "    from django.contrib.auth.models import Group\n"
+            "except ImportError:\n"
+            "    Group = None\n\n"
+            "import logging\n"
+            "from django.db import models\n\n"
+            "log: logging.Logger = logging.getLogger(__name__)\n\n\n"
+            "class Membership(models.Model):\n"
+            "    group = models.ForeignKey(Group, on_delete=models.CASCADE)\n",
+        )
+        assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
+
+    REDEFINED_AFTER_USE = """
+from django.contrib.auth.models import Group
+from django.db import models
+
+
+class Membership(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE)
+
+
+class Group(models.Model):
+    pass
+
+
+class Team(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE)
+"""
+
+    def test_field_keeps_the_binding_from_its_declaration(self, tmp_path: Path):
+        entities = self._parse(tmp_path, self.REDEFINED_AFTER_USE)
+        assert self._fk(entities, "Membership", "group_id") == "auth_group.id"
+        assert self._fk(entities, "Team", "group_id") == "shop_group.id"

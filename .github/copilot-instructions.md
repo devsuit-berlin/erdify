@@ -61,7 +61,9 @@ without extra work.
   or file an issue and add the source to `KNOWN_DIFFERENCES` (a strict xfail).
 - Nothing is skipped silently: a source Django rejects or can't load fails the
   test unless it is listed, with a reason, in `EXPECTED_REJECTED` /
-  `EXPECTED_UNLOADABLE`.
+  `EXPECTED_UNLOADABLE`. A source whose schema depends on project settings the
+  reference can't mirror (a swapped `AUTH_USER_MODEL`) goes in
+  `SETTINGS_DEPENDENT` and is covered by unit tests instead.
 - New Django parsing support → add an edge-case module for it.
 - CI repeats these tests on every supported Django series (`django` job in
   `test.yml`). Add a series there when Django releases one.

@@ -46,7 +46,7 @@ including where each of those is the better choice.
 - [Viewing the Diagram](usage/viewing.md) — render online, locally with PlantUML, or in VS Code
 - [CI/CD & pre-commit](usage/ci.md) — keep ERDs up to date in CI and via pre-commit hooks
 - [Frameworks Overview](frameworks/index.md) — the five frameworks side by side, how each is detected, and a worked example with the generated PlantUML
-- [Django ORM](frameworks/django.md) — Django-specific parsing details (FK mapping, type mapping, enums, abstract bases, `db_table`)
+- [Django ORM](frameworks/django.md) — Django-specific parsing details (table names, FK mapping, type mapping, enums, abstract bases, the user model)
 - [SQL DDL](frameworks/sql.md) — generate ERDs from `.sql` files via the optional `erdify[sql]` extra (`CREATE TABLE`, foreign keys, enums)
 - [Python Parsing Limitations](frameworks/limitations.md) — what the AST parser cannot see, and what to do instead
 - [Troubleshooting](troubleshooting.md) — symptom-first fixes for the common surprises

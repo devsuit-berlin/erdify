@@ -172,7 +172,9 @@ catalog in `tests/fixtures/django_edge_cases/`, and every inline snippet in
 erdify's parse. A Django snippet you add to a test is picked up automatically.
 If it shows a real erdify bug you aren't fixing in the same change, open an
 issue and list the source in `KNOWN_DIFFERENCES`. A source Django can't load or
-rejects must be listed in `EXPECTED_UNLOADABLE` / `EXPECTED_REJECTED`; nothing is
+rejects must be listed in `EXPECTED_UNLOADABLE` / `EXPECTED_REJECTED` (one that
+depends on project settings, like a swapped `AUTH_USER_MODEL`, in
+`SETTINGS_DEPENDENT`); nothing is
 skipped silently.
 
 ```bash

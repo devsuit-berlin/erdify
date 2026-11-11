@@ -62,6 +62,29 @@ app label from source, in Django's order:
 A model outside the scanned files (a relation target erdify can't see) shows
 the lower-cased class name, without a prefix.
 
+## The user model and other contrib models
+
+A custom user model built on Django's `AbstractUser`, or on
+`AbstractBaseUser` and `PermissionsMixin`, gets the fields those bases define
+(`password`, `last_login`, `is_superuser`, `username`, …, and the `groups` /
+`user_permissions` many-to-many) as if their source were scanned. erdify ships
+their definitions and adds them when a scanned file imports them from
+`django.contrib.auth.models` (or `django.contrib.auth.base_user`).
+
+Relations to models of `django.contrib` reference their real tables, though the
+models themselves are not drawn:
+
+| Target | Table |
+|---|---|
+| `"auth.User"`, `User` imported from `django.contrib.auth.models` | `auth_user` |
+| `"auth.Group"` / `Group`, `"auth.Permission"` / `Permission` | `auth_group`, `auth_permission` |
+| `"contenttypes.ContentType"` / `ContentType` | `django_content_type` |
+| `settings.AUTH_USER_MODEL`, `get_user_model()` | the custom user model, see below |
+
+`AUTH_USER_MODEL` is set in `settings.py`, which erdify doesn't read. It
+resolves to the one scanned concrete model built on `AbstractBaseUser` (also via
+`AbstractUser`); with none or several, to Django's default `auth_user`.
+
 ## Inheritance
 
 Inheritance follows Django's three model inheritance styles:
