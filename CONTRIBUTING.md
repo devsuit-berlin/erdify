@@ -212,7 +212,7 @@ uv run --with "sqlmodel==0.0.22" --with "sqlalchemy~=2.0.0" pytest tests/test_gr
 Where SQLModel changed what it builds in a release, the expectation depends on
 the installed version: `REQUIRES_SQLMODEL` skips a catalog module before the
 release that added its feature, and `SQLMODEL_DIFFERENCES` holds known
-differences that exist only from a release on.
+differences before a release: erdify follows the newest SQLModel.
 
 The supported framework versions are listed in `docs/installation.md`
 ("Supported framework versions"). When you add or drop one, update that table,
@@ -299,11 +299,17 @@ git commit -m "docs: improve CLI usage examples"
 git push origin feature/your-feature-name
 ```
 
-Then open a Pull Request on GitHub with:
+Then open a Pull Request on GitHub. The description is pre-filled from
+[`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md); fill in
+every section. The **PR description** check fails while Summary, Related
+issues or How it was tested is empty, or no box is ticked under Type of change
+or under Output impact. It re-runs when you edit the description.
 
-- Clear title describing the change
-- Description of what and why
-- Link to related issues (e.g., "Fixes #123")
+- Title in Conventional Commits form (`fix: ...`, `feat: ...`)
+- Link every issue the PR resolves ("Closes #123")
+
+Release PRs (maintainers, title `chore: release X.Y.Z`) use the release
+template: `gh pr create --label release --body-file .github/release-pr-template.md`.
 
 ## Style Guide
 
