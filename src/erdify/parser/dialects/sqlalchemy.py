@@ -44,10 +44,9 @@ class TableDialect(AnnotatedDialect):
         key, so with ``mapped_column("account_id", key="id")`` it references
         ``account_id``.
         """
-        renamed: Dict[str, Dict[str, str]] = {}
-        for dialect in self.ctx.all_dialects():
-            if isinstance(dialect, TableDialect):
-                renamed.update(dialect._renamed_keys)
+        # Only this dialect's tables: SQLModel and SQLAlchemy keep separate
+        # metadata, so a table name may exist in both.
+        renamed = self._renamed_keys
         if not renamed:
             return
         for entity in entities.values():

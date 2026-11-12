@@ -56,7 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mapped_column("account_id")` / `mapped_column(name="account_id")` and
   SQLModel's `Field(sa_column=Column("tag_code", ...))` /
   `Field(sa_column_kwargs={"name": "pet_nickname"})`, also when inherited from
-  a mixin. The column used to be drawn under the attribute name
+  a mixin. A `ForeignKey("account.id")` written against an explicit
+  `key="id"` points at that column's name. The column used to be drawn under
+  the attribute name
   ([#292](https://github.com/devsuit-berlin/erdify/issues/292)).
 - Enums based on `IntEnum`, `StrEnum`, `Flag` or `IntFlag`, or on a project's
   own enum base class (`class Kind(LabeledEnum)`), are drawn; only classes

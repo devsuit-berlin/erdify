@@ -4,7 +4,7 @@ A ForeignKey string resolves through the column key; a value referring to a
 module-level mapped_column() is a column.
 """
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Column, ForeignKey, String, Table
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -35,6 +35,7 @@ class Team(Base):
     __tablename__ = "team"
 
     id: Mapped[int] = mapped_column("team_no", key="id", primary_key=True)
+    code: Mapped[str] = mapped_column(key="ref", unique=True)
 
 
 class Member(Base):
@@ -43,3 +44,12 @@ class Member(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     team: Mapped[int] = mapped_column("team_no", ForeignKey("team.id"))
     owner_id: Mapped[int] = shared.owner_fk
+    team_code: Mapped[str] = mapped_column(ForeignKey("team.ref"))
+
+
+member_team = Table(
+    "member_team",
+    Base.metadata,
+    Column("member_id", ForeignKey("member.id"), primary_key=True),
+    Column("team_id", ForeignKey("team.id"), primary_key=True),
+)

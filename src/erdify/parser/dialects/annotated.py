@@ -16,6 +16,7 @@ from ..annotations import (
     column_metadata,
     column_type,
     expand_aliases,
+    expr_name,
     is_call_to,
 )
 from ..common import _Rel, is_enum_class
@@ -71,7 +72,7 @@ class AnnotatedDialect(Dialect):
                 # SQLAlchemy maps no column for `x: Mapped[T] = <plain value>`,
                 # not even with MappedAsDataclass: a default goes through
                 # mapped_column(default=...) (#294). `= None` counts as unset.
-                if not self.plain_value_is_column and not self._may_map_column(node.value):
+                if not self.plain_value_is_column and not self._may_map_column(node):
                     continue
 
                 field = self._parse_field(node)
@@ -80,23 +81,29 @@ class AnnotatedDialect(Dialect):
 
         return fields, relationships
 
-    def _may_map_column(self, value: ast.expr | None) -> bool:
-        """Whether SQLAlchemy may map a column for a ``Mapped`` attribute assigned ``value``.
+    def _may_map_column(self, node: ast.AnnAssign) -> bool:
+        """Whether SQLAlchemy may map a column for this ``Mapped`` attribute.
 
         Nothing, ``None``, a call or a name may: a project helper may return
         ``mapped_column()``, and a module-level ``fk = mapped_column(...)`` may
         be assigned (also qualified, ``columns.fk``). A constant (``= "a"``,
-        ``= 3``) or a member of a scanned enum (``= Status.NEW``) is a plain
-        class attribute. A plain-value call such as ``= datetime(2020, 1, 1)``
-        is therefore still drawn as a column.
+        ``= 3``) is a plain class attribute, and so is a member of the
+        column's own type (``Mapped[Status] = Status.NEW``, scanned or not) or
+        of a scanned enum. A plain-value call such as
+        ``= datetime(2020, 1, 1)`` is therefore still drawn as a column.
         """
+        value = node.value
         if value is None or isinstance(value, (ast.Call, ast.Name)):
             return True
         if isinstance(value, ast.Constant):
             return value.value is None
         if isinstance(value, ast.Attribute):
-            owner = value.value
-            enum_class = self.classes.all.get(owner.id) if isinstance(owner, ast.Name) else None
+            owner = expr_name(value.value)
+            if owner is None:
+                return True
+            if owner == column_type(node.annotation)[0].rpartition(".")[2]:
+                return False
+            enum_class = self.classes.all.get(owner)
             return enum_class is None or not is_enum_class(enum_class, self.classes.all)
         return False
 

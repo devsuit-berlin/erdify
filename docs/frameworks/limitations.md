@@ -284,6 +284,7 @@ names, so it can be wrong in both directions.
 | A base class named `AbstractUser` / `AbstractBaseUser` / `PermissionsMixin` imported from a non-Django module, while another scanned file imports Django's | Gets Django's fields: base classes are resolved by name across the scan. Relation targets, by contrast, follow each module's own imports |
 | Django table names longer than the database's identifier limit | Shown in full; Django truncates them per backend (e.g. 63 characters on PostgreSQL) |
 | Enum bases (`IntEnum`, `StrEnum`, `Flag`, `IntFlag`, …) | Recognised by name, not by import: a scanned class of that name (a model called `Flag`) shadows the enum base for every file, and an unscanned class of that name is taken for the enum base |
+| SQLAlchemy `x: Mapped[T] = <value>` without `mapped_column()` | Not drawn for a constant or a member of the column's own type / a scanned enum (`= Status.NEW`), as SQLAlchemy maps no column. Any call, name or other attribute (`= datetime(2020, 1, 1)`, `= Defaults.NAME`) is still drawn as a column, since it may be a `mapped_column()` |
 | Composite foreign keys | Not supported |
 | Settings inside `sa_column=Column(...)` (foreign key, `unique=`, `nullable=`, …) | Not read; only the column name is |
 | Unannotated `x = relationship("Target")` | Not detected |

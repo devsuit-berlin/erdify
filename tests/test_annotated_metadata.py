@@ -1339,3 +1339,22 @@ class Account(Base):
 """,
     )
     assert [f.name for f in entities["Account"].fields] == ["id", "owner_id"]
+
+
+def test_member_of_the_column_type_is_not_a_column(tmp_path: Path):
+    """`Mapped[Status] = Status.NEW` is a plain value also when Status isn't scanned (#294)."""
+    entities = _parse(
+        tmp_path,
+        """
+import http
+from http import HTTPStatus
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[HTTPStatus] = HTTPStatus.OK
+    other: Mapped[Optional[http.HTTPStatus]] = http.HTTPStatus.NOT_FOUND
+""",
+    )
+    assert [f.name for f in entities["Account"].fields] == ["id"]
