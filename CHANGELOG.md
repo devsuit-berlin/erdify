@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-12
+
 ### Changed
 
 - `erdify[sql]` requires sqlglot 30.8 or later (was 25). Older releases parse
@@ -1271,7 +1273,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.4.5...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/devsuit-berlin/erdify/compare/v1.4.5...v1.5.0
 [1.4.5]: https://github.com/devsuit-berlin/erdify/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/devsuit-berlin/erdify/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/devsuit-berlin/erdify/compare/v1.4.2...v1.4.3
