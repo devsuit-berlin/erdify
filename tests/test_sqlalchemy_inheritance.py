@@ -130,6 +130,70 @@ class TestJoinedTable:
         assert _columns(entities, "User") == ["id"]
 
 
+class TestColumnIdentity:
+    """Single-table columns are matched by database column name, in inheritance order."""
+
+    def test_same_attribute_different_columns(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "class Vehicle(Base):\n    __tablename__ = 'vehicle'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
+            "class Car(Vehicle):\n"
+            "    capacity: Mapped[int | None] = mapped_column('car_capacity')\n\n\n"
+            "class Truck(Vehicle):\n"
+            "    capacity: Mapped[int | None] = mapped_column('truck_capacity')\n",
+        )
+        assert _columns(entities, "Vehicle") == ["id", "car_capacity", "truck_capacity"]
+
+    def test_first_subclass_declaration_is_kept(self, tmp_path: Path) -> None:
+        """Also on a parent mapped to a Core table."""
+        entities = _parse(
+            tmp_path,
+            "vehicle = Table('vehicle', Base.metadata, Column('id', Integer, primary_key=True))"
+            "\n\n\n"
+            "class Vehicle(Base):\n    __table__ = vehicle\n\n\n"
+            "class Car(Vehicle):\n"
+            "    seats: Mapped[int | None] = mapped_column('n_seats')\n\n\n"
+            "class Truck(Vehicle):\n"
+            "    alias: Mapped[str] = mapped_column('n_seats', use_existing_column=True,"
+            " index=True)\n",
+        )
+        seats = entities["Vehicle"].fields[1]
+        assert (seats.name, seats.type_str, seats.index) == ("n_seats", "int", False)
+        assert not seats.is_nullable
+
+    def test_key_of_an_added_column_resolves_foreign_keys(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "vehicle = Table('vehicle', Base.metadata, Column('id', Integer, primary_key=True))"
+            "\n\n\n"
+            "class Vehicle(Base):\n    __table__ = vehicle\n\n\n"
+            "class Car(Vehicle):\n"
+            "    code: Mapped[int] = mapped_column('db_code', key='code', unique=True)\n\n\n"
+            "class Ticket(Base):\n    __tablename__ = 'ticket'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+            "    car_code: Mapped[int] = mapped_column(ForeignKey('vehicle.code'))\n",
+        )
+        fk = next(f for f in entities["Ticket"].fields if f.name == "car_code")
+        assert fk.foreign_table == "vehicle.db_code"
+
+    def test_parent_merges_before_a_child_from_an_earlier_file(self, tmp_path: Path) -> None:
+        (tmp_path / "a_models.py").write_text(
+            HEADER + "class Vehicle(Base):\n    __tablename__ = 'vehicle'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+        )
+        (tmp_path / "b_leaf.py").write_text(
+            HEADER + "class Leaf(Middle):\n"
+            "    seats: Mapped[str] = mapped_column(use_existing_column=True)\n"
+        )
+        (tmp_path / "c_middle.py").write_text(
+            HEADER + "class Middle(Vehicle):\n    seats: Mapped[int | None]\n"
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+        seats = next(f for f in entities["Vehicle"].fields if f.name == "seats")
+        assert (seats.type_str, seats.is_nullable) == ("int", False)
+
+
 class TestNotReadable:
     """Subclasses whose table erdify can't see are left out, not merged into the parent."""
 
@@ -169,6 +233,19 @@ class TestNotReadable:
             "class Engineer(Employee):\n    __table__ = tables['engineer']\n"
             "    language: Mapped[str | None]\n\n\n"
             "class Lead(Engineer):\n    level: Mapped[int | None]\n",
+        )
+        assert _columns(entities, "Employee") == ["id"]
+
+    def test_single_table_under_a_computed_table(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "class Employee(Base):\n    __tablename__ = 'employee'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
+            "class Engineer(Employee):\n    @declared_attr.directive\n"
+            "    def __tablename__(cls) -> str:\n        return 'engineer'\n\n"
+            "    id: Mapped[int] = mapped_column(ForeignKey('employee.id'), primary_key=True)\n\n\n"
+            "class Lead(Engineer):\n    __tablename__ = None\n"
+            "    level: Mapped[int | None]\n",
         )
         assert _columns(entities, "Employee") == ["id"]
 

@@ -119,6 +119,8 @@ LIMITATIONS = {
     ".entities": "limitations.md: a declared_attr __tablename__ is not read",
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_own_declared_attr_tablename"
     ".entities": "limitations.md: a declared_attr __tablename__ is not read",
+    "test_sqlalchemy_inheritance.py::TestNotReadable.test_single_table_under_a_computed_table"
+    ".entities": "limitations.md: a declared_attr __tablename__ is not read",
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_unresolved_table.entities": (
         "limitations.md: a __table__ that is no Table(...) or table variable is not read"
     ),
@@ -176,6 +178,13 @@ OTHER_FILE = "an alias from another file of the test"
 COMPLETED = "a source the test completes with a parameter"
 TEMPLATE = "a str.format template"
 EXPECTED_UNLOADABLE = {
+    **{
+        "test_sqlalchemy_inheritance.py::TestColumnIdentity"
+        f".test_parent_merges_before_a_child_from_an_earlier_file[{i}]": (
+            "one file of a multi-file source: its base class is in another file"
+        )
+        for i in (2, 3)
+    },
     "test_annotated_metadata.py::TestInlineAnnotated.test_other_metadata_is_ignored"
     ".entities": STRING_METADATA,
     "test_annotated_metadata.py::TestCopilotRound2.test_nested_annotated_alias"
