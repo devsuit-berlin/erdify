@@ -258,7 +258,7 @@ class Node(Base):
         assert entities["Node"].nullable_relationships == []
 
     def test_unreadable_foreign_key_keeps_the_annotation(self, tmp_path: Path):
-        """A foreign key inside ``sa_column=`` isn't read (#309): no evidence either way."""
+        """A foreign key inside ``sa_column=`` isn't read (#309), so it can't keep this side."""
         entities = _parse(
             tmp_path,
             """
@@ -268,15 +268,47 @@ from sqlmodel import Field, Relationship, SQLModel
 
 class Owner(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
+    favourite_pet_id: int | None = Field(default=None, foreign_key="pet.id", unique=True)
 
 
 class Pet(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     owner_id: int = Field(sa_column=Column(Integer, ForeignKey("owner.id"), nullable=False))
-    owner: Owner = Relationship()
+    owner: Owner = Relationship(sa_relationship_kwargs={"foreign_keys": "Pet.owner_id"})
 """,
         )
-        assert entities["Pet"].nullable_relationships == []
+        # Pet's own foreign key is invisible, so Owner's unique one back looks
+        # like a one-to-one: the documented limitation (strict xfail in the
+        # ground-truth tests). SQLAlchemy keeps Pet.owner required.
+        assert entities["Pet"].nullable_relationships == ["owner"]
+
+    def test_foreign_key_both_ways_keeps_the_annotation(self, tmp_path: Path):
+        """This side's own foreign key to the target makes a many-to-one, required."""
+        entities = _parse(
+            tmp_path,
+            """
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "user"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    primary_address_id: Mapped[int] = mapped_column(ForeignKey("address.id"))
+    primary_address: Mapped["Address"] = relationship(foreign_keys=[primary_address_id])
+
+
+class Address(Base):
+    __tablename__ = "address"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), unique=True)
+""",
+        )
+        assert entities["User"].nullable_relationships == []
 
     def test_target_joined_through_its_parent_keeps_it_required(self, tmp_path: Path):
         """A foreign key to the target's mapped parent's table makes a many-to-one."""
