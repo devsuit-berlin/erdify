@@ -90,42 +90,53 @@ class TableDialect(AnnotatedDialect):
 
         SQLAlchemy makes a relationship many-to-one only when the foreign key
         to the target is in the class's own table (or a mapped parent's);
-        otherwise it is the reverse of a one-to-one (``uselist=False``), and
-        nothing in the database forces the other row to exist, whatever the
-        annotation says. A self-referential reference keeps its annotation:
-        its direction depends on ``remote_side=``.
+        when the foreign key is on the target's side instead, it is the
+        reverse of a one-to-one (``uselist=False``), and nothing in the
+        database forces the other row to exist, whatever the annotation says.
+        Only a foreign key erdify sees on the target's side, and none on this
+        side, counts: one it can't read (inside ``sa_column=``, say) leaves
+        the annotation in charge. A self-referential reference keeps its
+        annotation too: its direction depends on ``remote_side=``.
         """
         for entity in entities.values():
             if entity.source != self.kind:
                 continue
-            local_tables: Set[str] | None = None
             for target, kind, attr in entity.relationships:
                 if kind != "one" or attr in entity.nullable_relationships:
                     continue
                 target_entity = entities.get(target)
                 if target_entity is None or target == entity.name:
                     continue
-                if local_tables is None:
-                    local_tables = self._referenced_tables(entity, entities)
-                if target_entity.table_name not in local_tables:
+                own = self._mapped_family(entity, entities)
+                other = self._mapped_family(target_entity, entities)
+                own_tables = {e.table_name for e in own}
+                other_tables = {e.table_name for e in other}
+                if _references_any(other, own_tables) and not _references_any(own, other_tables):
                     entity.nullable_relationships.append(attr)
 
-    def _referenced_tables(
+    def _mapped_family(
         self, entity: EntityInfo, entities: Mapping[str, EntityInfo]
-    ) -> Set[str]:
-        """Tables the foreign keys of an entity's table and its mapped parents' reference."""
+    ) -> List[EntityInfo]:
+        """The entity and its drawn ancestors of the same kind: the tables it is joined from."""
         class_node = self.classes.all.get(entity.name)
         names = (
             self.classes.dfs_order(class_node, set()) if class_node is not None else [entity.name]
         )
-        return {
-            f.foreign_table.rpartition(".")[0]
+        return [
+            owner
             for name in names
             for owner in [entities.get(name)]
             if owner is not None and owner.source == entity.source
-            for f in owner.fields
-            if f.foreign_table
-        }
+        ]
+
+
+def _references_any(owners: List[EntityInfo], tables: Set[str]) -> bool:
+    """Whether a foreign key of ``owners`` references one of ``tables`` (schema ignored)."""
+    return any(
+        f.foreign_table and f.foreign_table.split(".")[-2:][0] in tables
+        for owner in owners
+        for f in owner.fields
+    )
 
 
 class SQLModelDialect(TableDialect):

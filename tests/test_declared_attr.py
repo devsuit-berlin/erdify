@@ -256,3 +256,59 @@ class Node(Base):
 """,
         )
         assert entities["Node"].nullable_relationships == []
+
+    def test_unreadable_foreign_key_keeps_the_annotation(self, tmp_path: Path):
+        """A foreign key inside ``sa_column=`` isn't read (#309): no evidence either way."""
+        entities = _parse(
+            tmp_path,
+            """
+from sqlalchemy import Column, ForeignKey, Integer
+from sqlmodel import Field, Relationship, SQLModel
+
+
+class Owner(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+
+class Pet(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(sa_column=Column(Integer, ForeignKey("owner.id"), nullable=False))
+    owner: Owner = Relationship()
+""",
+        )
+        assert entities["Pet"].nullable_relationships == []
+
+    def test_target_joined_through_its_parent_keeps_it_required(self, tmp_path: Path):
+        """A foreign key to the target's mapped parent's table makes a many-to-one."""
+        entities = _parse(
+            tmp_path,
+            """
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Employee(Base):
+    __tablename__ = "employee"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str]
+    __mapper_args__ = {"polymorphic_on": "kind"}
+
+
+class Engineer(Employee):
+    __tablename__ = "engineer"
+    id: Mapped[int] = mapped_column(ForeignKey("employee.id"), primary_key=True)
+    __mapper_args__ = {"polymorphic_identity": "engineer"}
+
+
+class Project(Base):
+    __tablename__ = "project"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("employee.id"))
+    lead: Mapped["Engineer"] = relationship()
+""",
+        )
+        assert entities["Project"].nullable_relationships == []

@@ -273,11 +273,6 @@ class TestSQLModelRelationship:
         assert member.relationships == [("Team", "one", "team")]
         assert member.nullable_relationships == (["team"] if nullable else [])
 
-    def test_referenced_side_is_optional(self, tmp_path: Path):
-        """Without a foreign key to the target, a to-one is a one-to-one's reverse (#299)."""
-        member = _parse(tmp_path, SQLMODEL.format(annotation='"Team"'))["Member"]
-        assert member.nullable_relationships == ["team"]
-
 
 class TestRedeclaration:
     def test_unresolvable_redeclaration_shadows_the_inherited_relationship(self, tmp_path: Path):

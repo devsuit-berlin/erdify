@@ -34,9 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a body that is a single `return`
   ([#298](https://github.com/devsuit-berlin/erdify/issues/298)).
 - A SQLAlchemy / SQLModel to-one relationship declared on the referenced side
-  of a one-to-one (no foreign key to the target in its own table or a mapped
-  parent's) is optional, whatever its annotation says: nothing in the database
-  forces the other row to exist
+  of a one-to-one (the foreign key is on the target's table, none on its own
+  or a mapped parent's) is optional, whatever its annotation says: nothing in
+  the database forces the other row to exist. A foreign key erdify can't read
+  (inside `sa_column=`) leaves the annotation in charge
   ([#299](https://github.com/devsuit-berlin/erdify/issues/299)).
 - SQLModel `Field()` settings given in `Annotated[...]` metadata are applied,
   as SQLModel 0.0.32 and later do: the first `Field()` of a top-level

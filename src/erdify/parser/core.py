@@ -133,6 +133,7 @@ class ASTDatabaseParser:
         self._parse_errors = []
 
         # First pass: parse all files and collect class definitions
+        definitions: List[Tuple[ast.ClassDef, Path]] = []
         for model_file in model_files:
             try:
                 with open(model_file, encoding="utf-8") as f:  # PEP 3120 default
@@ -143,15 +144,14 @@ class ASTDatabaseParser:
                 # Collect all class definitions
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
-                        node = self._extend_namesake(node, model_file)
-                        self._all_classes[node.name] = node
-                        self._class_files[id(node)] = model_file
+                        definitions.append((node, model_file))
             except Exception as e:
                 print(f"Error parsing {model_file}: {e}", file=sys.stderr)
                 self._parse_errors.append((model_file, str(e)))
 
         if self.strict and self._parse_errors:
             raise ModelParseError(self._parse_errors)
+        self._collect_classes(definitions)
 
         # Framework base classes the scanned models build on but whose source
         # isn't scanned (e.g. Django's AbstractUser, #277). They have no file.
@@ -197,33 +197,58 @@ class ASTDatabaseParser:
 
         return self._entities, self._enums
 
-    def _extend_namesake(self, node: ast.ClassDef, model_file: Path) -> ast.ClassDef:
-        """Point ``class Item(Item)`` at the earlier ``Item`` it extends (#300).
+    def _collect_classes(self, definitions: List[Tuple[ast.ClassDef, Path]]) -> None:
+        """Index every class by name; a later definition replaces an earlier one.
 
-        A class cannot extend itself, so a base of its own name is the
-        definition collected before it. That one is kept under a name of its
-        own, ``Item@<line>``, which a copy of ``node`` extends instead; it is
-        not drawn, as the later definition replaces it.
+        ``class Item(Item)`` extends another definition of ``Item`` (#300): a
+        class cannot extend itself. That is the definition collected before it
+        or, when the base sits in a file discovered later (``from core.models
+        import Item``), the first later one in another file that extends no
+        namesake itself. It is kept under a name of its own, ``Item@<line>``,
+        which a copy of the extending class names as its base instead; it is
+        not drawn, as the extending definition replaces it.
         """
-        earlier = self._all_classes.get(node.name)
-        if earlier is None or not any(
-            isinstance(base, ast.Name) and base.id == node.name for base in node.bases
-        ):
-            return node
-        name = f"{node.name}@{earlier.lineno}"
+        used: Set[int] = set()  # id() of later definitions taken as a base
+        for index, (node, model_file) in enumerate(definitions):
+            if id(node) in used:
+                continue
+            if _extends_namesake(node):
+                base = self._all_classes.get(node.name)
+                if base is None:
+                    base = next(
+                        (
+                            later
+                            for later, later_file in definitions[index + 1 :]
+                            if later.name == node.name
+                            and later_file != model_file
+                            and not _extends_namesake(later)
+                        ),
+                        None,
+                    )
+                    if base is not None:
+                        used.add(id(base))
+                        self._class_files[id(base)] = next(f for n, f in definitions if n is base)
+                if base is not None:
+                    node = self._extend(node, base, model_file)
+            self._all_classes[node.name] = node
+            self._class_files[id(node)] = model_file
+
+    def _extend(self, node: ast.ClassDef, base: ast.ClassDef, model_file: Path) -> ast.ClassDef:
+        """A copy of ``node`` whose base of its own name is ``base``, kept under a new name."""
+        name = f"{node.name}@{base.lineno}"
         while name in self._all_classes:
             name += "'"
-        renamed = copy.copy(earlier)
+        renamed = copy.copy(base)
         renamed.name = name
         self._all_classes[name] = renamed
-        self._class_files[id(renamed)] = self._class_files.get(id(earlier), model_file)
+        self._class_files[id(renamed)] = self._class_files.get(id(base), model_file)
         self._shadowed.add(name)
         extending = copy.copy(node)
         extending.bases = [
-            ast.copy_location(ast.Name(id=name, ctx=ast.Load()), base)
-            if isinstance(base, ast.Name) and base.id == node.name
-            else base
-            for base in node.bases
+            ast.copy_location(ast.Name(id=name, ctx=ast.Load()), b)
+            if isinstance(b, ast.Name) and b.id == node.name
+            else b
+            for b in node.bases
         ]
         return extending
 
@@ -359,6 +384,11 @@ class ASTDatabaseParser:
         entity.is_link_table = is_structural_link_table(entity.fields)
 
         self._entities[class_node.name] = entity
+
+
+def _extends_namesake(node: ast.ClassDef) -> bool:
+    """Whether a class names a base of its own name (``class Item(Item)``)."""
+    return any(isinstance(base, ast.Name) and base.id == node.name for base in node.bases)
 
 
 def parse_models_directory(

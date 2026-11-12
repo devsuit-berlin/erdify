@@ -144,7 +144,8 @@ class AnnotatedDialect(Dialect):
         # (#241) is merged with the assigned Field() (SQLModel) / mapped_column()
         # (SQLAlchemy), bare or qualified (e.g. orm.mapped_column): what the
         # assigned call sets wins, except that primary_key=True from either
-        # sticks. SQLModel ignores Field() keys in Annotated metadata.
+        # sticks. A SQLModel Field() in the metadata is applied before this
+        # (SQLModelDialect.member_nodes, #295).
         metadata_calls = (
             [
                 call

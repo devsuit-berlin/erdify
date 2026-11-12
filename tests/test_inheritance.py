@@ -317,6 +317,22 @@ class Item(Item):
         entities, _ = parse_models_directory(tmp_path)
         assert [f.name for f in entities["Item"].fields] == ["name", "id"]
 
+    def test_namesake_from_a_later_file(self, tmp_path: Path):
+        """The extending class is discovered before the file that defines its base."""
+        (tmp_path / "app").mkdir()
+        (tmp_path / "app" / "models.py").write_text(
+            "from core.models import Item\n\n\nclass Item(Item):\n    id: int\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "core").mkdir()
+        (tmp_path / "core" / "models.py").write_text(
+            "from pydantic import BaseModel\n\n\nclass Item(BaseModel):\n    name: str\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert list(entities) == ["Item"]
+        assert [f.name for f in entities["Item"].fields] == ["name", "id"]
+
 
 class TestOrderWhenKindChanges:
     def test_column_keeps_its_position(self, tmp_path: Path):
