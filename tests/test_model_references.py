@@ -191,6 +191,17 @@ class Member(Base):
 """
 
 
+# The foreign key makes the relationship many-to-one, so its annotation decides
+# whether it is optional; on the referenced side it always is (#299).
+SQLALCHEMY_FK = SQLALCHEMY.replace(
+    "from sqlalchemy.orm import (",
+    "from sqlalchemy import ForeignKey\nfrom sqlalchemy.orm import (",
+).replace(
+    "    team: {annotation}",
+    '    team_id: Mapped[int] = mapped_column(ForeignKey("team.id"))\n    team: {annotation}',
+)
+
+
 class TestRelationshipTargets:
     @pytest.mark.parametrize(
         ("annotation", "rel_type", "nullable"),
@@ -212,7 +223,7 @@ class TestRelationshipTargets:
         ],
     )
     def test_target(self, tmp_path: Path, annotation: str, rel_type: str, nullable: bool):
-        member = _parse(tmp_path, SQLALCHEMY.format(annotation=annotation))["Member"]
+        member = _parse(tmp_path, SQLALCHEMY_FK.format(annotation=annotation))["Member"]
         assert member.relationships == [("Team", rel_type, "team")]
         assert member.nullable_relationships == (["team"] if nullable else [])
 
@@ -241,6 +252,12 @@ class Member(SQLModel, table=True):
 """
 
 
+SQLMODEL_FK = SQLMODEL.replace(
+    "    team: {annotation}",
+    '    team_id: int = Field(foreign_key="team.id")\n    team: {annotation}',
+)
+
+
 class TestSQLModelRelationship:
     @pytest.mark.parametrize(
         ("annotation", "nullable"),
@@ -252,9 +269,14 @@ class TestSQLModelRelationship:
         ],
     )
     def test_target(self, tmp_path: Path, annotation: str, nullable: bool):
-        member = _parse(tmp_path, SQLMODEL.format(annotation=annotation))["Member"]
+        member = _parse(tmp_path, SQLMODEL_FK.format(annotation=annotation))["Member"]
         assert member.relationships == [("Team", "one", "team")]
         assert member.nullable_relationships == (["team"] if nullable else [])
+
+    def test_referenced_side_is_optional(self, tmp_path: Path):
+        """Without a foreign key to the target, a to-one is a one-to-one's reverse (#299)."""
+        member = _parse(tmp_path, SQLMODEL.format(annotation='"Team"'))["Member"]
+        assert member.nullable_relationships == ["team"]
 
 
 class TestRedeclaration:
@@ -263,7 +285,8 @@ class TestRedeclaration:
         src = """
 from typing import Union
 
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -281,7 +304,11 @@ class Team(Base):
 
 
 class OwnedMixin:
-    owner: Mapped["User"] = relationship()
+    owner_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+
+    @declared_attr
+    def owner(cls) -> Mapped["User"]:
+        return relationship()
 
 
 class Project(OwnedMixin, Base):
@@ -292,7 +319,10 @@ class Project(OwnedMixin, Base):
         entities = _parse(tmp_path, src)
         assert entities["Project"].relationships == []
         edges = [line for line in generate_mermaid(entities).splitlines() if "--" in line]
-        assert not any(line.strip().startswith("Project ") for line in edges)
+        # Only the foreign key's edge is left, not the inherited relationship's.
+        assert [line.strip() for line in edges if line.strip().startswith("Project ")] == [
+            'Project }o--|| User : "owner_id"'
+        ]
 
 
 class TestQualifiedRelationshipCall:

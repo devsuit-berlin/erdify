@@ -123,7 +123,8 @@ class Hero(SQLModel, table=True):
         assert entities["Hero"].inverse_relationships == {"team": "heroes"}
 
     MIXIN = """
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -131,7 +132,11 @@ class Base(DeclarativeBase):
 
 
 class AuthoredMixin:
-    author: Mapped["User"] = relationship(back_populates="posts")
+    author_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+
+    @declared_attr
+    def author(cls) -> Mapped["User"]:
+        return relationship(back_populates="posts")
 
 
 class User(Base):

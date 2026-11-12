@@ -1,11 +1,12 @@
 """The parser entry points: :class:`ASTDatabaseParser` and :func:`parse_models_directory`."""
 
 import ast
+import copy
 import sys
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Callable, Dict, List, Mapping, Tuple
+from typing import Callable, Dict, List, Mapping, Set, Tuple
 
 from ..config import EntityInfo, EnumInfo, is_structural_link_table
 from .aliases import AliasResolver
@@ -113,6 +114,8 @@ class ASTDatabaseParser:
         self._file_trees: Dict[Path, ast.Module] = {}
         #: The file each class definition (by ``id`` of its node) was read from.
         self._class_files: Dict[int, Path] = {}
+        #: Names given to earlier definitions that a namesake extends (#300).
+        self._shadowed: Set[str] = set()
         #: Classes and dialects (with their caches); renewed for each parse run.
         self._ctx = self._new_context()
 
@@ -140,6 +143,7 @@ class ASTDatabaseParser:
                 # Collect all class definitions
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
+                        node = self._extend_namesake(node, model_file)
                         self._all_classes[node.name] = node
                         self._class_files[id(node)] = model_file
             except Exception as e:
@@ -161,6 +165,8 @@ class ASTDatabaseParser:
         # caches) are fresh for each run.
         self._ctx = self._new_context()
         for class_node in self._all_classes.values():
+            if class_node.name in self._shadowed:
+                continue
             if is_enum_class(class_node, self._all_classes):
                 self._parse_enum_class(class_node)
                 continue
@@ -190,6 +196,36 @@ class ASTDatabaseParser:
         self._apply_exclude_patterns()
 
         return self._entities, self._enums
+
+    def _extend_namesake(self, node: ast.ClassDef, model_file: Path) -> ast.ClassDef:
+        """Point ``class Item(Item)`` at the earlier ``Item`` it extends (#300).
+
+        A class cannot extend itself, so a base of its own name is the
+        definition collected before it. That one is kept under a name of its
+        own, ``Item@<line>``, which a copy of ``node`` extends instead; it is
+        not drawn, as the later definition replaces it.
+        """
+        earlier = self._all_classes.get(node.name)
+        if earlier is None or not any(
+            isinstance(base, ast.Name) and base.id == node.name for base in node.bases
+        ):
+            return node
+        name = f"{node.name}@{earlier.lineno}"
+        while name in self._all_classes:
+            name += "'"
+        renamed = copy.copy(earlier)
+        renamed.name = name
+        self._all_classes[name] = renamed
+        self._class_files[id(renamed)] = self._class_files.get(id(earlier), model_file)
+        self._shadowed.add(name)
+        extending = copy.copy(node)
+        extending.bases = [
+            ast.copy_location(ast.Name(id=name, ctx=ast.Load()), base)
+            if isinstance(base, ast.Name) and base.id == node.name
+            else base
+            for base in node.bases
+        ]
+        return extending
 
     def _discover_model_files(self) -> List[Path]:
         """Find model files (see :func:`discover_model_files`) and record the walk."""

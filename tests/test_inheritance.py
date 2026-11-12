@@ -265,7 +265,7 @@ class Item(X, Y, SQLModel, table=True):
         assert {f.name for f in entities["Item"].fields} == {"id", "a", "b"}
 
     def test_self_named_base(self, tmp_path: Path):
-        """``class User(User)`` (extending a namesake) resolves to itself; no loop."""
+        """``class Item(Item)`` extends the earlier ``Item`` and inherits its fields (#300)."""
         src = """
 from sqlmodel import Field, SQLModel
 
@@ -278,7 +278,44 @@ class Item(Item, SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
 """
         entities = _parse(tmp_path, src)
-        assert [f.name for f in entities["Item"].fields] == ["id"]
+        assert list(entities) == ["Item"]
+        assert [f.name for f in entities["Item"].fields] == ["name", "id"]
+
+    def test_chain_of_namesakes(self, tmp_path: Path):
+        """Each redefinition extends the one before it."""
+        src = """
+from pydantic import BaseModel
+
+
+class Item(BaseModel):
+    a: str
+
+
+class Item(Item):
+    b: str
+
+
+class Item(Item):
+    c: str
+"""
+        entities = _parse(tmp_path, src)
+        assert list(entities) == ["Item"]
+        assert [f.name for f in entities["Item"].fields] == ["a", "b", "c"]
+
+    def test_namesake_from_another_file(self, tmp_path: Path):
+        """``from .base import Item`` then ``class Item(Item)`` in the next file."""
+        (tmp_path / "a").mkdir()
+        (tmp_path / "a" / "models.py").write_text(
+            "from pydantic import BaseModel\n\n\nclass Item(BaseModel):\n    name: str\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "b").mkdir()
+        (tmp_path / "b" / "models.py").write_text(
+            "from a.models import Item\n\n\nclass Item(Item):\n    id: int\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Item"].fields] == ["name", "id"]
 
 
 class TestOrderWhenKindChanges:

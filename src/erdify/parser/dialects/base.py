@@ -166,10 +166,20 @@ class Dialect:
         """
         return [
             node.target.id
+            for node in self.member_nodes(class_node)
+            if isinstance(node.target, ast.Name) and not node.target.id.startswith("_")
+        ]
+
+    def member_nodes(self, class_node: ast.ClassDef) -> List[ast.AnnAssign]:
+        """The annotated attribute declarations of a class body, in body order.
+
+        A dialect may add members that are spelled differently, e.g.
+        SQLAlchemy's ``@declared_attr`` methods (#298).
+        """
+        return [
+            node
             for node in class_node.body
-            if isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and not node.target.id.startswith("_")
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
         ]
 
     def class_members(self, class_node: ast.ClassDef, concrete: str) -> _ClassMembers:
@@ -287,8 +297,8 @@ class Dialect:
         """
         names: Dict[str, str] = {}
         for class_name in self.classes.merge_order(class_node):
-            for node in self.classes.all[class_name].body:
-                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            for node in self.member_nodes(self.classes.all[class_name]):
+                if isinstance(node.target, ast.Name):
                     db_name = self._explicit_column_name(node.value, use_key)
                     names[node.target.id] = db_name if db_name is not None else node.target.id
         return names

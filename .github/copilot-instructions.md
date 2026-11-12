@@ -99,8 +99,8 @@ test helper prepends to a bare body).
   oldest supported SQLModel (0.0.22) as well as the locked one (`sqlalchemy`
   job in `test.yml`). Where SQLModel changed what it builds, expectations are
   version-gated: `REQUIRES_SQLMODEL` (skip a catalog module before the release
-  that added the feature) and `SQLMODEL_DIFFERENCES` (a known difference from a
-  release on).
+  that added the feature) and `SQLMODEL_DIFFERENCES` (erdify follows the newest
+  SQLModel; a known difference before the release that changed it).
 
 - `.github/workflows/upstream.yml` (weekly, not a required check) runs the
   whole suite on the newest releases (newest SQLModel / Pydantic / sqlglot /

@@ -22,7 +22,12 @@ class OwnedMixin:
 
     @declared_attr
     def owner(cls) -> Mapped["Owner"]:
-        return relationship("Owner")
+        return relationship("Owner", foreign_keys=f"{cls.__name__}.owner_id")
+
+    # A column from a declared_attr, under an explicit name.
+    @declared_attr
+    def reviewer_id(cls) -> Mapped[int | None]:
+        return mapped_column("reviewer", ForeignKey("owner.id"))
 
 
 class Owner(IdMixin, Base):

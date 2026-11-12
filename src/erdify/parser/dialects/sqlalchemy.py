@@ -60,6 +60,7 @@ class TableDialect(AnnotatedDialect):
         key, so with ``mapped_column("account_id", key="id")`` it references
         ``account_id``.
         """
+        self._optional_reverse_references(entities)
         # Only this dialect's tables: SQLModel and SQLAlchemy keep separate
         # metadata, so a table name may exist in both. A Core table belongs to
         # the metadata it is declared on.
@@ -84,6 +85,48 @@ class TableDialect(AnnotatedDialect):
                 if name is not None:
                     f.foreign_table = f"{table}.{name}"
 
+    def _optional_reverse_references(self, entities: Mapping[str, EntityInfo]) -> None:
+        """Mark a to-one reference from the referenced side as optional (#299).
+
+        SQLAlchemy makes a relationship many-to-one only when the foreign key
+        to the target is in the class's own table (or a mapped parent's);
+        otherwise it is the reverse of a one-to-one (``uselist=False``), and
+        nothing in the database forces the other row to exist, whatever the
+        annotation says. A self-referential reference keeps its annotation:
+        its direction depends on ``remote_side=``.
+        """
+        for entity in entities.values():
+            if entity.source != self.kind:
+                continue
+            local_tables: Set[str] | None = None
+            for target, kind, attr in entity.relationships:
+                if kind != "one" or attr in entity.nullable_relationships:
+                    continue
+                target_entity = entities.get(target)
+                if target_entity is None or target == entity.name:
+                    continue
+                if local_tables is None:
+                    local_tables = self._referenced_tables(entity, entities)
+                if target_entity.table_name not in local_tables:
+                    entity.nullable_relationships.append(attr)
+
+    def _referenced_tables(
+        self, entity: EntityInfo, entities: Mapping[str, EntityInfo]
+    ) -> Set[str]:
+        """Tables the foreign keys of an entity's table and its mapped parents' reference."""
+        class_node = self.classes.all.get(entity.name)
+        names = (
+            self.classes.dfs_order(class_node, set()) if class_node is not None else [entity.name]
+        )
+        return {
+            f.foreign_table.rpartition(".")[0]
+            for name in names
+            for owner in [entities.get(name)]
+            if owner is not None and owner.source == entity.source
+            for f in owner.fields
+            if f.foreign_table
+        }
+
 
 class SQLModelDialect(TableDialect):
     """SQLModel: a class declared with ``table=True``."""
@@ -104,6 +147,58 @@ class SQLModelDialect(TableDialect):
         ``foreign_key="heroteam.id"`` must find it.
         """
         return class_node.name.lower()
+
+    def member_nodes(self, class_node: ast.ClassDef) -> List[ast.AnnAssign]:
+        """Annotated attributes, with a ``Field()`` from ``Annotated`` metadata applied (#295)."""
+        return [_with_metadata_field(node) for node in super().member_nodes(class_node)]
+
+
+def _with_metadata_field(node: ast.AnnAssign) -> ast.AnnAssign:
+    """``node`` as SQLModel 0.0.32+ reads a ``Field()`` in its ``Annotated`` metadata (#295).
+
+    ``x: Annotated[str, Field(unique=True)] = "a"`` maps like ``x: str =
+    Field("a", unique=True)``: the first ``Field()`` of a top-level
+    ``Annotated`` applies, with an assigned plain value as its default. An
+    assigned ``Field()`` replaces it entirely. Older SQLModel releases ignore
+    it.
+    """
+    if node.value is not None and is_call_to(node.value, "Field"):
+        return node
+    field = next(
+        (
+            item
+            for item in _annotated_metadata(node.annotation)
+            if is_call_to(item, "Field") and not _is_pydantic_field(item)
+        ),
+        None,
+    )
+    if field is None:
+        return node
+    if node.value is not None:
+        keywords = [kw for kw in field.keywords if kw.arg not in ("default", "default_factory")]
+        field = ast.Call(
+            func=field.func, args=[], keywords=[*keywords, ast.keyword("default", node.value)]
+        )
+    member = ast.AnnAssign(
+        target=node.target, annotation=node.annotation, value=field, simple=node.simple
+    )
+    return ast.copy_location(member, node)
+
+
+def _annotated_metadata(annotation: ast.expr) -> List[ast.expr]:
+    """The metadata of a top-level ``Annotated[...]``, nested ones flattened innermost first."""
+    if not isinstance(annotation, ast.Subscript) or expr_name(annotation.value) != "Annotated":
+        return []
+    items = annotation.slice.elts if isinstance(annotation.slice, ast.Tuple) else []
+    if not items:
+        return []
+    return [*_annotated_metadata(items[0]), *items[1:]]
+
+
+def _is_pydantic_field(call: ast.Call) -> bool:
+    """``pydantic.Field(...)``: it carries no SQLModel column settings."""
+    func = call.func
+    return isinstance(func, ast.Attribute) and expr_name(func.value) == "pydantic"
 
 
 class SQLAlchemyDialect(TableDialect):
@@ -168,6 +263,24 @@ class SQLAlchemyDialect(TableDialect):
         if field is not None:
             self._annotation_nullable[id(field)] = (field, column_type(node.annotation)[1])
         return field
+
+    def member_nodes(self, class_node: ast.ClassDef) -> List[ast.AnnAssign]:
+        """Annotated attributes, and ``@declared_attr`` methods read as one (#298).
+
+        SQLAlchemy only accepts a relationship on a mixin through
+        ``@declared_attr``: ``def owner(cls) -> Mapped["Owner"]: return
+        relationship(...)`` maps ``owner`` like ``owner: Mapped["Owner"] =
+        relationship(...)``.
+        """
+        members: List[ast.AnnAssign] = []
+        for node in class_node.body:
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                members.append(node)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                member = declared_attr_member(node)
+                if member is not None:
+                    members.append(member)
+        return members
 
     # -- mapped-class inheritance (#293, #302) ----------------------------------
 
@@ -750,9 +863,55 @@ def _defines_function(class_node: ast.ClassDef, name: str) -> bool:
     )
 
 
+def declared_attr_member(node: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.AnnAssign | None:
+    """A ``@declared_attr`` method as the annotated attribute it maps, or None (#298).
+
+    ``@declared_attr def owner(cls) -> Mapped["Owner"]: return relationship()``
+    becomes ``owner: Mapped["Owner"] = relationship()``. Only a method with a
+    return annotation whose body is a single ``return`` (after a docstring) is
+    read; ``@declared_attr.directive`` (``__tablename__``, ``__table_args__``)
+    maps no attribute.
+    """
+    if not any(_is_declared_attr(decorator) for decorator in node.decorator_list):
+        return None
+    if node.returns is None or node.name.startswith("_"):
+        return None
+    body = node.body
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    if len(body) != 1 or not isinstance(body[0], ast.Return) or body[0].value is None:
+        return None
+    member = ast.AnnAssign(
+        target=ast.Name(id=node.name, ctx=ast.Store()),
+        annotation=node.returns,
+        value=body[0].value,
+        simple=1,
+    )
+    return ast.copy_location(member, node)
+
+
+def _is_declared_attr(decorator: ast.expr) -> bool:
+    """``@declared_attr`` (also qualified) or ``@declared_attr.cascading``."""
+    if isinstance(decorator, ast.Attribute) and decorator.attr == "cascading":
+        decorator = decorator.value
+    return expr_name(decorator) == "declared_attr"
+
+
 def _assigns_value(class_node: ast.ClassDef, name: str) -> bool:
-    """Whether the class body assigns ``name`` a value, not just an annotation."""
+    """Whether the class body assigns ``name`` a value, not just an annotation.
+
+    A ``@declared_attr`` method returning the attribute counts (#298).
+    """
     for node in class_node.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == name and declared_attr_member(node) is not None:
+                return True
+            continue
         if isinstance(node, ast.Assign):
             targets = node.targets
         elif isinstance(node, ast.AnnAssign) and node.value is not None:

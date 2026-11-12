@@ -38,8 +38,8 @@ class AnnotatedDialect(Dialect):
         fields: Dict[str, FieldInfo] = {}
         relationships: Dict[str, _Rel] = {}
 
-        for node in class_node.body:
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        for node in self.member_nodes(class_node):
+            if isinstance(node.target, ast.Name):
                 field_name = node.target.id
                 if self.reads_annotated_columns:
                     node = self._with_aliases_expanded(node, class_node)
