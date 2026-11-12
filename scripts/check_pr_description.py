@@ -27,7 +27,7 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _FENCE = re.compile(r"^(```|~~~).*?^\1[^\n]*$", re.DOTALL | re.MULTILINE)
 _HEADING = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 _TICKED = re.compile(r"^\s*[-*]\s+\[[xX]\]", re.MULTILINE)
-#: Template placeholders that mean "not filled in".
+#: Release template placeholders that mean "not filled in".
 _PLACEHOLDERS = ("X.Y.Z", "#PR — short description", "patch / minor / major")
 
 
@@ -63,7 +63,7 @@ def problems(title: str, body: str) -> list[str]:
             missing.append(f"section '## {name}' is missing")
         elif not text:
             missing.append(f"section '## {name}' is empty")
-        elif any(placeholder in text for placeholder in _PLACEHOLDERS):
+        elif release and any(placeholder in text for placeholder in _PLACEHOLDERS):
             missing.append(f"section '## {name}' still has template placeholders")
     for name in ticked:
         text = found.get(name)

@@ -123,3 +123,10 @@ def test_headings_in_code_blocks_do_not_split_sections() -> None:
     )
     assert check.problems("fix: something", body) == []
     assert check.sections(body)["Summary"] == "Reads @declared_attr relationships."
+
+
+def test_placeholders_only_count_in_release_prs() -> None:
+    body = _filled_default().replace(
+        "Reads @declared_attr relationships.", "Documents `chore: release X.Y.Z` titles."
+    )
+    assert check.problems("docs: release flow", body) == []
