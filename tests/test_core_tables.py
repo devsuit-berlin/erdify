@@ -149,6 +149,13 @@ class TestCoreTables:
         assert not review["edition_number"].is_unique  # only in a composite one
         assert _columns(entities["tag"])["id"].is_primary_key  # Column(name="id")
 
+    def test_keyword_only_columns_and_annotated_variables(self) -> None:
+        entities, _ = parse_models_directory(CATALOG / "core_table_options.py")
+
+        columns = _columns(entities["keyword_only"])
+        assert columns["id"].is_primary_key and columns["id"].type_str == "int"
+        assert columns["label"].type_str == "str" and not columns["label"].is_nullable
+
     def test_foreign_key_through_a_column_key_names_the_column(self) -> None:
         entities, _ = parse_models_directory(CATALOG / "core_table_options.py")
 

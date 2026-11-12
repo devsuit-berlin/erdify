@@ -297,18 +297,25 @@ class _MappedTable(NamedTuple):
 
 
 def module_tables(tree: ast.Module) -> List[Tuple[str, ast.Call]]:
-    """``(variable, call)`` for each module-level ``name = Table(...)``, in source order."""
+    """``(variable, call)`` for each module-level ``name = Table(...)``, in source order.
+
+    An annotated assignment (``users: Table = Table(...)``) counts too.
+    """
     found: List[Tuple[str, ast.Call]] = []
     for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            target, value = node.target, node.value
+        else:
+            continue
         if (
-            isinstance(node, ast.Assign)
-            and len(node.targets) == 1
-            and isinstance(node.targets[0], ast.Name)
-            and isinstance(node.value, ast.Call)
-            and is_call_to(node.value, "Table")
-            and _has_metadata(node.value)
+            isinstance(target, ast.Name)
+            and isinstance(value, ast.Call)
+            and is_call_to(value, "Table")
+            and _has_metadata(value)
         ):
-            found.append((node.targets[0].id, node.value))
+            found.append((target.id, value))
     return found
 
 
@@ -399,7 +406,9 @@ def _references(entity: EntityInfo, table: str) -> List[FieldInfo]:
     return [
         f
         for f in entity.fields
-        if f.is_foreign_key and (f.foreign_table or "").rpartition(".")[0] == table
+        # "schema.table.column": schema= is not read, the table name is matched.
+        if f.is_foreign_key
+        and (f.foreign_table or "").rpartition(".")[0].rpartition(".")[2] == table
     ]
 
 
@@ -532,7 +541,9 @@ def parse_core_column(call: ast.Call) -> FieldInfo | None:
 
     # The column type: type_=, else the first positional argument (after the
     # name) that is not a schema item such as ForeignKey(...).
-    positional = call.args[1:] if isinstance(call.args[0], ast.Constant) else list(call.args)
+    positional = (
+        call.args[1:] if call.args and isinstance(call.args[0], ast.Constant) else list(call.args)
+    )
     candidates = [options["type_"]] if "type_" in options else positional
     type_str = ""
     for arg in candidates:

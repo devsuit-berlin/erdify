@@ -169,7 +169,9 @@ Not read:
   table to the target's table makes a to-one reference, otherwise it is a
   collection (`uselist=False`: to-one); a self-referential one is a collection
   unless it sets `remote_side=`. `foreign_keys=` and `primaryjoin=` are not
-  read, and `properties=` must be a dict literal.
+  read, and `properties=` must be a dict literal. A foreign key to a table in
+  another `schema=` is matched by table name (`schema=` is ignored, see
+  [`__table_args__`](#__table_args__-is-mostly-not-read)).
 
 ## Column type aliases
 

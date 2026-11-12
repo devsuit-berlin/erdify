@@ -91,3 +91,11 @@ office = Table(
     Column("id", Integer, primary_key=True),
     Column("region", ForeignKey("region.id"), nullable=False),
 )
+
+# Keyword-only columns, and an annotated table variable.
+keyword_only: Table = Table(
+    "keyword_only",
+    Base.metadata,
+    Column(name="id", type_=Integer, primary_key=True),
+    Column(name="label", type_=String(20), nullable=False),
+)
