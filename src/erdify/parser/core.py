@@ -217,18 +217,7 @@ class ASTDatabaseParser:
                 None,
             )
             if base is None:
-                imported = self._import_source(model_file, node.name)
-                base = next(
-                    (
-                        other
-                        for other, other_file in definitions
-                        if other.name == node.name
-                        and other_file != model_file
-                        and imported is not None
-                        and _is_module_file(other_file, model_file, imported)
-                    ),
-                    None,
-                )
+                base = self._imported_namesake(node, model_file)
             if base is not None:
                 links[id(node)] = base
         while True:
@@ -302,6 +291,28 @@ class ASTDatabaseParser:
             for b in node.bases
         ]
         return extending
+
+    def _imported_namesake(self, node: ast.ClassDef, model_file: Path) -> ast.ClassDef | None:
+        """The class ``from <module> import <name>`` binds, when exactly one scanned file is it.
+
+        That is the module's last top-level definition of the name; several
+        files matching the module path leave it unresolved.
+        """
+        imported = self._import_source(model_file, node.name)
+        if imported is None:
+            return None
+        found: List[ast.ClassDef] = []
+        for other_file, tree in self._file_trees.items():
+            if other_file == model_file or not _is_module_file(other_file, model_file, imported):
+                continue
+            top = [
+                stmt
+                for stmt in tree.body
+                if isinstance(stmt, ast.ClassDef) and stmt.name == node.name
+            ]
+            if top:
+                found.append(top[-1])
+        return found[0] if len(found) == 1 else None
 
     def _import_source(self, model_file: Path, name: str) -> Tuple[int, str] | None:
         """``(level, module)`` of the ``from <module> import <name>`` in a file, if any."""

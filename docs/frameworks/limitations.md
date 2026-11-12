@@ -338,8 +338,9 @@ names, so it can be wrong in both directions.
 | Settings inside `sa_column=Column(...)` (foreign key, `unique=`, `nullable=`, …) | Not read; only the column name is ([#309](https://github.com/devsuit-berlin/erdify/issues/309)) |
 | Unannotated `x = relationship("Target")` | Not detected |
 | SQLAlchemy `@declared_attr` without a return annotation, or with a body other than a single `return` | Not read ([details](#relationships-need-an-annotation)) |
+| A table model extending a same-named table model (`class Item(Item)` with a `__tablename__` / Django model of its own) | Only the extending class is drawn; the base's table is not. A non-table base (SQLModel without `table=True`, Pydantic, mixin, abstract model) is inherited from |
 | SQLAlchemy `@declared_attr.cascading` column on a joined-table hierarchy | Drawn on the first table only, not repeated on each subclass's table |
-| A to-one relationship whose reverse one-to-one foreign key erdify can't see (inside `sa_column=`, `ForeignKeyConstraint`) or isn't unique | Optionality comes from the annotation |
+| A to-one relationship whose reverse one-to-one foreign key erdify can't see (inside `sa_column=`, `ForeignKeyConstraint`) or isn't unique, or whose class also has a foreign key to the target's table (`foreign_keys=` picks the other one) | Optionality comes from the annotation |
 | Relationships declared on a SQLAlchemy single-table inheritance subclass, or pointing at one | Not drawn; the subclass's columns and foreign-key edges are, on the parent's table ([#317](https://github.com/devsuit-berlin/erdify/issues/317)) |
 | ninja-style `ModelSchema` (fields from an inner `Meta`/`Config`) | Detected and skipped with a warning, rather than drawn empty ([#171](https://github.com/devsuit-berlin/erdify/issues/171)) |
 | `attrs` / `msgspec` models | Not supported ([erdantic](../comparison.md) covers these) |

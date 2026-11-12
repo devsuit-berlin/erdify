@@ -900,29 +900,56 @@ class TestNamesakeGuards:
         ]
         assert not any("@" in name for name in names)
 
-    def test_sqlalchemy_mapped_base_is_left_as_before(self, tmp_path: Path):
+    def test_chain_across_files_extends_the_module_binding(self, tmp_path: Path):
+        """``from a.models import Item`` binds a's last ``Item``, itself a namesake extension."""
         entities = self._write(
             tmp_path,
             {
-                "models.py": """
-from sqlalchemy import ForeignKey
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+                "a/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    name: str\n\n\n"
+                "class Item(Item):\n    extra: str\n",
+                "b/models.py": "from a.models import Item\n\n\nclass Item(Item):\n    id: int\n",
+            },
+        )
+        assert [f.name for f in entities["Item"].fields] == ["name", "extra", "id"]
+
+    def test_ambiguous_module_is_not_linked(self, tmp_path: Path):
+        """Two scanned files match ``from models import Item``: no base is guessed."""
+        entities = self._write(
+            tmp_path,
+            {
+                "a/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    a: str\n",
+                "b/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    b: str\n",
+                "shop/models.py": "from models import Item\n\n\nclass Item(Item):\n    id: int\n",
+            },
+        )
+        fields = [{f.name for f in e.fields} for e in entities.values()]
+        assert not any("id" in names and names & {"a", "b"} for names in fields)
+
+    def test_django_abstract_base_with_a_self_reference(self, tmp_path: Path):
+        entities = self._write(
+            tmp_path,
+            {
+                "shop/models.py": """
+from django.db import models
 
 
-class Base(DeclarativeBase):
-    pass
+class Item(models.Model):
+    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
 
-
-class Item(Base):
-    __tablename__ = "item"
-    id: Mapped[int] = mapped_column(primary_key=True)
+    class Meta:
+        abstract = True
 
 
 class Item(Item):
-    __tablename__ = "shop_item"
-    id: Mapped[int] = mapped_column(ForeignKey("item.id"), primary_key=True)
+    name = models.CharField(max_length=10)
 """
             },
         )
-        assert [(e.name, e.table_name) for e in entities.values()] == [("Item", "shop_item")]
-        assert entities["Item"].base_classes == ["Item"]
+        item = entities["Item"]
+        texts = [item.table_name, *(f.name for f in item.fields)]
+        texts += [str(f.foreign_table) for f in item.fields]
+        texts += [t for t, _, _ in item.relationships]
+        assert not any("@" in text for text in texts), texts
