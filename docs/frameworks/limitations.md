@@ -132,7 +132,8 @@ is read. Classic declarative attributes (`id = Column(Integer, ...)`) have no
 annotation, so they are not drawn as columns. A class needs at least one
 `Mapped[...]` (or `WriteOnlyMapped` / `DynamicMapped`) member of its own to be
 detected; one mixing both styles shows only its `Mapped` columns. A
-single-table subclass of an undetected class is not drawn either.
+single-table subclass of an undetected class does not add its columns to any
+table either.
 
 ## Tables declared outside a class body
 

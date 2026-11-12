@@ -199,10 +199,17 @@ class SQLAlchemyDialect(TableDialect):
         return False
 
     def _table_owner(self, name: str) -> str | None:
-        """The nearest ancestor of class ``name`` with a table, if erdify draws it."""
+        """The nearest ancestor of class ``name`` with a table, if erdify draws it.
+
+        A class mapped with ``map_imperatively()`` owns no subclass columns: an
+        imperative mapping maps only its table's columns, never annotations.
+        """
         for ancestor in self._ancestors(name):
             node = self.classes.all[ancestor]
-            if has_tablename(node) or ancestor in self._mapped_tables:
+            mapped = self._mapped_tables.get(ancestor)
+            if mapped is not None and mapped.imperative:
+                return None
+            if has_tablename(node) or mapped is not None:
                 return ancestor if self.detect(node) else None
         return None
 
@@ -291,6 +298,12 @@ class SQLAlchemyDialect(TableDialect):
         mapped = self._mapped_tables.get(class_node.name)
         if mapped is None:
             super().finish(entity, class_node)
+            if class_node.name in self._single_table_subclasses:
+                # A column redeclared under another attribute (same explicit name).
+                columns: Dict[str, FieldInfo] = {}
+                for f in entity.fields:
+                    _merge_redeclared(columns, {f.name: f})
+                entity.fields = list(columns.values())
             return
         entity.fields = core_table_fields(mapped.table)
         # Single-table subclasses add their columns to the Core table too (#302).
@@ -475,6 +488,8 @@ class _MappedTable(NamedTuple):
     table: ast.Call
     #: ``map_imperatively(..., properties={...})``, if given as a dict literal.
     properties: ast.Dict | None = None
+    #: Mapped with ``map_imperatively()``: its subclasses' annotations map no columns.
+    imperative: bool = False
 
 
 def module_tables(tree: ast.Module) -> List[Tuple[str, ast.Call]]:
@@ -584,7 +599,7 @@ def mapped_tables(
                 continue  # e.g. single-table inheritance: no table of its own
             properties = options.get("properties")
             found[mapped] = _MappedTable(
-                table, properties if isinstance(properties, ast.Dict) else None
+                table, properties if isinstance(properties, ast.Dict) else None, imperative=True
             )
     return found
 

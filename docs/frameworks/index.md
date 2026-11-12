@@ -185,10 +185,11 @@ class Order(models.Model):
     parent ([multi-table inheritance](django.md#inheritance)). SQLAlchemy works the
     same way for a subclass of a mapped class: with a `__tablename__` of its own
     (joined-table inheritance) it gets only its own columns, and without one
-    (or with `__tablename__ = None`: single-table inheritance) it is not drawn and its columns are added to the
-    parent's table. An attribute declared in more
-    than one base resolves like Python's MRO: the class body wins, then the
-    first base that declares it.
+    (or with `__tablename__ = None`: single-table inheritance) it is not drawn
+    and its columns are added to the parent's table. An attribute declared in
+    more than one base resolves like Python's MRO: the class body wins, then the
+    first base that declares it. In SQLAlchemy, a mapped parent's column also
+    wins over a subclass's mixin.
 
 SQL DDL (`.sql` files parsed via sqlglot) uses a separate file-based detection
 mechanism and is not listed in the AST-detection table above. See [SQL DDL](sql.md).

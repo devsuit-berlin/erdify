@@ -15,7 +15,7 @@ HEADER = (
     "from datetime import datetime\n"
     "from sqlalchemy import Column, ForeignKey, Integer, String, Table\n"
     "from sqlalchemy.orm import (\n"
-    "    DeclarativeBase, Mapped, declared_attr, mapped_column, relationship,\n"
+    "    DeclarativeBase, Mapped, declared_attr, mapped_column, registry, relationship,\n"
     ")\n\n\n"
     "class Base(DeclarativeBase):\n    pass\n\n\n"
 )
@@ -102,6 +102,32 @@ class TestJoinedTable:
         assert sorted(_columns(entities, "Engineer")) == ["id", "note"]
         kind = next(f for f in entities["Employee"].fields if f.name == "type")
         assert not kind.is_nullable
+
+    def test_redeclared_under_another_attribute(self, tmp_path: Path) -> None:
+        """``use_existing_column`` matches by column name, not attribute."""
+        entities = _parse(
+            tmp_path,
+            "class Vehicle(Base):\n    __tablename__ = 'vehicle'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+            "    name: Mapped[str] = mapped_column('nm')\n\n\n"
+            "class Car(Vehicle):\n"
+            "    alias: Mapped[str | None] = mapped_column('nm', use_existing_column=True)\n",
+        )
+        assert _columns(entities, "Vehicle") == ["id", "nm"]
+        assert entities["Vehicle"].fields[1].is_nullable
+
+    def test_subclass_of_an_imperative_mapping_adds_nothing(self, tmp_path: Path) -> None:
+        """An imperative mapping maps only its table's columns, never annotations."""
+        entities = _parse(
+            tmp_path,
+            "mapper_registry = registry()\n"
+            "user = Table('user', mapper_registry.metadata,"
+            " Column('id', Integer, primary_key=True))\n\n\n"
+            "class User:\n    id: int\n\n\n"
+            "class Admin(User):\n    level: int\n\n\n"
+            "mapper_registry.map_imperatively(User, user)\n",
+        )
+        assert _columns(entities, "User") == ["id"]
 
 
 class TestNotReadable:
