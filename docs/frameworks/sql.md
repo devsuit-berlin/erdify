@@ -72,7 +72,7 @@ sql_dialect = "postgres"
 | `CREATE TYPE … AS ENUM` | ✅ | Requires `--sql-dialect postgres`; silently skipped under the generic dialect |
 | `CREATE INDEX` | ✅ (JSON only) | Detected and emitted in `--format json`; not drawn in PlantUML or Mermaid diagrams (consistent with the Indexes note in the [feature matrix](../features.md)) |
 | `CREATE UNIQUE INDEX` | ✅ | On one plain column and without `WHERE`, the column is unique like a `UNIQUE` constraint (`UK`, 1:1 for a foreign key). A composite, partial or expression unique index doesn't make a column unique |
-| Identifier case | ✅ | Table and column names are matched case-insensitively (`REFERENCES Customer(ID)` is `customer.id`); an exact match wins, so quoted names that differ only in case stay apart |
+| Identifier case | ✅ | Names are resolved the way the dialect folds them: unquoted names are case-insensitive (`REFERENCES Customer(ID)` is `customer.id`), and with `--sql-dialect postgres` a quoted `"Account"` stays apart from `account`. A name that still matches nothing exactly is matched case-insensitively when that is unambiguous |
 
 > **NOTE:** Functional/expression indexes (e.g. `CREATE INDEX ... ON t(lower(col))`) are not mapped
 > to a column — only plain-column indexes set the JSON `index` flag. Expression indexes are silently
@@ -111,6 +111,7 @@ The following constructs are intentionally out of scope for v1:
 |------|--------|
 | Composite `UNIQUE (a, b)` → relationship | Not supported (single-column only) |
 | `CREATE VIEW` | Not supported |
+| `CREATE VIRTUAL TABLE` (SQLite FTS, R*Tree, …) | Not supported (skipped) |
 | `CHECK` constraints | Not supported |
 | Generated columns with `STORED` / `VIRTUAL` without `--sql-dialect` | sqlglot's generic dialect can't parse them: that `CREATE TABLE` is skipped with a parse error. Pass `--sql-dialect` (e.g. `postgres`, `mysql`, `sqlite`) |
 | Triggers / stored procedures | Not supported |

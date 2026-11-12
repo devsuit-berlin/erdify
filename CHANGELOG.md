@@ -22,19 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL DDL: a foreign key without a column list (`REFERENCES country`)
   references the parent's primary key, paired in key order for a composite
   key, instead of a column `id` that may not exist.
-- SQL DDL: table and column names are matched case-insensitively, like SQL's
-  unquoted identifiers: `REFERENCES Customer(ID)` is an edge to `customer`, and
-  `FOREIGN KEY (PAYER_ID)` finds the column `payer_id` (it was dropped). An
-  exact match still wins, so quoted names that differ only in case stay apart.
+- SQL DDL: table and column names are resolved the way the dialect folds
+  them: `REFERENCES Customer(ID)` is an edge to `customer`, and
+  `FOREIGN KEY (PAYER_ID)` finds the column `payer_id` (it was dropped). With
+  `--sql-dialect postgres`, a quoted `"Account"` stays apart from `account`.
 - SQL DDL: a `CREATE UNIQUE INDEX` on one plain column, without `WHERE`, makes
   the column unique like a `UNIQUE` constraint (`UK`, and a one-to-one edge for
-  a foreign key). An expression index (`lower(col)`) no longer sets the JSON
-  `index` flag on the column inside it, as documented.
+  a foreign key), also with `COLLATE` or an operator class. An expression
+  index (`lower(col)`) no longer sets the JSON `index` flag on the column
+  inside it, as documented.
 - SQL DDL: each statement is parsed on its own, so one that fails to parse
   (e.g. a generated column with `STORED` without `--sql-dialect`, now
   documented) no longer drops every table of its file. A `CREATE TABLE` with
   trailing options sqlglot doesn't know (SQLite's `WITHOUT ROWID`) is read
-  instead of being dropped silently.
+  instead of being dropped silently. Under `--strict`, the error message
+  names each file once.
 
 These were found by new ground-truth tests that check erdify's reading of SQL
 DDL against the schema SQLite builds

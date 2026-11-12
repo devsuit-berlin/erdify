@@ -49,12 +49,12 @@ def discover_sql_files(
     return sorted(found)
 
 
-def _resolve(name: str, declared: list[str]) -> str:
-    """``name`` as declared: an exact match, else the one case-insensitive match."""
-    if name in declared:
-        return name
-    matches = [d for d in declared if d.lower() == name.lower()]
-    return matches[0] if len(matches) == 1 else name
+def _lookup(key: str, keys: dict[str, str]) -> str | None:
+    """The declared name ``key`` names: an exact key, else the one case-insensitive match."""
+    if key in keys:
+        return keys[key]
+    matches = [name for k, name in keys.items() if k.lower() == key.lower()]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _split_statements(tokens: list[Any], semicolon: Any) -> list[list[Any]]:
@@ -66,6 +66,10 @@ def _split_statements(tokens: list[Any], semicolon: Any) -> list[list[Any]]:
         else:
             statements[-1].append(token)
     return [s for s in statements if s]
+
+
+#: Words that may stand between CREATE and TABLE in a plain table definition.
+_TABLE_PREFIXES = {"TEMP", "TEMPORARY", "UNLOGGED", "GLOBAL", "LOCAL"}
 
 
 def _index(names: list[str], name: str) -> int:
@@ -124,6 +128,11 @@ class SqlSchemaParser:
         self._enums: dict[str, EnumInfo] = {}
         #: Table name -> its primary-key columns, in key order.
         self._primary_keys: dict[str, list[str]] = {}
+        #: Name keys (identifiers as the dialect folds them) -> declared names,
+        #: for tables and, per table, for columns.
+        self._table_keys: dict[str, str] = {}
+        self._column_keys: dict[str, dict[str, str]] = {}
+        self._dialect: Any = None
 
     def parse(self) -> tuple[dict[str, EntityInfo], dict[str, EnumInfo]]:
         """Parse ``CREATE TABLE``, ``CREATE TYPE ... AS ENUM``, ``CREATE INDEX``
@@ -158,7 +167,7 @@ class SqlSchemaParser:
                 # Read inside the try: an unreadable or non-UTF-8 file is a parse
                 # failure for this file only, like a syntax error.
                 text = f.read_text(encoding="utf-8")
-                dialect = sqlglot.Dialect.get_or_raise(self.dialect)
+                dialect = self._dialect = sqlglot.Dialect.get_or_raise(self.dialect)
                 tokens = dialect.tokenize(text)
             except Exception as err:
                 self._report(f, err)
@@ -211,7 +220,14 @@ class SqlSchemaParser:
         if not (len(parsed) == 1 and isinstance(parsed[0], exp.Command)):
             return parsed
         names = [t.token_type.name for t in tokens]
-        if names[:1] != ["CREATE"] or "TABLE" not in names[: _index(names, "L_PAREN")]:
+        # Only CREATE [TEMP | TEMPORARY | UNLOGGED | GLOBAL | LOCAL] TABLE: any
+        # other Command (CREATE VIRTUAL TABLE ... USING, ...) is skipped as before.
+        head_words = [t.text.upper() for t in tokens[: _index(names, "TABLE")]]
+        if (
+            names[:1] != ["CREATE"]
+            or "TABLE" not in names[: _index(names, "L_PAREN")]
+            or not set(head_words[1:]) <= _TABLE_PREFIXES
+        ):
             return parsed
         end = _matching_paren(names)
         head = dialect.parser().parse(tokens[: end + 1], text) if end is not None else []
@@ -231,11 +247,21 @@ class SqlSchemaParser:
         entity = EntityInfo(name=table_name, table_name=table_name, source="sql")
 
         coldefs = list(schema.find_all(exp.ColumnDef))  # type: ignore[attr-defined]
-        declared = [c.name for c in coldefs]
-        # Constraint columns name declared columns case-insensitively.
-        pk_order = [_resolve(c, declared) for c in self._table_level_pk_columns(schema, exp)]
+        columns = {self._key(c.this): c.name for c in coldefs}
+        self._table_keys[self._key(schema.this)] = table_name
+        self._column_keys[table_name] = columns
+        # Constraint columns name declared columns as the dialect folds names.
+        pk_order = [
+            name
+            for name in (
+                _lookup(self._key(i), columns) for i in self._table_level_pk_columns(schema, exp)
+            )
+            if name is not None
+        ]
         pk_cols = set(pk_order)
-        unique_cols = {_resolve(c, declared) for c in self._table_level_unique_columns(schema, exp)}
+        unique_cols = {
+            _lookup(self._key(i), columns) for i in self._table_level_unique_columns(schema, exp)
+        }
         for coldef in coldefs:
             entity.fields.append(self._column(coldef, exp, pk_cols, unique_cols))
         self._entities[table_name] = entity
@@ -258,7 +284,11 @@ class SqlSchemaParser:
             self._enums[name] = EnumInfo(name=name, values=values)
 
     def _column(
-        self, coldef: "object", exp: "object", pk_cols: set[str], unique_cols: set[str]
+        self,
+        coldef: "object",
+        exp: "object",
+        pk_cols: set[str],
+        unique_cols: set[str | None],
     ) -> FieldInfo:
         """Build a FieldInfo from a column definition (PK, nullability, default,
         uniqueness); foreign keys are resolved in the second pass."""
@@ -312,20 +342,20 @@ class SqlSchemaParser:
         return None
 
     @staticmethod
-    def _table_level_pk_columns(schema: "object", exp: "object") -> list[str]:
-        """Return the columns of a table-level ``PRIMARY KEY (...)``, in key order."""
-        cols: list[str] = []
+    def _table_level_pk_columns(schema: "object", exp: "object") -> list[Any]:
+        """Return the column identifiers of a table-level ``PRIMARY KEY (...)``, in key order."""
+        cols: list[Any] = []
         for pk in schema.find_all(exp.PrimaryKey):  # type: ignore[attr-defined]
             for part in pk.expressions:
                 # An Identifier, or a part wrapping one (a Column, an Ordered).
                 node = part.find(exp.Identifier)  # type: ignore[attr-defined]
-                if node is not None and node.name not in cols:
-                    cols.append(node.name)
+                if node is not None:
+                    cols.append(node)
         return cols
 
     @staticmethod
-    def _table_level_unique_columns(schema: "object", exp: "object") -> set[str]:
-        """Return names of columns covered by a single-column table-level UNIQUE.
+    def _table_level_unique_columns(schema: "object", exp: "object") -> list[Any]:
+        """Return the identifiers of columns covered by a single-column table-level UNIQUE.
 
         sqlglot represents a table-level ``UNIQUE(col)`` as an
         ``exp.UniqueColumnConstraint`` wrapping a nested ``exp.Schema`` whose
@@ -337,133 +367,102 @@ class SqlSchemaParser:
         column. Only single-column constraints are returned — composite
         ``UNIQUE(a, b)`` (anonymous or named) is ignored.
         """
-        cols: set[str] = set()
+        cols: list[Any] = []
         for uc in schema.find_all(exp.UniqueColumnConstraint):  # type: ignore[attr-defined]
             inner = uc.this
-            names = [
-                i.name
+            idents = [
+                i
                 for i in getattr(inner, "expressions", [])
                 if isinstance(i, exp.Identifier)  # type: ignore[attr-defined]
             ]
-            if len(names) == 1:
-                cols.add(names[0])
+            if len(idents) == 1:
+                cols.append(idents[0])
         return cols
 
-    def _entity(self, name: str) -> EntityInfo | None:
-        """The table called ``name``: an exact match, else the one case-insensitive match.
+    def _key(self, node: Any) -> str:
+        """The name of an identifier (or a Table / Column node) as the dialect folds it.
 
-        Unquoted SQL identifiers are case-insensitive; trying the exact name
-        first keeps quoted names that differ only in case (PostgreSQL) apart.
+        Unquoted identifiers are case-insensitive (PostgreSQL folds them to lower
+        case); quoted ones keep their case where the dialect does, so
+        ``"Account"`` and ``account`` stay two tables in PostgreSQL.
         """
-        entity = self._entities.get(name)
-        if entity is None:
-            matches = [e for n, e in self._entities.items() if n.lower() == name.lower()]
-            entity = matches[0] if len(matches) == 1 else None
-        return entity
+        ident = node if type(node).__name__ == "Identifier" else node.this
+        if not hasattr(ident, "copy"):
+            return str(ident)
+        return str(self._dialect.normalize_identifier(ident.copy()).name)
 
-    def _set_fk(self, table: str, column: str, ref_table: str, ref_col: str | None) -> None:
-        """Mark ``table.column`` as a foreign key to ``ref_table.ref_col``.
+    def _entity(self, node: Any) -> EntityInfo | None:
+        """The table a Table node or identifier names (see :func:`_lookup`)."""
+        name = _lookup(self._key(node), self._table_keys)
+        return self._entities.get(name) if name is not None else None
 
-        Names are resolved like the database does (see :meth:`_entity`). A
-        ``None`` ``ref_col`` (a bare ``REFERENCES t``) is ``t``'s first
-        primary-key column, or ``id`` when ``t`` is unknown.
+    def _set_fks(
+        self, entity: EntityInfo, columns: list[Any], ref: "object", exp: "object"
+    ) -> None:
+        """Mark ``columns`` (identifiers) of ``entity`` as a foreign key per ``REFERENCES``.
 
-        No-op when the reference target is unresolved (empty ``ref_table``) or the
-        table/column is unknown, so a bogus ``".id"`` target is never recorded.
+        Composite keys pair local and referenced columns in order. No referenced
+        columns (a bare ``REFERENCES t``) pairs them with ``t``'s primary key,
+        or with ``id`` when ``t`` is unknown. Names are resolved the way the
+        dialect resolves them (:meth:`_key`); a target that matches no table is
+        kept as written.
         """
-        if not ref_table:
-            return
-        entity = self._entity(table)
-        if entity is None:
-            return
-        target = self._entity(ref_table)
+        table_node = ref.find(exp.Table)  # type: ignore[attr-defined]
+        if table_node is None or not table_node.name:
+            return  # unresolved target: never record a bogus ".id"
+        target = self._entity(table_node)
+        schema_node = ref.this  # type: ignore[attr-defined]
+        ref_idents = list(getattr(schema_node, "expressions", None) or [])
         if target is not None:
+            target_columns = self._column_keys[target.name]
+            ref_cols = [_lookup(self._key(i), target_columns) or i.name for i in ref_idents]
+            ref_cols = ref_cols or self._primary_keys.get(target.name, [])
             ref_table = target.name
-            if ref_col is None:
-                ref_col = next(iter(self._primary_keys.get(target.name, [])), None)
-            if ref_col is not None:
-                ref_col = _resolve(ref_col, [f.name for f in target.fields])
-        name = _resolve(column, [f.name for f in entity.fields])
-        for f in entity.fields:
-            if f.name == name:
-                f.is_foreign_key = True
-                f.foreign_table = f"{ref_table}.{ref_col or 'id'}"
-                return
-
-    def _set_fks(self, table: str, columns: list[str], ref_table: str, ref_cols: list[str]) -> None:
-        """Pair local and referenced columns in order; no referenced columns
-        (``REFERENCES t``) pairs them with ``t``'s primary key."""
-        if not ref_cols:
-            target = self._entity(ref_table)
-            ref_cols = self._primary_keys.get(target.name, []) if target is not None else []
-        for i, col in enumerate(columns):
-            rc = ref_cols[i] if i < len(ref_cols) else (ref_cols[0] if ref_cols else None)
-            self._set_fk(table, col, ref_table, rc)
+        else:
+            ref_cols = [i.name for i in ref_idents]
+            ref_table = table_node.name
+        local = self._column_keys[entity.name]
+        for i, ident in enumerate(columns):
+            rc = ref_cols[i] if i < len(ref_cols) else (ref_cols[0] if ref_cols else "id")
+            name = _lookup(self._key(ident), local)
+            for f in entity.fields:
+                if f.name == name:
+                    f.is_foreign_key = True
+                    f.foreign_table = f"{ref_table}.{rc}"
 
     def _table_foreign_keys(self, create: "object", exp: "object") -> None:
-        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses.
-
-        Composite keys pair local and referenced columns positionally.
-        """
+        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses."""
         schema = create.this  # type: ignore[attr-defined]
-        table = schema.this.name
-        # Inline REFERENCES on a column definition.
+        entity = self._entities.get(schema.this.name)
+        if entity is None:
+            return
+        # Inline REFERENCES on a column definition: exactly one local column.
         for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]
             for c in coldef.constraints:
                 ref = c.kind if hasattr(c, "kind") else None
                 if isinstance(ref, exp.Reference):  # type: ignore[attr-defined]
-                    rt, rcs = self._reference_target_multi(ref, exp)
-                    # Inline REFERENCES always has exactly one local column.
-                    self._set_fks(table, [coldef.name], rt, rcs)
-        # Table-level FOREIGN KEY (...) REFERENCES t(c1, c2, ...).
-        for fk in schema.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
-            cols = [
-                e.name
-                for e in fk.expressions
-                if isinstance(e, exp.Identifier)  # type: ignore[attr-defined]
-            ]
-            ref = fk.args.get("reference")
-            if ref is not None:
-                rt, rcs = self._reference_target_multi(ref, exp)
-            else:
-                rt, rcs = "", []
-            self._set_fks(table, cols, rt, rcs)
+                    self._set_fks(entity, [coldef.this], ref, exp)
+        self._foreign_key_clauses(entity, schema, exp)
 
     def _alter_foreign_keys(self, alter: "object", exp: "object") -> None:
-        """Apply ``ALTER TABLE ... ADD FOREIGN KEY`` clauses (paired positionally)."""
-        table = alter.this.name if alter.this is not None else ""  # type: ignore[attr-defined]
-        for fk in alter.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
+        """Apply ``ALTER TABLE ... ADD FOREIGN KEY`` clauses."""
+        if alter.this is None:  # type: ignore[attr-defined]
+            return
+        entity = self._entity(alter.this)  # type: ignore[attr-defined]
+        if entity is not None:
+            self._foreign_key_clauses(entity, alter, exp)
+
+    def _foreign_key_clauses(self, entity: EntityInfo, node: "object", exp: "object") -> None:
+        """Apply every ``FOREIGN KEY (...) REFERENCES t(...)`` below ``node``."""
+        for fk in node.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
             cols = [
-                e.name
+                e
                 for e in fk.expressions
                 if isinstance(e, exp.Identifier)  # type: ignore[attr-defined]
             ]
             ref = fk.args.get("reference")
             if ref is not None:
-                rt, rcs = self._reference_target_multi(ref, exp)
-            else:
-                rt, rcs = "", []
-            self._set_fks(table, cols, rt, rcs)
-
-    @staticmethod
-    def _reference_target_multi(ref: "object", exp: "object") -> tuple[str, list[str]]:
-        """Extract (ref_table_name, [ref_col_names]) from an exp.Reference node.
-
-        The Reference wraps a Schema whose .this is the target Table and whose
-        .expressions are the referenced column Identifiers.  Using
-        schema.expressions avoids the ambiguity of find_all(Identifier) which
-        also returns the table-name identifier.
-
-        Returns all referenced columns so callers can pair them positionally with
-        local FK columns (composite FK support). An empty list means no
-        explicit columns (bare REFERENCES t): the target's primary key.
-        """
-        table_node = ref.find(exp.Table)  # type: ignore[attr-defined]
-        ref_table = table_node.name if table_node is not None else ""
-        schema_node = ref.this  # type: ignore[attr-defined]
-        if hasattr(schema_node, "expressions") and schema_node.expressions:
-            return ref_table, [e.name for e in schema_node.expressions]
-        return ref_table, []
+                self._set_fks(entity, cols, ref, exp)
 
     def _mark_index(self, create: "object", exp: "object") -> None:
         """Mark the columns of a ``CREATE [UNIQUE] INDEX``.
@@ -477,17 +476,17 @@ class SqlSchemaParser:
         table_node = index.find(exp.Table)  # type: ignore[attr-defined]
         if table_node is None:
             return
-        entity = self._entity(table_node.name)
+        entity = self._entity(table_node)
         if entity is None:
             return
         params = index.args.get("params")
         parts = [
-            p.this if isinstance(p, exp.Ordered) else p  # type: ignore[attr-defined]
+            self._index_part(p, exp)
             for p in (params.args.get("columns") or [] if params is not None else [])
         ]
-        declared = [f.name for f in entity.fields]
+        columns = self._column_keys[entity.name]
         indexed = {
-            _resolve(p.name, declared)
+            _lookup(self._key(p), columns)
             for p in parts
             if isinstance(p, exp.Column)  # type: ignore[attr-defined]
         }
@@ -502,6 +501,13 @@ class SqlSchemaParser:
                 f.index = True
                 if unique and not f.is_primary_key:
                     f.is_unique = True
+
+    @staticmethod
+    def _index_part(part: Any, exp: "object") -> Any:
+        """An index part without its ordering, collation or operator class."""
+        while isinstance(part, (exp.Ordered, exp.Collate, exp.Opclass)):  # type: ignore[attr-defined]
+            part = part.this
+        return part
 
     def _finalize(self) -> None:
         """Detect link tables, then apply ``exclude_patterns``."""

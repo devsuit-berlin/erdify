@@ -215,19 +215,22 @@ def test_composite_foreign_key_alter_table_pairs_columns_positionally(tmp_path: 
 
 
 def test_unresolvable_fk_reference_leaves_plain_column(tmp_path: Path) -> None:
-    """_set_fk with an empty ref_table must not flag the column as a foreign key.
+    """A REFERENCES without a resolvable table must not flag the column as a foreign key.
 
-    This guards the case where _reference_target cannot resolve an exp.Table node
-    from the REFERENCES clause (table_node is None → ref_table = ""), which would
-    otherwise produce a bogus foreign_table like ".id" in --format json output.
+    This guards the case where no exp.Table node can be found in the REFERENCES
+    clause, which would otherwise produce a bogus foreign_table like ".id" in
+    --format json output.
     """
+    from sqlglot import exp
+
     f = tmp_path / "schema.sql"
     f.write_text("CREATE TABLE order_item (id INTEGER PRIMARY KEY, ghost_id INTEGER);")
     parser = SqlSchemaParser([f])
     entities, _ = parser.parse()  # same dict _set_fk mutates
 
     # Simulate the code path where ref_table comes back empty (unresolvable node).
-    parser._set_fk("order_item", "ghost_id", "", "id")
+    ghost = exp.to_identifier("ghost_id")
+    parser._set_fks(entities["order_item"], [ghost], exp.Reference(this=exp.Schema()), exp)
 
     cols = {field.name: field for field in entities["order_item"].fields}
     assert cols["ghost_id"].is_foreign_key is False
@@ -513,8 +516,8 @@ def test_names_are_matched_case_insensitively(tmp_path: Path) -> None:
     assert cols["email"].index is True
 
 
-def test_exact_name_wins_over_a_case_insensitive_match(tmp_path: Path) -> None:
-    """PostgreSQL keeps quoted names that differ only in case apart."""
+def test_quoted_names_keep_their_case_in_postgres(tmp_path: Path) -> None:
+    """PostgreSQL folds unquoted names to lower case and keeps quoted ones as written."""
     entities, _ = _parse_sql(
         tmp_path,
         """
@@ -524,7 +527,8 @@ def test_exact_name_wins_over_a_case_insensitive_match(tmp_path: Path) -> None:
             id INTEGER PRIMARY KEY,
             a_id INTEGER REFERENCES "Account"(id),
             b_id INTEGER REFERENCES account(id),
-            c_id INTEGER REFERENCES ACCOUNT(id)
+            c_id INTEGER REFERENCES ACCOUNT(id),
+            d_id INTEGER REFERENCES Account(ID)
         );
         """,
         dialect="postgres",
@@ -532,7 +536,8 @@ def test_exact_name_wins_over_a_case_insensitive_match(tmp_path: Path) -> None:
     cols = _cols(entities, "ledger")
     assert cols["a_id"].foreign_table == "Account.id"
     assert cols["b_id"].foreign_table == "account.id"
-    assert cols["c_id"].foreign_table == "ACCOUNT.id"  # ambiguous: kept as written
+    assert cols["c_id"].foreign_table == "account.id"
+    assert cols["d_id"].foreign_table == "account.id"
 
 
 def test_unique_index_on_one_column_makes_it_unique(tmp_path: Path) -> None:
@@ -608,3 +613,33 @@ def test_unreadable_create_table_is_reported(tmp_path: Path, capsys) -> None:  #
     entities, _ = _parse_sql(tmp_path, "CREATE TABLE odd WITHOUT ROWID;\nCREATE TABLE ok (id INT);")
     assert set(entities) == {"ok"}
     assert "Unsupported" in capsys.readouterr().err
+
+
+def test_collated_and_opclass_index_columns_are_columns(tmp_path: Path) -> None:
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE member (id INTEGER PRIMARY KEY, email TEXT, handle TEXT);
+        CREATE UNIQUE INDEX ux_email ON member (email COLLATE NOCASE);
+        CREATE INDEX ix_handle ON member (handle varchar_pattern_ops);
+        """,
+        dialect="postgres",
+    )
+    cols = _cols(entities, "member")
+    assert cols["email"].is_unique is True
+    assert cols["email"].index is True
+    assert cols["handle"].index is True
+
+
+def test_other_create_commands_are_skipped_silently(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    """A CREATE ... TABLE sqlglot can't parse that isn't a plain table stays a skip."""
+    sql = "CREATE VIRTUAL TABLE fts USING fts5(a, b);\nCREATE TABLE ok (id INT);"
+    entities, _ = _parse_sql(tmp_path, sql, strict=True)
+    assert set(entities) == {"ok"}
+    assert "Error parsing" not in capsys.readouterr().err
+
+
+def test_strict_error_names_each_file_once(tmp_path: Path) -> None:
+    with pytest.raises(ModelParseError, match=r"^1 file\(s\) could not be parsed") as raised:
+        _parse_sql(tmp_path, "CREATE TABLE (;\nCREATE TABLE (;\n", strict=True)
+    assert len(raised.value.errors) == 2  # one per statement

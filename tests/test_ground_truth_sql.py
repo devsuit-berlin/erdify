@@ -74,6 +74,9 @@ LIMITATIONS = {
     "test_sql.py::test_a_statement_that_fails_to_parse_keeps_the_rest_of_the_file.sql": (
         GENERATED_GENERIC
     ),
+    "test_sql.py::test_other_create_commands_are_skipped_silently.sql": (
+        "sql.md: virtual tables (CREATE VIRTUAL TABLE) are not drawn"
+    ),
 }
 
 # The oldest supported sqlglot is 30.8 (docs/installation.md); CI runs these
@@ -110,11 +113,15 @@ EXPECTED_REJECTED = {
         "a schema-qualified table among CREATE SEQUENCE / INSERT / GRANT noise erdify must skip"
     ),
     "test_strict.py::mixed_tree": "a syntax error, for --strict",
+    "test_sql.py::test_strict_error_names_each_file_once": "syntax errors, for --strict",
     "test_sql.py::test_reference_to_an_unknown_table_without_columns_keeps_id": (
         "a bare REFERENCES to a table the source doesn't define; erdify falls back to id"
     ),
-    "test_sql.py::test_exact_name_wins_over_a_case_insensitive_match": (
+    "test_sql.py::test_quoted_names_keep_their_case_in_postgres": (
         'PostgreSQL keeps quoted "Account" and account apart; SQLite folds them'
+    ),
+    "test_sql.py::test_collated_and_opclass_index_columns_are_columns": (
+        "a PostgreSQL operator class (varchar_pattern_ops)"
     ),
     "test_sql.py::test_unreadable_create_table_is_reported": (
         "a table without a column list, for the parse error"
