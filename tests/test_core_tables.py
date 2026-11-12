@@ -9,6 +9,54 @@ from erdify.parser import parse_models_directory
 CATALOG = Path(__file__).parent / "fixtures" / "sqlalchemy_edge_cases"
 
 
+ORM_FOR_DOMAIN_MODULE = """\
+from sqlalchemy import Column, ForeignKey, Integer, String, Table
+from sqlalchemy.orm import registry, relationship
+
+import model
+
+mapper_registry = registry()
+
+customers = Table(
+    "customer", mapper_registry.metadata,
+    Column("id", Integer, primary_key=True),
+    Column("email", String(100), nullable=False),
+)
+orders = Table(
+    "purchase", mapper_registry.metadata,
+    Column("id", Integer, primary_key=True),
+    Column("customer_id", ForeignKey("customer.id"), nullable=False),
+)
+
+
+def start_mappers() -> None:
+    mapper_registry.map_imperatively(
+        model.Customer,
+        customers,
+        properties={"orders": relationship(model.Order, back_populates="customer")},
+    )
+    mapper_registry.map_imperatively(
+        class_=model.Order,
+        local_table=orders,
+        properties={"customer": relationship(model.Customer, back_populates="orders")},
+    )
+"""
+
+AMBIGUOUS_TABLE_IMPORT = """\
+from sqlalchemy.orm import DeclarativeBase
+
+from crm import users
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __table__ = users
+"""
+
+
 def _parse(tmp_path: Path, source: str) -> dict[str, EntityInfo]:
     (tmp_path / "models.py").write_text(source, encoding="utf-8")
     entities, _ = parse_models_directory(tmp_path)
@@ -70,6 +118,7 @@ class TestCoreTables:
             "    sa.Column('opened', sa.DateTime(timezone=True)),\n"
             "    sa.Column('tags', postgresql.ARRAY(sa.String)),\n"
             "    sa.Column('priority', sa.Integer, default=3),\n"
+            "    sa.Column('state', sa.Enum('open', 'closed', name='state')),\n"
             ")\n",
         )
 
@@ -80,6 +129,7 @@ class TestCoreTables:
         assert columns["opened"].type_str == "datetime"
         assert columns["tags"].type_str == "ARRAY"
         assert columns["priority"].default_value == "3"
+        assert columns["state"].type_str == "str"
 
     def test_foreign_key_only_column_takes_the_referenced_type(self) -> None:
         entities, _ = parse_models_directory(CATALOG / "core_tables.py")
@@ -104,10 +154,36 @@ class TestCoreTables:
 
         assert _columns(entities["office"])["region"].foreign_table == "region.region_id"
 
+    def test_foreign_key_type_comes_from_the_same_metadata(self, tmp_path: Path) -> None:
+        """A SQLModel ``user`` table does not type a SQLAlchemy Core foreign key."""
+        (tmp_path / "accounts.py").write_text(
+            "from sqlmodel import Field, SQLModel\n\n"
+            "class User(SQLModel, table=True):\n"
+            "    __tablename__ = 'user'\n"
+            "    id: str = Field(primary_key=True)\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "audit.py").write_text(
+            "from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table\n\n"
+            "metadata = MetaData()\n\n"
+            "user = Table('user', metadata, Column('id', Integer, primary_key=True))\n"
+            "login = Table(\n"
+            "    'login', metadata,\n"
+            "    Column('id', Integer, primary_key=True),\n"
+            "    Column('user_id', ForeignKey('user.id')),\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+
+        assert _columns(entities["login"])["user_id"].type_str == "int"
+
     def test_a_table_call_without_columns_is_not_drawn(self, tmp_path: Path) -> None:
         entities = _parse(
             tmp_path,
-            "from rich.table import Table\n\nsummary = Table('Totals')\n",
+            "from rich.table import Column, Table\n\n"
+            "summary = Table('Totals', Column('Age'))\n"
+            "plain = Table(Column('Name'))\n",
         )
 
         assert entities == {}
@@ -135,6 +211,60 @@ class TestDeclarativeWithImperativeTable:
 
 class TestMapImperatively:
     """``registry.map_imperatively(Class, table)`` (#306)."""
+
+    def test_classes_from_a_domain_module(self, tmp_path: Path) -> None:
+        """``map_imperatively(model.Customer, ...)``: the domain model stays plain."""
+        (tmp_path / "model.py").write_text(
+            "from dataclasses import dataclass, field\n\n"
+            "@dataclass\nclass Customer:\n    email: str\n\n"
+            "@dataclass\nclass Order:\n    total: int\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "orm.py").write_text(ORM_FOR_DOMAIN_MODULE, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+
+        assert set(entities) == {"Customer", "Order"}
+        assert entities["Customer"].source == "sqlalchemy"
+        assert entities["Customer"].relationships == [("Order", "many", "orders")]
+        assert entities["Order"].relationships == [("Customer", "one", "customer")]
+        assert entities["Order"].inverse_relationships == {"customer": "orders"}
+
+    def test_table_variable_defined_in_several_files_is_not_guessed(self, tmp_path: Path) -> None:
+        for app in ("billing", "crm"):
+            (tmp_path / f"{app}.py").write_text(
+                "from sqlalchemy import Column, Integer, MetaData, Table\n\n"
+                "metadata = MetaData()\n\n"
+                f"users = Table('{app}_user', metadata, Column('id', Integer, primary_key=True))\n",
+                encoding="utf-8",
+            )
+        (tmp_path / "models.py").write_text(AMBIGUOUS_TABLE_IMPORT, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+
+        # Which of the two tables `users` names is unknown: no columns are guessed.
+        assert "User" not in entities
+
+    def test_self_reference_optionality_uses_its_own_foreign_key(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "from sqlalchemy import Column, ForeignKey, Integer, Table\n"
+            "from sqlalchemy.orm import registry, relationship\n\n"
+            "reg = registry()\n\n"
+            "owner = Table('owner', reg.metadata, Column('id', Integer, primary_key=True))\n"
+            "category = Table(\n"
+            "    'category', reg.metadata,\n"
+            "    Column('id', Integer, primary_key=True),\n"
+            "    Column('parent_id', ForeignKey('category.id'), nullable=False),\n"
+            "    Column('owner_id', ForeignKey('owner.id')),\n"
+            ")\n\n"
+            "class Category:\n    pass\n\n"
+            "reg.map_imperatively(\n"
+            "    Category, category,\n"
+            "    properties={'parent': relationship(Category, remote_side=[category.c.id])},\n"
+            ")\n",
+        )
+
+        assert entities["Category"].relationships == [("Category", "one", "parent")]
+        assert entities["Category"].nullable_relationships == []
 
     def test_classes_are_named_after_the_mapped_class(self) -> None:
         entities, _ = parse_models_directory(CATALOG / "map_imperatively.py")

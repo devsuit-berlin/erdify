@@ -212,6 +212,8 @@ EXPECTED_UNLOADABLE = {
     ".py::test_self_referencing_definition_that_differs_conflicts": OTHER_FILE,
     "test_annotated_metadata.py::TestModuleScope.test_mutually_recursive_aliases_do_not_loop"
     ".entities": "aliases defined in terms of each other; erdify must not loop",
+    "test_core_tables.py::ORM_FOR_DOMAIN_MODULE": "imports the domain module of the test",
+    "test_core_tables.py::AMBIGUOUS_TABLE_IMPORT": "imports a table module of the test",
     "test_cardinality.py::TestTableArgsForms.BASE": TEMPLATE,
     "test_cardinality.py::TestExplicitColumnName.SRC": TEMPLATE,
     "test_column_annotations.py::SQLALCHEMY": TEMPLATE,

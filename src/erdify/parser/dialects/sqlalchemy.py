@@ -6,7 +6,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, NamedTuple, Tuple
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
 from ..annotations import expr_name, is_call_to, is_mapped_annotation
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
-from .base import Dialect, ParseContext, single_column_uniques
+from .base import ParseContext, explicit_column_name, single_column_uniques
 
 
 class TableDialect(AnnotatedDialect):
@@ -127,7 +127,7 @@ class SQLAlchemyDialect(TableDialect):
         self._properties: Dict[str, ast.Dict] = {}
         #: Core columns declared with only a ``ForeignKey``: SQLAlchemy gives
         #: them the referenced column's type.
-        self._untyped: List[FieldInfo] = []
+        self._untyped: List[Tuple[FieldInfo, str]] = []
 
     @property
     def _mapped_tables(self) -> Dict[str, "_MappedTable"]:
@@ -178,24 +178,31 @@ class SQLAlchemyDialect(TableDialect):
     def finalize(self, entities: Mapping[str, EntityInfo]) -> None:
         """Rename keys, type ``ForeignKey``-only Core columns, add imperative relationships."""
         super().finalize(entities)
-        columns = {
-            f"{entity.table_name}.{f.name}": f
-            for entity in entities.values()
-            for f in entity.fields
-        }
+        # SQLModel and SQLAlchemy keep separate metadata: a foreign key only
+        # references a table of its own kind (a Core table on SQLModel.metadata
+        # is SQLModel's).
+        columns: Dict[str, Dict[str, FieldInfo]] = {}
+        for entity in entities.values():
+            kind = self._metadata_kind(entity)
+            for f in entity.fields:
+                columns.setdefault(kind, {})[f"{entity.table_name}.{f.name}"] = f
         # A chain of ForeignKey-only columns takes the type from its end.
         changed = True
         while changed:
             changed = False
-            for f in self._untyped:
-                target = columns.get(f.foreign_table or "")
+            for f, kind in self._untyped:
+                target = columns.get(kind, {}).get(f.foreign_table or "")
                 if not f.type_str and target is not None and target.type_str:
                     f.type_str = target.type_str
                     changed = True
         for name, properties in self._properties.items():
-            entity = entities.get(name)
-            if entity is not None:
-                self._add_properties(entity, properties, entities)
+            mapped_entity = entities.get(name)
+            if mapped_entity is not None:
+                self._add_properties(mapped_entity, properties, entities)
+
+    def _metadata_kind(self, entity: EntityInfo) -> str:
+        """The metadata an entity's table is on: its source, or SQLModel's for a Core table."""
+        return "sqlmodel" if self._sqlmodel_core.get(id(entity)) is entity else entity.source
 
     def _add_properties(
         self, entity: EntityInfo, properties: ast.Dict, entities: Mapping[str, EntityInfo]
@@ -223,17 +230,10 @@ class SQLAlchemyDialect(TableDialect):
             if target == entity.name:
                 # Self-referential: one-to-many unless remote_side= turns it around.
                 references: List[FieldInfo] = (
-                    [f for f in entity.fields if f.is_foreign_key]
-                    if "remote_side" in options
-                    else []
+                    _references(entity, entity.table_name) if "remote_side" in options else []
                 )
             elif target_entity is not None:
-                prefix = f"{target_entity.table_name}."
-                references = [
-                    f
-                    for f in entity.fields
-                    if f.is_foreign_key and (f.foreign_table or "").startswith(prefix)
-                ]
+                references = _references(entity, target_entity.table_name)
             else:
                 references = []
             if references:
@@ -283,7 +283,7 @@ class SQLAlchemyDialect(TableDialect):
             if _links_to_name(arg):
                 self._name_targets[id(field)] = field
             if field.is_foreign_key and not field.type_str:
-                self._untyped.append(field)
+                self._untyped.append((field, self._metadata_kind(entity)))
         if renamed:
             owner._renamed_keys.setdefault(entity.table_name, {}).update(renamed)
 
@@ -306,9 +306,23 @@ def module_tables(tree: ast.Module) -> List[Tuple[str, ast.Call]]:
             and isinstance(node.targets[0], ast.Name)
             and isinstance(node.value, ast.Call)
             and is_call_to(node.value, "Table")
+            and _has_metadata(node.value)
         ):
             found.append((node.targets[0].id, node.value))
     return found
+
+
+def _has_metadata(call: ast.Call) -> bool:
+    """Whether a ``Table(...)`` call passes a metadata: SQLAlchemy requires one.
+
+    Tells a Core table from another library's ``Table`` (``rich.table.Table("T",
+    Column("Age"))``), whose second argument is no metadata.
+    """
+    if any(kw.arg == "metadata" for kw in call.keywords):
+        return True
+    return len(call.args) > 1 and not (
+        isinstance(call.args[1], ast.Constant) or is_call_to(call.args[1], "Column")
+    )
 
 
 def mapped_tables(
@@ -321,15 +335,16 @@ def mapped_tables(
     ``class X(Base): __table__ = Table(...)`` (or a module-level table
     variable, #297), and ``registry.map_imperatively(X, table, properties=...)``
     anywhere in a scanned file, e.g. inside a ``start_mappers()`` function (#306).
-    A table variable is looked up in the same file first, then in every
-    scanned file.
+    A table variable is looked up in the same file first, then in the one
+    scanned file that defines it (not when several do).
     """
     trees = list(trees)
     per_tree = {id(tree): dict(module_tables(tree)) for tree in trees}
-    everywhere: Dict[str, ast.Call] = {}
+    # A variable defined in several files is ambiguous elsewhere: not resolved.
+    everywhere: Dict[str, ast.Call | None] = {}
     for tree in trees:
         for name, call in per_tree[id(tree)].items():
-            everywhere.setdefault(name, call)
+            everywhere[name] = None if name in everywhere else call
 
     def resolve(value: ast.expr | None, tree: ast.Module | None) -> ast.Call | None:
         if isinstance(value, ast.Call) and is_call_to(value, "Table"):
@@ -337,7 +352,15 @@ def mapped_tables(
         if isinstance(value, ast.Name):
             local = per_tree.get(id(tree), {}) if tree is not None else {}
             return local.get(value.id) or everywhere.get(value.id)
+        if isinstance(value, ast.Attribute):  # tables.batches
+            return everywhere.get(value.attr)
         return None
+
+    def class_name(value: ast.expr | None) -> str | None:
+        """The mapped class, also qualified (``model.Batch`` from a domain module)."""
+        name = expr_name(value) if isinstance(value, (ast.Name, ast.Attribute)) else None
+        name = name.rpartition(".")[2] if name is not None else None
+        return name if name in classes else None
 
     found: Dict[str, _MappedTable] = {}
     for name, class_node in classes.items():
@@ -354,22 +377,30 @@ def mapped_tables(
                 isinstance(mapping, ast.Call)
                 and isinstance(mapping.func, ast.Attribute)
                 and mapping.func.attr == "map_imperatively"
-                and mapping.args
-                and isinstance(mapping.args[0], ast.Name)
-                and mapping.args[0].id in classes
             ):
                 continue
             options = {kw.arg: kw.value for kw in mapping.keywords if kw.arg}
-            table = resolve(
-                mapping.args[1] if len(mapping.args) > 1 else options.get("local_table"), tree
-            )
+            args = list(mapping.args)
+            mapped = class_name(args[0] if args else options.get("class_"))
+            if mapped is None:
+                continue
+            table = resolve(args[1] if len(args) > 1 else options.get("local_table"), tree)
             if table is None:
                 continue  # e.g. single-table inheritance: no table of its own
             properties = options.get("properties")
-            found[mapping.args[0].id] = _MappedTable(
+            found[mapped] = _MappedTable(
                 table, properties if isinstance(properties, ast.Dict) else None
             )
     return found
+
+
+def _references(entity: EntityInfo, table: str) -> List[FieldInfo]:
+    """The foreign-key columns of ``entity`` that reference ``table``."""
+    return [
+        f
+        for f in entity.fields
+        if f.is_foreign_key and (f.foreign_table or "").rpartition(".")[0] == table
+    ]
 
 
 def _relationship_target(call: ast.Call) -> str | None:
@@ -383,7 +414,8 @@ def _relationship_target(call: ast.Call) -> str | None:
     if isinstance(target, ast.Constant) and isinstance(target.value, str):
         return target.value.rpartition(".")[2]
     if isinstance(target, (ast.Name, ast.Attribute)):
-        return expr_name(target)
+        name = expr_name(target)  # model.Customer -> Customer
+        return name.rpartition(".")[2] if name is not None else None
     return None
 
 
@@ -453,7 +485,7 @@ def core_table_fields(call: ast.Call) -> List[FieldInfo]:
             field = parse_core_column(arg)
             if field is not None:
                 fields.append(field)
-                by_name[Dialect._explicit_column_name(arg) or field.name] = field
+                by_name[explicit_column_name(arg) or field.name] = field
     for arg in call.args:
         if not isinstance(arg, ast.Call):
             continue
@@ -483,7 +515,7 @@ def parse_core_column(call: ast.Call) -> FieldInfo | None:
     As in SQLAlchemy, a column is nullable unless it is a primary key or says
     ``nullable=False``.
     """
-    col_name = Dialect._explicit_column_name(call, use_key=False)
+    col_name = explicit_column_name(call, use_key=False)
     if col_name is None:
         return None
     options = {kw.arg: kw.value for kw in call.keywords if kw.arg}
@@ -543,7 +575,10 @@ def _core_type(arg: ast.expr) -> str:
     if name in _SCHEMA_ITEMS:
         return ""
     if name == "Enum" and call is not None and call.args:
-        enum_class = expr_name(call.args[0])
+        first = call.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            return "str"  # Enum("open", "closed", name="status")
+        enum_class = expr_name(first)
         if enum_class is not None:
             return enum_class.rpartition(".")[2]
     return _PYTHON_TYPES.get(name, name)

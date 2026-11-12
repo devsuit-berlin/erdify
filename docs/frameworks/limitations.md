@@ -152,13 +152,18 @@ are drawn too:
 - **Imperative mapping**, `registry.map_imperatively(Cls, table,
   properties={...})`, anywhere in a scanned file (also inside a
   `start_mappers()` function), draws `Cls` with the table's name and columns.
-  A plain class or a dataclass can be mapped this way.
+  A plain class or a dataclass can be mapped this way, also one imported from
+  a domain module (`map_imperatively(model.Customer, customers)`).
 
 Not read:
 
 - A `Table(...)` that is not assigned at module level (e.g. created inside a
-  function), or one without `Column(...)` arguments (a reflected
-  `Table("t", metadata, autoload_with=engine)`).
+  function), one without `Column(...)` arguments (a reflected
+  `Table("t", metadata, autoload_with=engine)`), or one without a metadata
+  argument (another library's `Table`).
+- A table variable that the mapping file imports is found when one scanned
+  file defines it; when several do, the class is not mapped. Two Core tables
+  with the same variable name in different files are drawn once.
 - The relationships of `map_imperatively()` have no annotation, so their
   cardinality is inferred like SQLAlchemy does: a foreign key from the mapped
   table to the target's table makes a to-one reference, otherwise it is a

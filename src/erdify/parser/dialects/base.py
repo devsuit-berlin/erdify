@@ -376,6 +376,14 @@ class Dialect:
         return single_column_uniques(value.elts)
 
 
+def explicit_column_name(value: ast.expr | None, use_key: bool = True) -> str | None:
+    """The explicit name (or, with ``use_key``, key) of a column declaration, if any.
+
+    See :meth:`Dialect._explicit_column_name`; also reads a Core ``Column(...)``.
+    """
+    return Dialect._explicit_column_name(value, use_key)
+
+
 def single_column_uniques(items: Iterable[ast.expr]) -> Tuple[Set[str], Set[str]]:
     """Columns made unique on their own by ``UniqueConstraint`` / unique ``Index`` items.
 
