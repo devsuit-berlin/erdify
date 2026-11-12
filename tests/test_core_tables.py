@@ -284,6 +284,34 @@ class TestMapImperatively:
         # Which of the two tables `users` names is unknown: no columns are guessed.
         assert "User" not in entities
 
+    def test_options_left_at_their_default_are_unset(self, tmp_path: Path) -> None:
+        """``secondary=None`` / ``remote_side=None`` change nothing (as in SQLAlchemy)."""
+        entities = _parse(
+            tmp_path,
+            "from sqlalchemy import Column, ForeignKey, Integer, Table\n"
+            "from sqlalchemy.orm import registry, relationship\n\n"
+            "reg = registry()\n\n"
+            "node = Table(\n"
+            "    'node', reg.metadata,\n"
+            "    Column('id', Integer, primary_key=True),\n"
+            "    Column('parent_id', ForeignKey('node.id')),\n"
+            ")\n\n"
+            "class Node:\n    pass\n\n"
+            "reg.map_imperatively(\n"
+            "    Node, node,\n"
+            "    properties={\n"
+            "        'children': relationship(Node, secondary=None, remote_side=None),\n"
+            "        'kids': relationship(Node, remote_side=[], viewonly=True),\n"
+            "    },\n"
+            ")\n",
+        )
+
+        assert entities["Node"].relationships == [
+            ("Node", "many", "children"),
+            ("Node", "many", "kids"),
+        ]
+        assert entities["Node"].nullable_relationships == []
+
     def test_self_reference_optionality_uses_its_own_foreign_key(self, tmp_path: Path) -> None:
         entities = _parse(
             tmp_path,

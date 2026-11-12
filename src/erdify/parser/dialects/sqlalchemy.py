@@ -222,13 +222,14 @@ class SQLAlchemyDialect(TableDialect):
                 continue
             if not is_call_to(value, "relationship") or not isinstance(value, ast.Call):
                 continue
+            # An option set to None or an empty collection is SQLAlchemy's default.
+            options = {kw.arg: kw.value for kw in value.keywords if kw.arg and not _unset(kw.value)}
             # A secondary= many-to-many is drawn through its association table.
-            if any(kw.arg == "secondary" for kw in value.keywords):
+            if "secondary" in options:
                 continue
             target = _relationship_target(value)
             if target is None:
                 continue
-            options = {kw.arg: kw.value for kw in value.keywords if kw.arg}
             uselist = options.get("uselist")
             target_entity = entities.get(target)
             if target == entity.name:
@@ -436,6 +437,13 @@ def mapped_tables(
                 table, properties if isinstance(properties, ast.Dict) else None
             )
     return found
+
+
+def _unset(value: ast.expr) -> bool:
+    """``None`` or an empty list / tuple: an option left at its default."""
+    if isinstance(value, ast.Constant):
+        return value.value is None
+    return isinstance(value, (ast.List, ast.Tuple)) and not value.elts
 
 
 def _references(entity: EntityInfo, table: str) -> List[FieldInfo]:
