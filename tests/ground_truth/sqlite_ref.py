@@ -189,7 +189,9 @@ def _foreign_keys(
     The parent table and column are matched case-insensitively against the
     declared names; a bare ``REFERENCES t`` pairs the local columns with
     ``t``'s primary key in order. A parent that doesn't exist keeps the name as
-    written (SQLite's validation reports it in :attr:`Schema.checks`).
+    written (SQLite's validation reports it in :attr:`Schema.checks`). A
+    column in several foreign keys keeps the first declared one, as erdify does
+    (one column draws one edge).
     """
     keys: dict[int, list[tuple[int, str, str, str | None]]] = defaultdict(list)
     for fk_id, seq, parent, local, remote, *_ in connection.execute(

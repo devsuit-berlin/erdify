@@ -643,3 +643,27 @@ def test_strict_error_names_each_file_once(tmp_path: Path) -> None:
     with pytest.raises(ModelParseError, match=r"^1 file\(s\) could not be parsed") as raised:
         _parse_sql(tmp_path, "CREATE TABLE (;\nCREATE TABLE (;\n", strict=True)
     assert len(raised.value.errors) == 2  # one per statement
+
+
+def test_recovered_table_logs_no_fallback_warning(tmp_path: Path, caplog) -> None:  # type: ignore[no-untyped-def]
+    """sqlglot's "Falling back to parsing as a 'Command'" is kept only for what is skipped."""
+    _parse_sql(tmp_path, "CREATE TABLE kv (k TEXT PRIMARY KEY) WITHOUT ROWID;", dialect="sqlite")
+    assert "Falling back" not in caplog.text
+    _parse_sql(tmp_path, "CREATE VIRTUAL TABLE fts USING fts5(a);")
+    assert "Falling back" in caplog.text
+
+
+def test_column_in_two_foreign_keys_keeps_the_first(tmp_path: Path) -> None:
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE a (id INTEGER PRIMARY KEY);
+        CREATE TABLE b (id INTEGER PRIMARY KEY);
+        CREATE TABLE c (
+            id INTEGER PRIMARY KEY,
+            x INTEGER REFERENCES a(id),
+            FOREIGN KEY (x) REFERENCES b(id)
+        );
+        """,
+    )
+    assert _cols(entities, "c")["x"].foreign_table == "a.id"

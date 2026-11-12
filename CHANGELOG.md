@@ -35,8 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (e.g. a generated column with `STORED` without `--sql-dialect`, now
   documented) no longer drops every table of its file. A `CREATE TABLE` with
   trailing options sqlglot doesn't know (SQLite's `WITHOUT ROWID`) is read
-  instead of being dropped silently. Under `--strict`, the error message
-  names each file once.
+  instead of being dropped silently. A `CREATE TABLE` that can't be read
+  either is now reported (`Error parsing ...`) instead of being skipped
+  silently, so it fails `--strict`; `ModelParseError.errors` lists one entry
+  per failing statement, and the message names each file once.
 
 These were found by new ground-truth tests that check erdify's reading of SQL
 DDL against the schema SQLite builds

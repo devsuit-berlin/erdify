@@ -1,7 +1,10 @@
 """SQL DDL frontend for erdify (optional, requires the `sql` extra: sqlglot)."""
 
+import logging
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
@@ -87,6 +90,22 @@ def _matching_paren(names: list[str]) -> int | None:
             if depth == 0:
                 return i
     return None
+
+
+@contextmanager
+def _held_warnings(logger: logging.Logger) -> Iterator[list[logging.LogRecord]]:
+    """Hold back what ``logger`` logs; the caller may replay the records."""
+    held: list[logging.LogRecord] = []
+
+    def hold(record: logging.LogRecord) -> bool:
+        held.append(record)
+        return False
+
+    logger.addFilter(hold)
+    try:
+        yield held
+    finally:
+        logger.removeFilter(hold)
 
 
 class SqlDependencyError(RuntimeError):
@@ -216,29 +235,57 @@ class SqlSchemaParser:
         Raises:
             ValueError: the statement is a ``CREATE TABLE`` that can't be read.
         """
-        parsed = [s for s in dialect.parser().parse(tokens, text) if s is not None]
+        # sqlglot warns when it falls back to a Command; the warning is replayed
+        # unless the table is read after all.
+        logger = logging.getLogger("sqlglot")
+        with _held_warnings(logger) as held:
+            parsed = [s for s in dialect.parser().parse(tokens, text) if s is not None]
+            head = SqlSchemaParser._table_head(parsed, tokens, text, dialect, exp)
+        if head is not None:
+            return head
+        for record in held:
+            logger.handle(record)
         if not (len(parsed) == 1 and isinstance(parsed[0], exp.Command)):
             return parsed
+        if SqlSchemaParser._is_plain_create_table(tokens):
+            raise ValueError(f"Unsupported CREATE TABLE syntax. Line {tokens[0].line}.")
+        return parsed
+
+    @staticmethod
+    def _is_plain_create_table(tokens: list[Any]) -> bool:
+        """``CREATE [TEMP | TEMPORARY | UNLOGGED | GLOBAL | LOCAL] TABLE ... (``."""
         names = [t.token_type.name for t in tokens]
-        # Only CREATE [TEMP | TEMPORARY | UNLOGGED | GLOBAL | LOCAL] TABLE: any
-        # other Command (CREATE VIRTUAL TABLE ... USING, ...) is skipped as before.
         head_words = [t.text.upper() for t in tokens[: _index(names, "TABLE")]]
-        if (
-            names[:1] != ["CREATE"]
-            or "TABLE" not in names[: _index(names, "L_PAREN")]
-            or not set(head_words[1:]) <= _TABLE_PREFIXES
-        ):
-            return parsed
-        end = _matching_paren(names)
-        head = dialect.parser().parse(tokens[: end + 1], text) if end is not None else []
+        return (
+            names[:1] == ["CREATE"]
+            and "TABLE" in names[: _index(names, "L_PAREN")]
+            and set(head_words[1:]) <= _TABLE_PREFIXES
+        )
+
+    @staticmethod
+    def _table_head(
+        parsed: list[Any], tokens: list[Any], text: str, dialect: Any, exp: Any
+    ) -> list[object] | None:
+        """A plain ``CREATE TABLE`` that fell back to a Command, parsed again from
+        its head up to the closing parenthesis of its column list, or ``None``."""
+        if not (len(parsed) == 1 and isinstance(parsed[0], exp.Command)):
+            return None
+        if not SqlSchemaParser._is_plain_create_table(tokens):
+            return None
+        end = _matching_paren([t.token_type.name for t in tokens])
+        if end is None:
+            return None
+        try:
+            head = dialect.parser().parse(tokens[: end + 1], text)
+        except Exception:
+            return None
         if (
             len(head) == 1
             and isinstance(head[0], exp.Create)
             and (head[0].args.get("kind") or "").upper() == "TABLE"
         ):
-            return head
-        line = tokens[0].line
-        raise ValueError(f"Unsupported CREATE TABLE syntax. Line {line}.")
+            return list(head)
+        return None
 
     def _add_table(self, create: "object", exp: "object") -> None:
         """Register a ``CREATE TABLE`` as an entity with its columns (no FKs yet)."""
@@ -426,7 +473,8 @@ class SqlSchemaParser:
             rc = ref_cols[i] if i < len(ref_cols) else (ref_cols[0] if ref_cols else "id")
             name = _lookup(self._key(ident), local)
             for f in entity.fields:
-                if f.name == name:
+                # A column in two foreign keys keeps the first declared one.
+                if f.name == name and not f.is_foreign_key:
                     f.is_foreign_key = True
                     f.foreign_table = f"{ref_table}.{rc}"
 
