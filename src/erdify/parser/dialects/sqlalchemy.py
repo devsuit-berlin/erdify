@@ -659,7 +659,17 @@ def _core_type(arg: ast.expr) -> str:
 
 #: Types whose ``asdecimal=`` option picks ``Decimal`` or ``float``.
 _DECIMAL_TYPES = frozenset(
-    {"Numeric", "NUMERIC", "DECIMAL", "Float", "Double", "REAL", "FLOAT", "DOUBLE"}
+    {
+        "Numeric",
+        "NUMERIC",
+        "DECIMAL",
+        "Float",
+        "Double",
+        "REAL",
+        "FLOAT",
+        "DOUBLE",
+        "DOUBLE_PRECISION",
+    }
 )
 
 #: SQLAlchemy column types -> the Python type of their values.

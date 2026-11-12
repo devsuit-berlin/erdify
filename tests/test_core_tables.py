@@ -124,6 +124,7 @@ class TestCoreTables:
             "    sa.Column('ref', sa.Uuid(as_uuid=False)),\n"
             "    sa.Column('ratio', sa.Numeric(10, 2, asdecimal=False)),\n"
             "    sa.Column('score', sa.Float(asdecimal=True)),\n"
+            "    sa.Column('weight', postgresql.DOUBLE_PRECISION(asdecimal=True)),\n"
             ")\n",
         )
 
@@ -138,6 +139,7 @@ class TestCoreTables:
         assert columns["ref"].type_str == "str"
         assert columns["ratio"].type_str == "float"
         assert columns["score"].type_str == "Decimal"
+        assert columns["weight"].type_str == "Decimal"
 
     def test_foreign_key_only_column_takes_the_referenced_type(self) -> None:
         entities, _ = parse_models_directory(CATALOG / "core_tables.py")
