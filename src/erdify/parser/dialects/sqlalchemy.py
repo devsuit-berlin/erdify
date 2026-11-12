@@ -1,7 +1,7 @@
 """SQLModel and SQLAlchemy 2.0 (ORM classes and Core association tables)."""
 
 import ast
-from typing import Callable, Dict, Iterable, List, Mapping, Set
+from typing import Callable, Dict, Iterable, List, Mapping
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
 from ..annotations import expr_name, is_call_to, is_mapped_annotation
@@ -24,16 +24,18 @@ class TableDialect(AnnotatedDialect):
         self._renamed_keys: Dict[str, Dict[str, str]] = {}
         #: id() of foreign-key fields declared with ``link_to_name=True``: their
         #: target already names the column, not its key.
-        self._name_targets: Set[int] = set()
+        # Keyed by id() but holding the object, so a freed object's address is
+        # never matched by a new one.
+        self._name_targets: Dict[int, FieldInfo] = {}
         #: id() of Core tables declared on ``SQLModel.metadata``: they belong
         #: to SQLModel's tables, although they are read as SQLAlchemy.
-        self._sqlmodel_core: Set[int] = set()
+        self._sqlmodel_core: Dict[int, EntityInfo] = {}
 
     def _parse_field(self, node: ast.AnnAssign) -> FieldInfo | None:
         """Parse a column, remembering a ``ForeignKey(..., link_to_name=True)``."""
         field = super()._parse_field(node)
         if field is not None and field.is_foreign_key and _links_to_name(node):
-            self._name_targets.add(id(field))
+            self._name_targets[id(field)] = field
         return field
 
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
@@ -63,18 +65,18 @@ class TableDialect(AnnotatedDialect):
         renamed = self._renamed_keys
         if not renamed:
             return
-        sqlmodel_core: Set[int] = set()
-        name_targets: Set[int] = set()
+        sqlmodel_core: Dict[int, EntityInfo] = {}
+        name_targets: Dict[int, FieldInfo] = {}
         for dialect in self.ctx.all_dialects():
             if isinstance(dialect, TableDialect):
-                sqlmodel_core |= dialect._sqlmodel_core
-                name_targets |= dialect._name_targets
+                sqlmodel_core.update(dialect._sqlmodel_core)
+                name_targets.update(dialect._name_targets)
         for entity in entities.values():
-            kind = "sqlmodel" if id(entity) in sqlmodel_core else entity.source
+            kind = "sqlmodel" if sqlmodel_core.get(id(entity)) is entity else entity.source
             if kind != self.kind:
                 continue
             for f in entity.fields:
-                if f.foreign_table is None or id(f) in name_targets:
+                if f.foreign_table is None or name_targets.get(id(f)) is f:
                     continue
                 table, _, column = f.foreign_table.rpartition(".")
                 name = renamed.get(table, {}).get(column)
@@ -140,13 +142,13 @@ class SQLAlchemyDialect(TableDialect):
     def _note_core_table(self, entity: EntityInfo, call: ast.Call) -> None:
         """Record what the key rewrite needs: the metadata, ``link_to_name`` columns."""
         if len(call.args) > 1 and self._is_sqlmodel_metadata(call.args[1]):
-            self._sqlmodel_core.add(id(entity))
+            self._sqlmodel_core[id(entity)] = entity
         columns = {f.name: f for f in entity.fields}
         for arg in call.args:
             if is_call_to(arg, "Column") and arg.args and isinstance(arg.args[0], ast.Constant):
                 field = columns.get(str(arg.args[0].value))
                 if field is not None and _links_to_name(arg):
-                    self._name_targets.add(id(field))
+                    self._name_targets[id(field)] = field
 
 
 def core_association_tables(

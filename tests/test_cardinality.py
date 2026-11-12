@@ -1178,3 +1178,29 @@ def test_foreign_key_through_column_key_follows_the_rename(tmp_path: Path):
     entities = _parse(tmp_path, src)
     assert [f.name for f in entities["Account"].fields] == ["account_id"]
     assert _field(entities, "Profile", "account_id").foreign_table == "account.account_id"
+
+
+def test_overridden_link_to_name_does_not_shield_other_foreign_keys(tmp_path: Path):
+    """A mixin's link_to_name FK that loses the merge never exempts another FK."""
+    src = (
+        "from sqlalchemy import ForeignKey\n"
+        "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
+        "class Base(DeclarativeBase):\n    pass\n\n"
+        "class Acct(Base):\n"
+        "    __tablename__ = 'acct'\n"
+        "    id: Mapped[int] = mapped_column('acct_pk', key='id', primary_key=True)\n"
+        "    code: Mapped[int] = mapped_column(unique=True)\n\n"
+        "class FkMixin:\n"
+        "    parent: Mapped[int] = mapped_column(ForeignKey('acct.code', link_to_name=True))\n\n"
+    )
+    for i in range(20):  # many models, so a freed address would likely be reused
+        src += (
+            f"class A{i}(FkMixin, Base):\n"
+            f"    __tablename__ = 'a{i}'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+            "    parent: Mapped[int] = mapped_column(ForeignKey('acct.code'))\n"
+            "    acct_id: Mapped[int] = mapped_column(ForeignKey('acct.id'))\n\n"
+        )
+    entities = _parse(tmp_path, src)
+    for i in range(20):
+        assert _field(entities, f"A{i}", "acct_id").foreign_table == "acct.acct_pk"
