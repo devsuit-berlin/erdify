@@ -1313,3 +1313,29 @@ class TestAmbiguousImportCandidates:
         )
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
         assert next(f for f in entities["Account"].fields if f.name == "id").type_str == "intpk"
+
+
+def test_qualified_reference_is_a_column_but_enum_member_is_not(tmp_path: Path):
+    """`= columns.fk` may be a mapped_column(); `= Status.NEW` is a plain value (#294)."""
+    entities = _parse(
+        tmp_path,
+        """
+import enum
+
+
+class Status(enum.Enum):
+    NEW = "new"
+
+
+class columns:
+    owner_fk = mapped_column()
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = columns.owner_fk
+    status: Mapped[Status] = Status.NEW
+""",
+    )
+    assert [f.name for f in entities["Account"].fields] == ["id", "owner_id"]

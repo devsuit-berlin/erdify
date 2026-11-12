@@ -1159,3 +1159,22 @@ class TestEntityInfoPositional:
         assert e.base_classes == ["Base"]
         assert e.source == "django"
         assert e.nullable_relationships == []
+
+
+def test_foreign_key_through_column_key_follows_the_rename(tmp_path: Path):
+    """ForeignKey("account.id") resolves through key="id" to column account_id (#292)."""
+    src = (
+        "from sqlalchemy import ForeignKey\n"
+        "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
+        "class Base(DeclarativeBase):\n    pass\n\n"
+        "class Account(Base):\n"
+        "    __tablename__ = 'account'\n"
+        "    id: Mapped[int] = mapped_column('account_id', key='id', primary_key=True)\n\n"
+        "class Profile(Base):\n"
+        "    __tablename__ = 'profile'\n"
+        "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+        "    account_id: Mapped[int] = mapped_column(ForeignKey('account.id'))\n"
+    )
+    entities = _parse(tmp_path, src)
+    assert [f.name for f in entities["Account"].fields] == ["account_id"]
+    assert _field(entities, "Profile", "account_id").foreign_table == "account.account_id"

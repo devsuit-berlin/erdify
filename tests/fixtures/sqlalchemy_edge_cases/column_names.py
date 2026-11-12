@@ -1,7 +1,15 @@
-"""Explicit column names: mapped_column("name") and mapped_column(name=...)."""
+"""Explicit column names: mapped_column("name"), name= and key= (#292).
+
+A ForeignKey string resolves through the column key; a value referring to a
+module-level mapped_column() is a column.
+"""
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class shared:  # noqa: N801 - stands in for a module of shared columns
+    owner_fk = mapped_column()
 
 
 class Base(DeclarativeBase):
@@ -21,3 +29,17 @@ class Profile(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner: Mapped[int] = mapped_column("owner_id", ForeignKey("account.account_id"))
+
+
+class Team(Base):
+    __tablename__ = "team"
+
+    id: Mapped[int] = mapped_column("team_no", key="id", primary_key=True)
+
+
+class Member(Base):
+    __tablename__ = "member"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team: Mapped[int] = mapped_column("team_no", ForeignKey("team.id"))
+    owner_id: Mapped[int] = shared.owner_fk

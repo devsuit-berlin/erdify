@@ -1,11 +1,12 @@
 """SQLModel and SQLAlchemy 2.0 (ORM classes and Core association tables)."""
 
 import ast
-from typing import Iterable, List
+from typing import Dict, Iterable, List, Mapping
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
 from ..annotations import is_call_to, is_mapped_annotation
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
+from .base import ParseContext
 
 
 class TableDialect(AnnotatedDialect):
@@ -16,13 +17,49 @@ class TableDialect(AnnotatedDialect):
     names the database column, so the column is drawn under it (#292).
     """
 
+    def __init__(self, ctx: ParseContext):
+        super().__init__(ctx)
+        #: Table name -> {column key: column name} where an explicit ``key=``
+        #: differs from the name (``mapped_column("account_id", key="id")``).
+        self._renamed_keys: Dict[str, Dict[str, str]] = {}
+
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
         """Mark ``__table_args__`` uniques, then rename columns to their explicit names."""
         # The unique constraints are matched by attribute name and key first.
         super().finish(entity, class_node)
+        keys = self._db_column_names(class_node)
         names = self._db_column_names(class_node, use_key=False)
+        renamed = {
+            keys[attr]: name for attr, name in names.items() if attr in keys and keys[attr] != name
+        }
+        if renamed:
+            self._renamed_keys[entity.table_name] = renamed
         for f in entity.fields:
             f.name = names.get(f.name, f.name)
+
+    def finalize(self, entities: Mapping[str, EntityInfo]) -> None:
+        """Point foreign keys written against a column key at the column's name.
+
+        SQLAlchemy resolves ``ForeignKey("account.id")`` through the column
+        key, so with ``mapped_column("account_id", key="id")`` it references
+        ``account_id``.
+        """
+        renamed: Dict[str, Dict[str, str]] = {}
+        for dialect in self.ctx.all_dialects():
+            if isinstance(dialect, TableDialect):
+                renamed.update(dialect._renamed_keys)
+        if not renamed:
+            return
+        for entity in entities.values():
+            if entity.source != self.kind:
+                continue
+            for f in entity.fields:
+                if f.foreign_table is None:
+                    continue
+                table, _, column = f.foreign_table.rpartition(".")
+                name = renamed.get(table, {}).get(column)
+                if name is not None:
+                    f.foreign_table = f"{table}.{name}"
 
 
 class SQLModelDialect(TableDialect):
