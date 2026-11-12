@@ -166,6 +166,9 @@ Not read:
   function), one without `Column(...)` arguments (a reflected
   `Table("t", metadata, autoload_with=engine)`), or one without a metadata
   argument (another library's `Table`).
+- A `__table__` that is neither a `Table(...)` nor a table variable
+  (`tables["engineer"]`, a function call): the class is not drawn, and a
+  single-table subclass of it does not add its columns to any table.
 - A table variable that the mapping file imports is found when one scanned
   file defines it; when several do, the class is not mapped. Two Core tables
   with the same variable name in different files are drawn once.

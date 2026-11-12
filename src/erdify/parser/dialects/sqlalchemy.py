@@ -170,7 +170,8 @@ class SQLAlchemyDialect(TableDialect):
             self.detect(class_node)
             or has_tablename(class_node)
             or _sets_true(class_node, "__abstract__")
-            or self._inherits_tablename_function(class_node.name)
+            or _assigns(class_node, "__table__")  # one erdify could not resolve
+            or self._tablename_is_function(class_node.name)
         ):
             return False
         return self._table_owner(class_node.name) is not None
@@ -181,12 +182,13 @@ class SQLAlchemyDialect(TableDialect):
         order = self.classes.mro(name) or self.classes.dfs_order(node, set())[::-1]
         return [a for a in order if a != name]
 
-    def _inherits_tablename_function(self, name: str) -> bool:
-        """Whether the ``__tablename__`` class ``name`` inherits is a ``@declared_attr``.
+    def _tablename_is_function(self, name: str) -> bool:
+        """Whether the ``__tablename__`` of class ``name`` is a ``@declared_attr``.
 
-        It names a table of the class's own, which erdify can't read.
+        Its own or inherited, whichever the MRO finds first. It names a table
+        of the class's own, which erdify can't read.
         """
-        for ancestor in self._ancestors(name):
+        for ancestor in [name, *self._ancestors(name)]:
             node = self.classes.all[ancestor]
             if any(
                 isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -209,6 +211,8 @@ class SQLAlchemyDialect(TableDialect):
             mapped = self._mapped_tables.get(ancestor)
             if mapped is not None and mapped.imperative:
                 return None
+            if mapped is None and _assigns(node, "__table__"):
+                return None  # a table erdify could not resolve
             if has_tablename(node) or mapped is not None:
                 return ancestor if self.detect(node) else None
         return None

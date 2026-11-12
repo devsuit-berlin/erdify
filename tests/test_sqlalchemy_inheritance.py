@@ -147,6 +147,31 @@ class TestNotReadable:
         assert set(entities) == {"Employee"}
         assert _columns(entities, "Employee") == ["id"]
 
+    def test_own_declared_attr_tablename(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "class Employee(Base):\n    __tablename__ = 'employee'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
+            "class Engineer(Employee):\n    @declared_attr.directive\n"
+            "    def __tablename__(cls) -> str:\n        return 'engineer'\n\n"
+            "    id: Mapped[int] = mapped_column(ForeignKey('employee.id'), primary_key=True)\n"
+            "    language: Mapped[str]\n",
+        )
+        assert _columns(entities, "Employee") == ["id"]
+
+    def test_unresolved_table(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "tables = {\n    'engineer': Table('engineer', Base.metadata,\n"
+            "        Column('id', Integer, ForeignKey('employee.id'), primary_key=True)),\n}\n\n\n"
+            "class Employee(Base):\n    __tablename__ = 'employee'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
+            "class Engineer(Employee):\n    __table__ = tables['engineer']\n"
+            "    language: Mapped[str | None]\n\n\n"
+            "class Lead(Engineer):\n    level: Mapped[int | None]\n",
+        )
+        assert _columns(entities, "Employee") == ["id"]
+
     def test_subclass_of_an_undetected_table(self, tmp_path: Path) -> None:
         entities = _parse(
             tmp_path,
@@ -233,11 +258,14 @@ class TestSingleTable:
         assert (seats.type_str, seats.index, seats.is_nullable) == ("int", False, False)
 
     def test_tablename_none_is_single_table(self, tmp_path: Path) -> None:
+        """Also when a mixin computes a table name: the class's own None comes first."""
         entities = _parse(
             tmp_path,
+            "class Named:\n    @declared_attr.directive\n"
+            "    def __tablename__(cls) -> str:\n        return cls.__name__.lower()\n\n\n"
             "class Employee(Base):\n    __tablename__ = 'employee'\n"
             "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
-            "class Manager(Employee):\n    __tablename__ = None\n"
+            "class Manager(Named, Employee):\n    __tablename__ = None\n"
             "    budget: Mapped[int | None]\n",
         )
         assert set(entities) == {"Employee"}

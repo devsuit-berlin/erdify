@@ -117,6 +117,11 @@ LIMITATIONS = {
     ),
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_declared_attr_tablename_from_a_mixin"
     ".entities": "limitations.md: a declared_attr __tablename__ is not read",
+    "test_sqlalchemy_inheritance.py::TestNotReadable.test_own_declared_attr_tablename"
+    ".entities": "limitations.md: a declared_attr __tablename__ is not read",
+    "test_sqlalchemy_inheritance.py::TestNotReadable.test_unresolved_table.entities": (
+        "limitations.md: a __table__ that is no Table(...) or table variable is not read"
+    ),
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_subclass_of_an_undetected_table"
     ".entities": "limitations.md: classic Column() attributes are not read",
     "test_column_annotations.py::TestSqlAlchemyDetection"
