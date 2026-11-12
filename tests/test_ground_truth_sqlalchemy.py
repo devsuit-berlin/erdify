@@ -112,6 +112,13 @@ LIMITATIONS = {
     ),
     "test_declared_attr.py::TestReverseToOne.test_unreadable_foreign_key_keeps_the_annotation"
     ".entities": "limitations.md: settings inside sa_column are not read (#309)",
+    "test_declared_attr.py::TestReverseToOne"
+    ".test_non_unique_foreign_key_back_keeps_the_annotation.entities": (
+        "limitations.md: settings inside sa_column are not read (#309)"
+    ),
+    "test_declared_attr.py::TestCascading.test_joined_subclass_gets_no_copy.entities": (
+        "limitations.md: a cascading declared_attr is not repeated on joined-table subclasses"
+    ),
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_declared_attr_tablename_from_a_mixin"
     ".entities": "limitations.md: a declared_attr __tablename__ is not read",
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_own_declared_attr_tablename"

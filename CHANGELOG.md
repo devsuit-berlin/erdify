@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a body that is a single `return`
   ([#298](https://github.com/devsuit-berlin/erdify/issues/298)).
 - A SQLAlchemy / SQLModel to-one relationship declared on the referenced side
-  of a one-to-one (the foreign key is on the target's table, none on its own
+  of a one-to-one (a unique foreign key is on the target's table, none on its own
   or a mapped parent's) is optional, whatever its annotation says: nothing in
   the database forces the other row to exist. A foreign key erdify can't read
   (inside `sa_column=`) leaves the annotation in charge
@@ -44,8 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Annotated[...]`, with an assigned plain value as its default; an assigned
   `Field()` replaces it
   ([#295](https://github.com/devsuit-berlin/erdify/issues/295)).
-- A class that extends an earlier class of the same name (`class
-  Item(Item, table=True)`) inherits that class's fields
+- A class that extends another class of the same name (`class
+  Item(Item, table=True)`, the base defined earlier in the file or imported
+  with `from ... import Item`) inherits that class's fields, unless that base
+  is a table model of its own
   ([#300](https://github.com/devsuit-berlin/erdify/issues/300)).
 
 ### Output changes

@@ -93,10 +93,11 @@ class TableDialect(AnnotatedDialect):
         when the foreign key is on the target's side instead, it is the
         reverse of a one-to-one (``uselist=False``), and nothing in the
         database forces the other row to exist, whatever the annotation says.
-        Only a foreign key erdify sees on the target's side, and none on this
-        side, counts: one it can't read (inside ``sa_column=``, say) leaves
-        the annotation in charge. A self-referential reference keeps its
-        annotation too: its direction depends on ``remote_side=``.
+        Only a unique foreign key erdify sees on the target's side (the other
+        end of a one-to-one), and none on this side, counts: one it can't
+        read (inside ``sa_column=``, say) leaves the annotation in charge. A
+        self-referential reference keeps its annotation too: its direction
+        depends on ``remote_side=``.
         """
         for entity in entities.values():
             if entity.source != self.kind:
@@ -111,7 +112,9 @@ class TableDialect(AnnotatedDialect):
                 other = self._mapped_family(target_entity, entities)
                 own_tables = {e.table_name for e in own}
                 other_tables = {e.table_name for e in other}
-                if _references_any(other, own_tables) and not _references_any(own, other_tables):
+                if _references_any(other, own_tables, unique=True) and not _references_any(
+                    own, other_tables
+                ):
                     entity.nullable_relationships.append(attr)
 
     def _mapped_family(
@@ -130,10 +133,16 @@ class TableDialect(AnnotatedDialect):
         ]
 
 
-def _references_any(owners: List[EntityInfo], tables: Set[str]) -> bool:
-    """Whether a foreign key of ``owners`` references one of ``tables`` (schema ignored)."""
+def _references_any(owners: List[EntityInfo], tables: Set[str], unique: bool = False) -> bool:
+    """Whether a foreign key of ``owners`` references one of ``tables`` (schema ignored).
+
+    With ``unique``, only a unique or primary-key foreign key counts: the
+    other side of a one-to-one.
+    """
     return any(
-        f.foreign_table and f.foreign_table.split(".")[-2:][0] in tables
+        f.foreign_table
+        and f.foreign_table.split(".")[-2:][0] in tables
+        and (not unique or f.is_unique or f.is_primary_key)
         for owner in owners
         for f in owner.fields
     )

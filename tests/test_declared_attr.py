@@ -312,3 +312,61 @@ class Project(Base):
 """,
         )
         assert entities["Project"].nullable_relationships == []
+
+    def test_non_unique_foreign_key_back_keeps_the_annotation(self, tmp_path: Path):
+        """The own foreign key is unreadable (#309); the target's is for another relationship."""
+        entities = _parse(
+            tmp_path,
+            """
+from sqlalchemy import Column, ForeignKey, Integer
+from sqlmodel import Field, Relationship, SQLModel
+
+
+class Hero(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(sa_column=Column(Integer, ForeignKey("team.id"), nullable=False))
+    team: "Team" = Relationship(sa_relationship_kwargs={"foreign_keys": "Hero.team_id"})
+
+
+class Team(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    captain_id: int | None = Field(default=None, foreign_key="hero.id")
+""",
+        )
+        assert entities["Hero"].nullable_relationships == []
+
+
+class TestCascading:
+    def test_joined_subclass_gets_no_copy(self, tmp_path: Path):
+        """SQLAlchemy repeats a cascading column on each joined-table subclass; erdify doesn't."""
+        entities = _parse(
+            tmp_path,
+            """
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class NoteMixin:
+    @declared_attr.cascading
+    def note(cls) -> Mapped[str | None]:
+        return mapped_column()
+
+
+class Employee(NoteMixin, Base):
+    __tablename__ = "employee"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str]
+    __mapper_args__ = {"polymorphic_on": "kind"}
+
+
+class Engineer(Employee):
+    __tablename__ = "engineer"
+    id: Mapped[int] = mapped_column(ForeignKey("employee.id"), primary_key=True)
+    __mapper_args__ = {"polymorphic_identity": "engineer"}
+""",
+        )
+        assert [f.name for f in entities["Engineer"].fields] == ["id"]

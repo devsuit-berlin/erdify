@@ -846,3 +846,83 @@ class Plain(Base):
         assert _field(entities, "Unique", "account_id").is_unique
         assert not _field(entities, "Plain", "account_id").is_unique
         assert not _field(entities, "Base", "account_id").is_unique
+
+
+class TestNamesakeGuards:
+    """Where ``class Item(Item)`` is not linked to a namesake base (#300)."""
+
+    @staticmethod
+    def _write(tmp_path: Path, files: dict[str, str]) -> dict:
+        for rel, text in files.items():
+            path = tmp_path / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return entities
+
+    def test_base_classes_keep_the_written_name(self, tmp_path: Path):
+        entities = self._write(
+            tmp_path,
+            {
+                "models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    name: str\n\n\n"
+                "class Item(Item):\n    id: int\n"
+            },
+        )
+        assert entities["Item"].base_classes == ["Item"]
+
+    def test_unrelated_namesake_in_another_file_is_not_the_base(self, tmp_path: Path):
+        """The base is imported from an unscanned module: the other file's Item is unrelated."""
+        entities = self._write(
+            tmp_path,
+            {
+                "a/models.py": "from vendor_lib import Item\n\n\nclass Item(Item):\n    x: int\n",
+                "b/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    name: str\n",
+            },
+        )
+        assert [f.name for f in entities["Item"].fields] == ["name"]
+
+    def test_django_concrete_base_is_left_as_before(self, tmp_path: Path):
+        """Multi-table inheritance needs the parent's own table: no ``Item@<line>`` names."""
+        entities = self._write(
+            tmp_path,
+            {
+                "core/models.py": "from django.db import models\n\n\n"
+                "class Item(models.Model):\n    name = models.CharField(max_length=10)\n",
+                "shop/models.py": "from django.db import models\n\n"
+                "from core.models import Item\n\n\n"
+                "class Item(Item):\n    extra = models.CharField(max_length=10)\n",
+            },
+        )
+        names = [f.name for e in entities.values() for f in e.fields] + [
+            e.table_name for e in entities.values()
+        ]
+        assert not any("@" in name for name in names)
+
+    def test_sqlalchemy_mapped_base_is_left_as_before(self, tmp_path: Path):
+        entities = self._write(
+            tmp_path,
+            {
+                "models.py": """
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Item(Base):
+    __tablename__ = "item"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Item(Item):
+    __tablename__ = "shop_item"
+    id: Mapped[int] = mapped_column(ForeignKey("item.id"), primary_key=True)
+"""
+            },
+        )
+        assert [(e.name, e.table_name) for e in entities.values()] == [("Item", "shop_item")]
+        assert entities["Item"].base_classes == ["Item"]
