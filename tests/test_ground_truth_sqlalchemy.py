@@ -118,7 +118,9 @@ LIMITATIONS = {
         "limitations.md: schema= is ignored"
     ),
     "bare_relationship": "limitations.md: relationships need an annotation",
-    "sqlmodel_sa_column_foreign_key": "limitations.md: settings inside sa_column are not read",
+    "sqlmodel_sa_column_foreign_key": (
+        "limitations.md: settings inside sa_column are not read (#309)"
+    ),
     "test_column_annotations.py::TestSqlAlchemyDetection"
     ".test_classic_column_only_class_not_detected.source": (
         "limitations.md: classic Column() attributes are not read"

@@ -4,7 +4,7 @@ import ast
 from typing import Callable, Dict, Iterable, List, Mapping, Set
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
-from ..annotations import is_call_to, is_mapped_annotation
+from ..annotations import expr_name, is_call_to, is_mapped_annotation
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
 from .base import ParseContext
 
@@ -123,9 +123,23 @@ class SQLAlchemyDialect(TableDialect):
         entities = core_association_tables(trees, self._note_core_table)
         return entities
 
+    def _is_sqlmodel_metadata(self, metadata: ast.expr) -> bool:
+        """Whether ``metadata`` is ``SQLModel.metadata``, also through a scanned subclass."""
+        if not (isinstance(metadata, ast.Attribute) and metadata.attr == "metadata"):
+            return False
+        owner = expr_name(metadata.value)
+        if owner == "SQLModel":
+            return True
+        node = self.classes.all.get(owner) if owner is not None else None
+        return node is not None and any(
+            expr_name(base) == "SQLModel"
+            for name in self.classes.dfs_order(node, set())
+            for base in self.classes.all[name].bases
+        )
+
     def _note_core_table(self, entity: EntityInfo, call: ast.Call) -> None:
         """Record what the key rewrite needs: the metadata, ``link_to_name`` columns."""
-        if len(call.args) > 1 and ast.unparse(call.args[1]).endswith("SQLModel.metadata"):
+        if len(call.args) > 1 and self._is_sqlmodel_metadata(call.args[1]):
             self._sqlmodel_core.add(id(entity))
         columns = {f.name: f for f in entity.fields}
         for arg in call.args:

@@ -286,7 +286,7 @@ names, so it can be wrong in both directions.
 | Enum bases (`IntEnum`, `StrEnum`, `Flag`, `IntFlag`, …) | Recognised by name, not by import: a scanned class of that name (a model called `Flag`) shadows the enum base for every file, and an unscanned class of that name is taken for the enum base |
 | SQLAlchemy `x: Mapped[T] = <value>` without `mapped_column()` | Not drawn for a constant or a member of the column's own type / a scanned enum (`= Status.NEW`), as SQLAlchemy maps no column. Any call, name or other attribute (`= datetime(2020, 1, 1)`, `= Defaults.NAME`) is still drawn as a column, since it may be a `mapped_column()` |
 | Composite foreign keys | Not supported |
-| Settings inside `sa_column=Column(...)` (foreign key, `unique=`, `nullable=`, …) | Not read; only the column name is |
+| Settings inside `sa_column=Column(...)` (foreign key, `unique=`, `nullable=`, …) | Not read; only the column name is ([#309](https://github.com/devsuit-berlin/erdify/issues/309)) |
 | Unannotated `x = relationship("Target")` | Not detected |
 | ninja-style `ModelSchema` (fields from an inner `Meta`/`Config`) | Detected and skipped with a warning, rather than drawn empty ([#171](https://github.com/devsuit-berlin/erdify/issues/171)) |
 | `attrs` / `msgspec` models | Not supported ([erdantic](../comparison.md) covers these) |

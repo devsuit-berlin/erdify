@@ -14,7 +14,11 @@ class Owner(SQLModel, table=True):
     )
 
 
-class Tag(SQLModel, table=True):
+class Model(SQLModel):
+    """A project base: its metadata is SQLModel's."""
+
+
+class Tag(Model, table=True):
     __tablename__ = "tag"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -23,6 +27,14 @@ class Tag(SQLModel, table=True):
 owner_tag = Table(
     "owner_tag",
     SQLModel.metadata,
+    Column("owner_id", ForeignKey("owner.id"), primary_key=True),
+    Column("tag_id", ForeignKey("tag.id"), primary_key=True),
+)
+
+
+owner_label = Table(
+    "owner_label",
+    Model.metadata,
     Column("owner_id", ForeignKey("owner.id"), primary_key=True),
     Column("tag_id", ForeignKey("tag.id"), primary_key=True),
 )
