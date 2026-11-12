@@ -161,7 +161,7 @@ class ASTDatabaseParser:
         # caches) are fresh for each run.
         self._ctx = self._new_context()
         for class_node in self._all_classes.values():
-            if is_enum_class(class_node):
+            if is_enum_class(class_node, self._all_classes):
                 self._parse_enum_class(class_node)
                 continue
             source = self._classify_source(class_node)
@@ -172,11 +172,6 @@ class ASTDatabaseParser:
                     continue
                 self._parse_table_class(class_node, source)
 
-        # Cross-entity adjustments, once every entity is built (e.g. Django
-        # db_column renames that foreign keys elsewhere point at, #275).
-        for dialect in self._ctx.all_dialects():
-            dialect.finalize(self._entities)
-
         # Entities that are not classes, e.g. SQLAlchemy Core association
         # tables referenced by relationship(secondary=...) (#34).
         for dialect in self._ctx.all_dialects():
@@ -185,6 +180,12 @@ class ASTDatabaseParser:
             for entity in dialect.extra_entities(self._file_trees.values()):
                 if entity.name not in self._entities:
                     self._entities[entity.name] = entity
+
+        # Cross-entity adjustments, once every entity is built, Core tables
+        # included (e.g. renamed columns that foreign keys elsewhere point at,
+        # #275, #292).
+        for dialect in self._ctx.all_dialects():
+            dialect.finalize(self._entities)
 
         # Third pass: apply exclude patterns
         self._apply_exclude_patterns()

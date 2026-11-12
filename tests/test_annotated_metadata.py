@@ -419,8 +419,8 @@ class Account(Base):
         assert _field(entities, "status").default_value is None
 
 
-def test_assigned_plain_default_wins_over_metadata(tmp_path: Path):
-    """MappedAsDataclass allows `= "x"` as the default; it wins over the metadata one."""
+def test_assigned_plain_value_maps_no_column(tmp_path: Path):
+    """`x: Mapped[T] = "x"` is a plain class attribute in SQLAlchemy, not a column (#294)."""
     entities = _parse(
         tmp_path,
         """
@@ -428,9 +428,59 @@ class Account(Base):
     __tablename__ = "account"
     id: Mapped[int] = mapped_column(primary_key=True)
     status: Mapped[Annotated[str, mapped_column(default="new")]] = "x"
+    note: Mapped[str | None] = None
 """,
     )
-    assert _field(entities, "status").default_value == "'x'"
+    assert [f.name for f in entities["Account"].fields] == ["id", "note"]
+
+
+def test_assigned_call_is_still_a_column(tmp_path: Path):
+    """Any call may return mapped_column() (a project helper), so it stays a column."""
+    entities = _parse(
+        tmp_path,
+        """
+def make_column():
+    return mapped_column()
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created: Mapped[str] = make_column()
+""",
+    )
+    assert [f.name for f in entities["Account"].fields] == ["id", "created"]
+
+
+def test_assigned_name_is_still_a_column(tmp_path: Path):
+    """A module-level `fk = mapped_column(...)` assigned by name is a column."""
+    entities = _parse(
+        tmp_path,
+        """
+owner_fk = mapped_column()
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = owner_fk
+""",
+    )
+    assert [f.name for f in entities["Account"].fields] == ["id", "owner_id"]
+
+
+def test_assigned_none_keeps_metadata_default(tmp_path: Path):
+    """`= None` is unset in SQLAlchemy: the default in the metadata applies."""
+    entities = _parse(
+        tmp_path,
+        """
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[Annotated[str | None, mapped_column(default="new")]] = None
+""",
+    )
+    assert _field(entities, "status").default_value == "'new'"
 
 
 class TestCopilotRound2:
@@ -1263,3 +1313,48 @@ class TestAmbiguousImportCandidates:
         )
         entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
         assert next(f for f in entities["Account"].fields if f.name == "id").type_str == "intpk"
+
+
+def test_qualified_reference_is_a_column_but_enum_member_is_not(tmp_path: Path):
+    """`= columns.fk` may be a mapped_column(); `= Status.NEW` is a plain value (#294)."""
+    entities = _parse(
+        tmp_path,
+        """
+import enum
+
+
+class Status(enum.Enum):
+    NEW = "new"
+
+
+class columns:
+    owner_fk = mapped_column()
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = columns.owner_fk
+    status: Mapped[Status] = Status.NEW
+""",
+    )
+    assert [f.name for f in entities["Account"].fields] == ["id", "owner_id"]
+
+
+def test_member_of_the_column_type_is_not_a_column(tmp_path: Path):
+    """`Mapped[Status] = Status.NEW` is a plain value also when Status isn't scanned (#294)."""
+    entities = _parse(
+        tmp_path,
+        """
+import http
+from http import HTTPStatus
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[HTTPStatus] = HTTPStatus.OK
+    other: Mapped[Optional[http.HTTPStatus]] = http.HTTPStatus.NOT_FOUND
+""",
+    )
+    assert [f.name for f in entities["Account"].fields] == ["id"]

@@ -137,7 +137,8 @@ fields (`JSONField`, `FileField`, custom/third-party fields) keep their Django
 name rather than fake a type. Pass `--django-raw-types` to show the original
 Django field names everywhere instead.
 
-`models.TextChoices` / `models.IntegerChoices` classes are rendered as enums,
+`models.TextChoices` / `models.IntegerChoices` classes (also through a project's
+own choices base) are rendered as enums,
 and a field that references one via `choices=Status.choices` (or
 `choices=Status`) is linked to that enum. Inline `choices=[("a", "A"), …]`
 tuples are anonymous and not rendered as enums.

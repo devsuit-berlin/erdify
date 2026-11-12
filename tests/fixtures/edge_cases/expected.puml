@@ -50,7 +50,7 @@ entity "three_key_link" as LinkTableWithThreeKeys << (L, #AAFFAA) link >> {
   primary_key(entity_c_id) : int
 }
 
-entity "entity_with_no_table_name" as EntityWithNoTableName {
+entity "entitywithnotablename" as EntityWithNoTableName {
   primary_key(id) : int
   column(name) : str
 }

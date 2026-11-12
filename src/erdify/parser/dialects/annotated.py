@@ -16,9 +16,10 @@ from ..annotations import (
     column_metadata,
     column_type,
     expand_aliases,
+    expr_name,
     is_call_to,
 )
-from ..common import _Rel
+from ..common import _Rel, is_enum_class
 from .base import Dialect
 
 
@@ -68,19 +69,53 @@ class AnnotatedDialect(Dialect):
                         relationships[field_name] = rel
                         continue
 
+                # SQLAlchemy maps no column for `x: Mapped[T] = <plain value>`,
+                # not even with MappedAsDataclass: a default goes through
+                # mapped_column(default=...) (#294). `= None` counts as unset.
+                if not self.plain_value_is_column and not self._may_map_column(node):
+                    continue
+
                 field = self._parse_field(node)
                 if field:
                     fields[field_name] = field
 
         return fields, relationships
 
+    def _may_map_column(self, node: ast.AnnAssign) -> bool:
+        """Whether SQLAlchemy may map a column for this ``Mapped`` attribute.
+
+        Nothing, ``None``, a call, a name or a subscript may: a project helper
+        may return ``mapped_column()``, and a module-level
+        ``fk = mapped_column(...)`` may be assigned (also qualified,
+        ``columns.fk``, or looked up, ``COLUMNS["fk"]``). A constant (``= "a"``,
+        ``= 3``) is a plain class attribute, and so is a member of the
+        column's own type (``Mapped[Status] = Status.NEW``, scanned or not) or
+        of a scanned enum. A plain-value call such as
+        ``= datetime(2020, 1, 1)`` is therefore still drawn as a column.
+        """
+        value = node.value
+        if value is None or isinstance(value, (ast.Call, ast.Name, ast.Subscript)):
+            return True
+        if isinstance(value, ast.Constant):
+            return value.value is None
+        if isinstance(value, ast.Attribute):
+            owner = expr_name(value.value)
+            if owner is None:
+                return True
+            if owner == column_type(node.annotation)[0].rpartition(".")[2]:
+                return False
+            enum_class = self.classes.all.get(owner)
+            return enum_class is None or not is_enum_class(enum_class, self.classes.all)
+        return False
+
     @staticmethod
     def _declares_default(value: ast.expr | None) -> bool:
         """Whether the assigned value sets a default, even one that cannot be shown."""
-        if value is None:
+        # `= None` is unset in SQLAlchemy: a default in the Annotated metadata applies.
+        if value is None or (isinstance(value, ast.Constant) and value.value is None):
             return False
         if not is_call_to(value, "mapped_column"):
-            return True  # `x: Mapped[str] = "a"` (MappedAsDataclass)
+            return True  # another call (e.g. column_property()) is taken as setting its own
         return any(
             kw.arg in ("default", "default_factory", "insert_default") for kw in value.keywords
         )

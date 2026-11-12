@@ -87,6 +87,9 @@ class Dialect:
     #: Reads SQLAlchemy column settings from ``Annotated`` metadata and column
     #: type aliases (#241); only SQLAlchemy itself does.
     reads_annotated_columns: ClassVar[bool] = False
+    #: Whether ``x: T = <plain value>`` declares a column with that default.
+    #: SQLAlchemy maps no column for it (#294).
+    plain_value_is_column: ClassVar[bool] = True
 
     def __init__(self, ctx: ParseContext):
         self.ctx = ctx
@@ -272,38 +275,42 @@ class Dialect:
             if db_names.get(f.name, f.name) in unique_cols or f.name in unique_refs:
                 f.is_unique = True
 
-    def _db_column_names(self, class_node: ast.ClassDef) -> Dict[str, str]:
+    def _db_column_names(self, class_node: ast.ClassDef, use_key: bool = True) -> Dict[str, str]:
         """Map attribute name -> explicit DB column name for a class and its bases.
 
-        See :meth:`_explicit_column_name` for the recognized forms. A column
-        without an explicit name maps to itself, so a redeclaration without one
-        overrides an inherited name. Bases resolve in the same order as the
-        fields (:meth:`ClassIndex.merge_order`), so the name matches the winning column.
+        See :meth:`_explicit_column_name` for the recognized forms and
+        ``use_key``. A column without an explicit name maps to itself, so a
+        redeclaration without one overrides an inherited name. Bases resolve in
+        the same order as the fields (:meth:`ClassIndex.merge_order`), so the
+        name matches the winning column.
         """
         names: Dict[str, str] = {}
         for class_name in self.classes.merge_order(class_node):
             for node in self.classes.all[class_name].body:
                 if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                    db_name = self._explicit_column_name(node.value)
+                    db_name = self._explicit_column_name(node.value, use_key)
                     names[node.target.id] = db_name if db_name is not None else node.target.id
         return names
 
     @classmethod
-    def _explicit_column_name(cls, value: ast.expr | None) -> str | None:
-        """Return the name a string constraint uses for this column, if explicit.
+    def _explicit_column_name(cls, value: ast.expr | None, use_key: bool = True) -> str | None:
+        """Return the explicit name of this column, if any.
 
         Recognizes ``mapped_column("name", ...)`` / ``mapped_column(name="name")``,
         and SQLModel's ``Field(sa_column=Column("name", ...))`` /
-        ``Field(sa_column_kwargs={"name": "name"})``. SQLAlchemy resolves a
-        constraint's string column through the column *key*, which defaults to
-        the name, so an explicit ``key=`` takes precedence.
+        ``Field(sa_column_kwargs={"name": "name"})``. With ``use_key``, it is the
+        name a string constraint uses: SQLAlchemy resolves a constraint's string
+        column through the column *key*, which defaults to the name, so an
+        explicit ``key=`` takes precedence. Without it, it is the database
+        column's name.
         """
         if value is None:
             return None
         if is_call_to(value, "mapped_column") or is_call_to(value, "Column"):
             for kw in value.keywords:
                 if (
-                    kw.arg == "key"
+                    use_key
+                    and kw.arg == "key"
                     and isinstance(kw.value, ast.Constant)
                     and isinstance(kw.value.value, str)
                 ):
@@ -325,7 +332,7 @@ class Dialect:
         if is_call_to(value, "Field"):
             for kw in value.keywords:
                 if kw.arg == "sa_column":
-                    return cls._explicit_column_name(kw.value)
+                    return cls._explicit_column_name(kw.value, use_key)
                 if kw.arg == "sa_column_kwargs" and isinstance(kw.value, ast.Dict):
                     opts = {
                         key.value: val.value
@@ -335,7 +342,7 @@ class Dialect:
                         and isinstance(val.value, str)
                     }
                     # As above: an explicit key wins over the name.
-                    found = opts.get("key", opts.get("name"))
+                    found = opts.get("key", opts.get("name")) if use_key else opts.get("name")
                     if isinstance(found, str):
                         return found
         return None

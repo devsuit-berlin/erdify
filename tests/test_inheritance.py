@@ -199,7 +199,8 @@ class Item(LeftMixin, RightMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 """
         entities = _parse(tmp_path, src)
-        assert _field(entities, "Item", "code").is_unique
+        assert _field(entities, "Item", "left_code").is_unique
+        assert "right_code" not in [f.name for f in entities["Item"].fields]
 
 
 class TestFieldOrder:

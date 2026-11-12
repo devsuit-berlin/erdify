@@ -47,6 +47,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   foreign keys, primary keys and explicit `parent_link` fields, and foreign
   keys referencing a renamed column use its name
   ([#275](https://github.com/devsuit-berlin/erdify/issues/275)).
+- A SQLModel table without `__tablename__` gets SQLModel's default name, the
+  lower-cased class name (`HeroTeam` → `heroteam`, not `hero_team`). A foreign
+  key written as `foreign_key="heroteam.id"` now finds its table, so the edge
+  that was missing is drawn
+  ([#291](https://github.com/devsuit-berlin/erdify/issues/291)).
+- An explicit column name names the column: SQLAlchemy's
+  `mapped_column("account_id")` / `mapped_column(name="account_id")` and
+  SQLModel's `Field(sa_column=Column("tag_code", ...))` /
+  `Field(sa_column_kwargs={"name": "pet_nickname"})`, also when inherited from
+  a mixin. A `ForeignKey("account.id")` written against an explicit
+  `key="id"` points at that column's name. The column used to be drawn under
+  the attribute name
+  ([#292](https://github.com/devsuit-berlin/erdify/issues/292)).
+- Enums based on `IntEnum`, `StrEnum`, `Flag` or `IntFlag`, or on a project's
+  own enum base class (`class Kind(LabeledEnum)`), are drawn; only classes
+  based directly on `Enum` (and Django's choices) used to be
+  ([#296](https://github.com/devsuit-berlin/erdify/issues/296)).
+- SQLAlchemy: `x: Mapped[T] = <value>` (a plain value, not `mapped_column()`)
+  is no longer drawn as a column, since SQLAlchemy creates none, also with
+  `MappedAsDataclass`. `x: Mapped[T | None] = None` still is
+  ([#294](https://github.com/devsuit-berlin/erdify/issues/294)).
 
 ### Output changes
 
@@ -62,6 +83,13 @@ Regenerate the diagram once if you gate CI on `--check`.
 
 Django fields with `db_column` show that column name instead of the attribute
 name (`writer` instead of `author_id`), also as foreign-key targets.
+
+SQLModel tables without `__tablename__` change their table name
+(`hero_team` → `heroteam`), also in JSON and for `--exclude` patterns matched
+against table names. SQLAlchemy / SQLModel columns with an explicit name show
+that name (and so does the label of a foreign-key edge), more enums appear, and
+SQLAlchemy attributes assigned a plain value disappear. Regenerate the diagram
+once if you gate CI on `--check`.
 
 ## [1.4.2] - 2026-11-06
 

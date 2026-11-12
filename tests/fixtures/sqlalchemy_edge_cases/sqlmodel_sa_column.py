@@ -12,4 +12,4 @@ class Pet(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(sa_type=String(30))
     nickname: str = Field(sa_column_kwargs={"name": "pet_nickname"})
-    tag: str = Field(sa_column=Column("tag_code", String(8), unique=True, nullable=False))
+    tag: str = Field(sa_column=Column("tag_code", String(8), nullable=False))

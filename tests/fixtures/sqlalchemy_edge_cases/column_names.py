@@ -1,7 +1,18 @@
-"""Explicit column names: mapped_column("name") and mapped_column(name=...)."""
+"""Explicit column names: mapped_column("name"), name= and key= (#292).
 
-from sqlalchemy import ForeignKey, String
+A ForeignKey string resolves through the column key; a value referring to a
+module-level mapped_column() is a column.
+"""
+
+from sqlalchemy import Column, ForeignKey, String, Table
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class shared:  # noqa: N801 - stands in for a module of shared columns
+    owner_fk = mapped_column()
+
+
+SHARED = {"note": mapped_column(nullable=True)}
 
 
 class Base(DeclarativeBase):
@@ -21,3 +32,53 @@ class Profile(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner: Mapped[int] = mapped_column("owner_id", ForeignKey("account.account_id"))
+
+
+class Team(Base):
+    __tablename__ = "team"
+
+    id: Mapped[int] = mapped_column("team_no", key="id", primary_key=True)
+    code: Mapped[str] = mapped_column(key="ref", unique=True)
+
+
+class Member(Base):
+    __tablename__ = "member"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team: Mapped[int] = mapped_column("team_no", ForeignKey("team.id"))
+    owner_id: Mapped[int] = shared.owner_fk
+    team_code: Mapped[str] = mapped_column(ForeignKey("team.ref"))
+    note: Mapped[str | None] = SHARED["note"]
+
+
+class Swap(Base):
+    """Keys that equal another column's name."""
+
+    __tablename__ = "swap"
+
+    id: Mapped[int] = mapped_column(key="pk", primary_key=True)
+    pk: Mapped[int] = mapped_column(key="other", unique=True)
+
+
+class SwapRef(Base):
+    __tablename__ = "swap_ref"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    by_key: Mapped[int] = mapped_column(ForeignKey("swap.pk"))
+    by_name: Mapped[int] = mapped_column(ForeignKey("swap.pk", link_to_name=True))
+
+
+member_team = Table(
+    "member_team",
+    Base.metadata,
+    Column("member_id", ForeignKey("member.id"), primary_key=True),
+    Column("team_id", ForeignKey("team.id"), primary_key=True),
+)
+
+
+swap_member = Table(
+    "swap_member",
+    Base.metadata,
+    Column("swap_id", ForeignKey("swap.pk", link_to_name=True), primary_key=True),
+    Column("member_id", ForeignKey("member.id"), primary_key=True),
+)

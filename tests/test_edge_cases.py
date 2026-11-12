@@ -137,14 +137,14 @@ class TestAutoTableName:
     """Tests for automatic table name generation."""
 
     def test_entity_without_tablename(self, edge_cases_dir: Path):
-        """Test entity without explicit __tablename__."""
+        """A SQLModel table without __tablename__ gets SQLModel's default (#291)."""
         parser = ASTDatabaseParser(edge_cases_dir)
         entities, _ = parser.parse_all_models()
 
         entity = entities.get("EntityWithNoTableName")
         assert entity is not None
-        # Should convert CamelCase to snake_case
-        assert entity.table_name == "entity_with_no_table_name"
+        # SQLModel lower-cases the class name; it is not snake_case.
+        assert entity.table_name == "entitywithnotablename"
 
 
 class TestGeneratorEdgeCases:
@@ -294,3 +294,80 @@ class TestTypeStringCleanup:
         assert field is not None
         assert field.type_str == expected_type
         assert field.is_nullable is expected_nullable
+
+
+class TestEnumBases:
+    """#296: every enum.Enum subclass is an enum, also through a project base."""
+
+    def _enums(self, tmp_path: Path, src: str) -> dict[str, list[str]]:
+        (tmp_path / "models.py").write_text(src)
+        _, enums = parse_models_directory(tmp_path)
+        return {name: enum.values for name, enum in enums.items()}
+
+    def test_stdlib_enum_bases(self, tmp_path: Path):
+        src = (
+            "import enum\n"
+            "from enum import IntEnum, StrEnum\n\n"
+            "class A(IntEnum):\n    X = 1\n\n"
+            "class B(StrEnum):\n    X = 'x'\n\n"
+            "class C(enum.Flag):\n    X = 1\n\n"
+            "class D(enum.IntFlag):\n    X = 1\n"
+        )
+        assert self._enums(tmp_path, src) == {n: ["X"] for n in "ABCD"}
+
+    def test_project_enum_base(self, tmp_path: Path):
+        src = (
+            "import enum\n\n"
+            "class Base(str, enum.Enum):\n    pass\n\n"
+            "class Mid(Base):\n    pass\n\n"
+            "class Kind(Mid):\n    BUG = 'bug'\n"
+        )
+        # The member-less bases have nothing to draw.
+        assert self._enums(tmp_path, src) == {"Kind": ["BUG"]}
+
+    def test_django_choices_base(self, tmp_path: Path):
+        src = (
+            "from django.db import models\n\n"
+            "class LabeledChoices(models.TextChoices):\n    pass\n\n"
+            "class Status(LabeledChoices):\n    OPEN = 'o'\n\n"
+            "class Ticket(models.Model):\n"
+            "    status = models.CharField(max_length=1, choices=Status.choices)\n"
+        )
+        assert self._enums(tmp_path, src) == {"Status": ["OPEN"]}
+
+    def test_other_bases_are_not_enums(self, tmp_path: Path):
+        src = (
+            "class Base:\n    X = 1\n\n"
+            "class Child(Base):\n    Y = 2\n\n"
+            "class Loop(Loop):\n    Z = 3\n"
+        )
+        assert self._enums(tmp_path, src) == {}
+
+    def test_model_named_like_an_enum_base(self, tmp_path: Path):
+        """A scanned model called `Flag` is followed, not taken for enum.Flag."""
+        src = (
+            "from sqlalchemy import ForeignKey\n"
+            "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
+            "class Base(DeclarativeBase):\n    pass\n\n"
+            "class Flag(Base):\n"
+            "    __tablename__ = 'flag'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n"
+            "class UserFlag(Flag):\n"
+            "    __tablename__ = 'user_flag'\n"
+            "    id: Mapped[int] = mapped_column(ForeignKey('flag.id'), primary_key=True)\n"
+        )
+        (tmp_path / "models.py").write_text(src)
+        entities, enums = parse_models_directory(tmp_path)
+        assert sorted(entities) == ["Flag", "UserFlag"]
+        assert enums == {}
+
+    def test_qualified_model_named_like_an_enum_base(self, tmp_path: Path):
+        """`class UserFlag(models.Flag)` follows the scanned `Flag`, not enum.Flag."""
+        (tmp_path / "models.py").write_text("class Flag:\n    LIMIT = 5\n")
+        (tmp_path / "flags.py").write_text(
+            "import enum\n\nimport models\n\n"
+            "class UserFlag(models.Flag):\n    LIMIT = 10\n\n"
+            "class Perm(enum.Flag):\n    READ = 1\n"
+        )
+        entities, enums = parse_models_directory(tmp_path, include_patterns=["*.py"])
+        assert {name: e.values for name, e in enums.items()} == {"Perm": ["READ"]}

@@ -151,7 +151,8 @@ def _schema(module: types.ModuleType, classes: list[type], registries: set[regis
     enums = {
         cls.__name__: tuple(cls.__members__)
         for cls in classes
-        if issubclass(cls, enum.Enum) and cls is not enum.Enum
+        # A base without members (a project's own enum base) has nothing to draw.
+        if issubclass(cls, enum.Enum) and cls is not enum.Enum and cls.__members__
     }
     return Schema(tables=tables, enums=enums, checks=tuple(sorted(set(checks))))
 
