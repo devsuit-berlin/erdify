@@ -371,37 +371,49 @@ class Dialect:
                 and node.target.id == "__table_args__"
             ):
                 value = node.value
-        columns: set[str] = set()
-        refs: set[str] = set()
         if not isinstance(value, (ast.Tuple, ast.List)):
-            return columns, refs
+            return set(), set()
+        return single_column_uniques(value.elts)
 
-        for item in value.elts:
-            if is_call_to(item, "UniqueConstraint"):
-                cols = item.args
-            elif is_call_to(item, "Index"):
-                if not any(
-                    kw.arg == "unique" and isinstance(kw.value, ast.Constant) and kw.value.value
-                    for kw in item.keywords
-                ):
-                    continue
-                # A partial index (postgresql_where=, sqlite_where=, ...) is only
-                # unique over a subset of rows, so it does not imply a 1:1. A
-                # literal `*_where=None` is "no predicate", i.e. not partial.
-                if any(
-                    kw.arg
-                    and kw.arg.endswith("_where")
-                    and not (isinstance(kw.value, ast.Constant) and kw.value.value is None)
-                    for kw in item.keywords
-                ):
-                    continue
-                cols = item.args[1:]  # first positional arg is the index name
-            else:
+
+def single_column_uniques(items: Iterable[ast.expr]) -> Tuple[Set[str], Set[str]]:
+    """Columns made unique on their own by ``UniqueConstraint`` / unique ``Index`` items.
+
+    The items of a ``__table_args__`` tuple or the arguments of a Core
+    ``Table(...)``. Only constraints and indexes over exactly one column
+    count; a partial index (``*_where=``) does not make a column unique.
+
+    Returns ``(db_columns, attribute_refs)``: a string names the database
+    column, a bare name an attribute declared earlier in the class body.
+    """
+    columns: Set[str] = set()
+    refs: Set[str] = set()
+    for item in items:
+        if is_call_to(item, "UniqueConstraint"):
+            cols = item.args
+        elif is_call_to(item, "Index"):
+            if not any(
+                kw.arg == "unique" and isinstance(kw.value, ast.Constant) and kw.value.value
+                for kw in item.keywords
+            ):
                 continue
-            if len(cols) == 1:
-                col = cols[0]
-                if isinstance(col, ast.Constant) and isinstance(col.value, str):
-                    columns.add(col.value)
-                elif isinstance(col, ast.Name):
-                    refs.add(col.id)
-        return columns, refs
+            # A partial index (postgresql_where=, sqlite_where=, ...) is only
+            # unique over a subset of rows, so it does not imply a 1:1. A
+            # literal `*_where=None` is "no predicate", i.e. not partial.
+            if any(
+                kw.arg
+                and kw.arg.endswith("_where")
+                and not (isinstance(kw.value, ast.Constant) and kw.value.value is None)
+                for kw in item.keywords
+            ):
+                continue
+            cols = item.args[1:]  # first positional arg is the index name
+        else:
+            continue
+        if len(cols) == 1:
+            col = cols[0]
+            if isinstance(col, ast.Constant) and isinstance(col.value, str):
+                columns.add(col.value)
+            elif isinstance(col, ast.Name):
+                refs.add(col.id)
+    return columns, refs

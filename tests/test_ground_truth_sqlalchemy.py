@@ -64,9 +64,6 @@ SNIPPET_HEADERS = {"test_annotated_metadata.py": "HEADER"}
 KNOWN_DIFFERENCES = {
     "joined_inheritance": "#293: a joined-table subclass has only its own table's columns",
     "single_table_inheritance": "#302: single-table subclass columns belong to the parent table",
-    "imperative_table": "#297: a class mapped with __table__ = Table(...) is not drawn",
-    "map_imperatively": "#306: classes mapped with registry.map_imperatively() are not drawn",
-    "core_tables": "#305: Core tables other than association tables are not drawn",
     "mixins": "#298: a relationship from a @declared_attr on a mixin is not read",
     "one_to_one_required_reverse": (
         "#299: a to-one reference from the referenced side is always optional"

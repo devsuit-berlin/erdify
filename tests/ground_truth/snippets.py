@@ -85,11 +85,12 @@ def sqlalchemy_snippets(headers: dict[str, str]) -> list[Snippet]:
 
     A source is a string literal, or a concatenation (``HEADER + \"\"\"...\"\"\"``)
     of literals and module-level string constants, folded into one source the
-    way the test builds it. It counts when it contains a ``class`` and one of
-    :data:`SQLALCHEMY_WORDS`, and no Django import (Django sources are
-    :func:`django_snippets`). A source without a SQLAlchemy / SQLModel import
-    is a body that a test helper prefixes: it gets the module-level constant
-    that ``headers`` names for its file prepended (``{"test_x.py": "HEADER"}``),
+    way the test builds it. It counts when it contains a ``class`` or a Core
+    ``Table(`` (drawn on its own, #305) and one of :data:`SQLALCHEMY_WORDS`,
+    and no Django import (Django sources are :func:`django_snippets`). A
+    source without a SQLAlchemy / SQLModel import is a body that a test helper
+    prefixes: it gets the module-level constant that ``headers`` names for its
+    file prepended (``{"test_x.py": "HEADER"}``),
     and stays as it is in a file without one.
     """
     found: list[Snippet] = []
@@ -99,7 +100,9 @@ def sqlalchemy_snippets(headers: dict[str, str]) -> list[Snippet]:
         header = constants.get(headers.get(path.name, ""), "")
         seen: Counter[str] = Counter()
         for scope, line, text in _sources(tree, (), constants):
-            if "class " not in text or not any(word in text for word in SQLALCHEMY_WORDS):
+            if "class " not in text and "Table(" not in text:
+                continue
+            if not any(word in text for word in SQLALCHEMY_WORDS):
                 continue
             if "from django" in text or "import django" in text:
                 continue

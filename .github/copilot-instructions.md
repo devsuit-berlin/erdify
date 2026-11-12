@@ -137,7 +137,7 @@ parser/    ──►  config.py (IR)  ──►  generator.py
   stable surface is `erdify.__all__`).
   - `core.py`: `parse_models_directory()` and `ASTDatabaseParser`, which runs
     the passes: collect every class, classify it, build entities, add Core
-    association tables, apply `--exclude`.
+    tables, apply `--exclude`.
   - `discovery.py`: finds model files (glob `include_patterns`, default
     `models.py`; prunes `DEFAULT_EXCLUDE_DIRS` *during* the walk for speed).
   - `dialects/`: one `Dialect` per framework (`base.py` has the interface, its

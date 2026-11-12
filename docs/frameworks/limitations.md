@@ -134,24 +134,37 @@ detected; one mixing both styles shows only its `Mapped` columns.
 
 A mapped class is read from its class body: `__tablename__` plus `Mapped[...]`
 members, under any declarative base (`class Base(DeclarativeBase)`,
-`Base = declarative_base()`, or the `@registry.mapped` decorator). A Core
-`Table(...)` is drawn only in one case:
+`Base = declarative_base()`, or the `@registry.mapped` decorator). Core tables
+are drawn too:
 
-- **Association tables are drawn.** A module-level `name = Table(...)` in
-  which every column is part of a composite primary key made up of foreign keys
-  (two FKs or more, no payload columns) becomes a link entity named after the
-  variable. That holds whether or not a `relationship(secondary=...)` goes
-  through it; a `secondary=` table with a payload column is not drawn.
+- **Every module-level `name = Table(...)`** becomes an entity named after the
+  variable. One whose columns form a composite primary key made up of foreign
+  keys (two FKs or more, no payload columns) is a link table, drawn as the path
+  of a many-to-many. Column options are read as SQLAlchemy applies them: a
+  column is nullable unless it is a primary key or says `nullable=False`, and a
+  `ForeignKey`-only column has the referenced column's type. Single-column
+  `PrimaryKeyConstraint`, `ForeignKeyConstraint`, `UniqueConstraint` and
+  unique `Index` arguments count; column types are shown as their Python type
+  (`Integer` → `int`, `Enum(Status)` → `Status`).
+- **A class with `__table__ = Table(...)`** (inline, or a module-level table
+  variable) is drawn under the class name with that table's name and columns,
+  and the relationships its body declares.
+- **Imperative mapping**, `registry.map_imperatively(Cls, table,
+  properties={...})`, anywhere in a scanned file (also inside a
+  `start_mappers()` function), draws `Cls` with the table's name and columns.
+  A plain class or a dataclass can be mapped this way.
 
-Everything else declared as a Core table is missing from the diagram, along
-with the foreign-key edges that point at it:
+Not read:
 
-- **Other Core tables**, e.g. a lookup or log table with payload columns
-  ([#305](https://github.com/devsuit-berlin/erdify/issues/305)).
-- **A class with `__table__ = Table(...)`** instead of `__tablename__`
-  ([#297](https://github.com/devsuit-berlin/erdify/issues/297)).
-- **Imperative mapping**, `registry.map_imperatively(Cls, table)`
-  ([#306](https://github.com/devsuit-berlin/erdify/issues/306)).
+- A `Table(...)` that is not assigned at module level (e.g. created inside a
+  function), or one without `Column(...)` arguments (a reflected
+  `Table("t", metadata, autoload_with=engine)`).
+- The relationships of `map_imperatively()` have no annotation, so their
+  cardinality is inferred like SQLAlchemy does: a foreign key from the mapped
+  table to the target's table makes a to-one reference, otherwise it is a
+  collection (`uselist=False`: to-one); a self-referential one is a collection
+  unless it sets `remote_side=`. `foreign_keys=` and `primaryjoin=` are not
+  read, and `properties=` must be a dict literal.
 
 ## Column type aliases
 

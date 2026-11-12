@@ -172,8 +172,7 @@ class ASTDatabaseParser:
                     continue
                 self._parse_table_class(class_node, source)
 
-        # Entities that are not classes, e.g. SQLAlchemy Core association
-        # tables referenced by relationship(secondary=...) (#34).
+        # Entities that are not classes, e.g. SQLAlchemy Core tables (#34, #305).
         for dialect in self._ctx.all_dialects():
             if self.sources is not None and dialect.kind not in self.sources:
                 continue
