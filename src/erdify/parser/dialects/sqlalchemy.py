@@ -1,10 +1,11 @@
 """SQLModel and SQLAlchemy 2.0 (ORM classes, classes mapped to Core tables, Core tables)."""
 
 import ast
-from typing import Callable, Dict, Iterable, List, Mapping, NamedTuple, Tuple
+from typing import Callable, Dict, Iterable, List, Mapping, NamedTuple, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
-from ..annotations import expr_name, is_call_to, is_mapped_annotation
+from ..annotations import column_type, expr_name, is_call_to, is_mapped_annotation
+from ..common import _Rel
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
 from .base import ParseContext, explicit_column_name, single_column_uniques
 
@@ -110,7 +111,11 @@ class SQLAlchemyDialect(TableDialect):
 
     Mixins / abstract bases (``Mapped`` fields but no ``__tablename__``) are not
     detected, so they are not emitted as entities, but their fields are still
-    inherited. A class mapped to a Core table, through ``__table__ = Table(...)``
+    inherited. A mapped parent's columns stay in its own table: a joined-table
+    subclass (``__tablename__`` of its own) gets only its own columns, and a
+    single-table subclass (none, or ``__tablename__ = None``) is not drawn and
+    adds its columns to the parent's table (#293, #302). A class mapped to a
+    Core table, through ``__table__ = Table(...)``
     (#297) or ``registry.map_imperatively(Class, table)`` (#306), is drawn with
     that table's name and columns. Every other module-level Core ``Table(...)``
     is drawn as a table of its own (#34, #305).
@@ -128,6 +133,11 @@ class SQLAlchemyDialect(TableDialect):
         #: Core columns declared with only a ``ForeignKey``: SQLAlchemy gives
         #: them the referenced column's type.
         self._untyped: List[Tuple[FieldInfo, str]] = []
+        #: Table-owning class -> its single-table subclasses (#302).
+        self._single: Dict[str, List[str]] | None = None
+        #: id() of each parsed column -> (the column, its annotation's
+        #: nullability, before an explicit ``nullable=``).
+        self._annotation_nullable: Dict[int, Tuple[FieldInfo, bool]] = {}
 
     @property
     def _mapped_tables(self) -> Dict[str, "_MappedTable"]:
@@ -139,6 +149,8 @@ class SQLAlchemyDialect(TableDialect):
     def detect(self, class_node: ast.ClassDef) -> bool:
         if class_node.name in self._mapped_tables:
             return True
+        if _sets_true(class_node, "__abstract__"):
+            return False  # never mapped; SQLAlchemy ignores its __tablename__
         return has_tablename(class_node) and has_mapped_field(class_node)
 
     def table_name(self, class_node: ast.ClassDef) -> str | None:
@@ -150,14 +162,227 @@ class SQLAlchemyDialect(TableDialect):
                 return name
         return super().table_name(class_node)
 
+    def _parse_field(self, node: ast.AnnAssign) -> FieldInfo | None:
+        """Parse a column, remembering the nullability its annotation alone gives."""
+        field = super()._parse_field(node)
+        if field is not None:
+            self._annotation_nullable[id(field)] = (field, column_type(node.annotation)[1])
+        return field
+
+    # -- mapped-class inheritance (#293, #302) ----------------------------------
+
+    def _is_single_table(self, class_node: ast.ClassDef) -> bool:
+        """A subclass of a mapped class without a table of its own (#302).
+
+        SQLAlchemy maps every subclass of a mapped class; without
+        ``__tablename__`` / ``__table__`` (and not ``__abstract__``) it is
+        stored in its parent's table.
+        """
+        if (
+            self.detect(class_node)
+            or has_tablename(class_node)
+            or _sets_true(class_node, "__abstract__")
+            or _assigns(class_node, "__table__")  # one erdify could not resolve
+            or self._tablename_is_function(class_node.name)
+        ):
+            return False
+        return self._table_owner(class_node.name) is not None
+
+    def _ancestors(self, name: str) -> List[str]:
+        """The ancestors of class ``name``, nearest first (its MRO without itself)."""
+        node = self.classes.all[name]
+        order = self.classes.mro(name) or self.classes.dfs_order(node, set())[::-1]
+        return [a for a in order if a != name]
+
+    def _tablename_is_function(self, name: str) -> bool:
+        """Whether the ``__tablename__`` of class ``name`` is a ``@declared_attr``.
+
+        Its own or inherited, whichever the MRO finds first. It names a table
+        of the class's own, which erdify can't read.
+        """
+        for ancestor in [name, *self._ancestors(name)]:
+            node = self.classes.all[ancestor]
+            if _defines_function(node, "__tablename__"):
+                return True
+            if _assigns(node, "__tablename__"):
+                return False
+        return False
+
+    def _table_owner(self, name: str) -> str | None:
+        """The nearest ancestor of class ``name`` with a table, if erdify draws it.
+
+        A class mapped with ``map_imperatively()`` owns no subclass columns: an
+        imperative mapping maps only its table's columns, never annotations.
+        An ancestor whose table erdify can't read (a ``@declared_attr`` table
+        name, an unresolved ``__table__``) ends the search: no owner.
+        """
+        for ancestor in self._ancestors(name):
+            node = self.classes.all[ancestor]
+            if _sets_true(node, "__abstract__"):
+                continue  # not mapped; SQLAlchemy ignores its __tablename__
+            if self._tablename_is_function(ancestor) and any(
+                self.detect(self.classes.all[a]) for a in self._ancestors(ancestor)
+            ):
+                return None  # a mapped subclass with a computed table, not a mixin
+            mapped = self._mapped_tables.get(ancestor)
+            if mapped is not None and mapped.imperative:
+                return None
+            if mapped is None and _assigns(node, "__table__"):
+                return None  # a table erdify could not resolve
+            if has_tablename(node) or mapped is not None:
+                return ancestor if self.detect(node) else None
+        return None
+
+    @property
+    def _single_table_subclasses(self) -> Dict[str, List[str]]:
+        """Table-owning class name -> its single-table subclasses, in mapping order.
+
+        Source order, except that a subclass declared before its single-table
+        parent (in another file) comes after it, as SQLAlchemy maps them.
+        """
+        if self._single is None:
+            self._single = {}
+            for name, node in self.classes.all.items():
+                owner = self._table_owner(name) if self._is_single_table(node) else None
+                if owner is not None:
+                    self._single.setdefault(owner, []).append(name)
+            for owner, subs in self._single.items():
+                self._single[owner] = self._parents_first(subs)
+        return self._single
+
+    def _parents_first(self, subs: List[str]) -> List[str]:
+        """``subs`` in source order, each moved after the ones it inherits from."""
+        members = set(subs)
+        ordered: List[str] = []
+
+        def visit(name: str) -> None:
+            if name in ordered:
+                return
+            for ancestor in reversed(self._ancestors(name)):
+                if ancestor in members:
+                    visit(ancestor)
+            ordered.append(name)
+
+        for sub in subs:
+            visit(sub)
+        return ordered
+
+    def table_classes(self, class_node: ast.ClassDef, names: List[str]) -> Set[str]:
+        """Leave out each mapped ancestor and its bases: they have a table of their own (#293).
+
+        A joined-table subclass gets only the columns of its own body and of
+        the mixins that only it inherits; a single-table subclass, read for
+        its parent's table, likewise only adds its own.
+        """
+        excluded = self._mapped_ancestry(class_node, names)
+        return {name for name in names if name not in excluded}
+
+    def _mapped_ancestry(self, class_node: ast.ClassDef, names: List[str]) -> Set[str]:
+        """The mapped ancestors among ``names`` and their bases: stored in another table."""
+        excluded: Set[str] = set()
+        for name in names:
+            node = self.classes.all[name]
+            if (
+                name != class_node.name
+                and not _sets_true(node, "__abstract__")  # its columns are copied
+                and (self.detect(node) or self._is_single_table(node))
+            ):
+                excluded.update(self.classes.mro(name) or self.classes.dfs_order(node, set()))
+        return excluded
+
+    def collect(self, class_node: ast.ClassDef) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """The class's own members; single-table subclasses are added in :meth:`finish`."""
+        return self._collect_own(class_node)
+
+    def _collect_own(
+        self, class_node: ast.ClassDef
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """The members a class stores in its own table, or adds to its parent's.
+
+        A mixin attribute that a mapped ancestor already maps is left out when
+        the ancestor's comes first, as SQLAlchemy's ``attribute_is_overridden``
+        decides: walking the MRO, a mapped ancestor that maps the attribute
+        wins, a mixin that assigns it a value (``= mapped_column()``) keeps
+        it, and an annotation alone is passed over.
+        """
+        fields, rels = super().collect(class_node)
+        mapped = self._mapped_ancestry(class_node, self.classes.dfs_order(class_node, set()))
+        mapped_attrs = {name: self._mapped_attrs(name) for name in mapped}
+        candidates = set().union(*mapped_attrs.values()) - set(self.declared_names(class_node))
+        for attr in candidates:
+            for ancestor in self._ancestors(class_node.name):
+                if ancestor in mapped_attrs:
+                    if attr in mapped_attrs[ancestor]:
+                        fields.pop(attr, None)
+                        rels.pop(attr, None)
+                        break
+                elif _assigns_value(self.classes.all[ancestor], attr):
+                    break
+        return fields, rels
+
+    def _mapped_attrs(self, name: str) -> Set[str]:
+        """Attributes class ``name`` maps itself: its body's, or its Core table's columns.
+
+        A Core column is mapped under its key (``key=``, else its name).
+        """
+        mapped = self._mapped_tables.get(name)
+        if mapped is not None:
+            return {
+                key
+                for arg in mapped.table.args
+                if isinstance(arg, ast.Call) and is_call_to(arg, "Column")
+                for key in [explicit_column_name(arg)]
+                if key is not None
+            }
+        return set(self.declared_names(self.classes.all[name]))
+
+    def _add_single_table_columns(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
+        """Add the columns of single-table subclasses to the entity's table (#302).
+
+        Each subclass's columns get their own explicit names first, so a column
+        is identified by its database name: one declared again
+        (``use_existing_column=True``) keeps its first declaration
+        (only the later annotation's nullability is applied). An explicit ``key=`` is recorded for
+        :meth:`finalize`. Relationships belong to the subclass's mapper, which
+        has no entity, so they are not drawn (#317).
+        """
+        subs = self._single_table_subclasses.get(class_node.name, [])
+        if not subs:
+            return
+        columns = {f.name: f for f in entity.fields}
+        for sub in subs:
+            sub_node = self.classes.all[sub]
+            keys = self._db_column_names(sub_node)
+            names = self._db_column_names(sub_node, use_key=False)
+            for attr, field in self._collect_own(sub_node)[0].items():
+                field.name = names.get(attr, attr)
+                key = keys.get(attr, attr)
+                if key != field.name:
+                    self._renamed_keys.setdefault(entity.table_name, {})[key] = field.name
+                existing = columns.get(field.name)
+                if existing is None:
+                    columns[field.name] = field
+                else:
+                    # SQLAlchemy reuses the column and only applies the later
+                    # annotation's nullability, not an explicit nullable=.
+                    existing.is_nullable = self._annotation_nullable.get(
+                        id(field), (field, field.is_nullable)
+                    )[1]
+        entity.fields = list(columns.values())
+
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
-        """A class mapped to a Core table has exactly that table's columns."""
+        """A class mapped to a Core table has exactly that table's columns.
+
+        Either way, the columns its single-table subclasses add follow.
+        """
         mapped = self._mapped_tables.get(class_node.name)
         if mapped is None:
             super().finish(entity, class_node)
+            self._add_single_table_columns(entity, class_node)
             return
         entity.fields = core_table_fields(mapped.table)
         self._note_core_table(entity, mapped.table)
+        self._add_single_table_columns(entity, class_node)
         if mapped.properties is not None:
             self._properties[entity.name] = mapped.properties
 
@@ -330,6 +555,8 @@ class _MappedTable(NamedTuple):
     table: ast.Call
     #: ``map_imperatively(..., properties={...})``, if given as a dict literal.
     properties: ast.Dict | None = None
+    #: Mapped with ``map_imperatively()``: its subclasses' annotations map no columns.
+    imperative: bool = False
 
 
 def module_tables(tree: ast.Module) -> List[Tuple[str, ast.Call]]:
@@ -439,7 +666,7 @@ def mapped_tables(
                 continue  # e.g. single-table inheritance: no table of its own
             properties = options.get("properties")
             found[mapped] = _MappedTable(
-                table, properties if isinstance(properties, ast.Dict) else None
+                table, properties if isinstance(properties, ast.Dict) else None, imperative=True
             )
     return found
 
@@ -495,15 +722,75 @@ def _relationship_target(call: ast.Call) -> str | None:
 
 
 def has_tablename(class_node: ast.ClassDef) -> bool:
-    """Check if a class assigns __tablename__ (annotated or plain)."""
+    """Check if a class assigns __tablename__ (annotated or plain).
+
+    ``__tablename__ = None`` declares no table: a subclass of a mapped class
+    that sets it is stored in its parent's table (single-table inheritance).
+    """
     for node in class_node.body:
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             if node.target.id == "__tablename__":
-                return True
+                return not _is_none(node.value)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "__tablename__":
-                    return True
+                    return not _is_none(node.value)
+    return False
+
+
+def _is_none(value: ast.expr | None) -> bool:
+    return isinstance(value, ast.Constant) and value.value is None
+
+
+def _defines_function(class_node: ast.ClassDef, name: str) -> bool:
+    """Whether the class body defines a method ``name`` (e.g. a ``@declared_attr``)."""
+    return any(
+        isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == name
+        for item in class_node.body
+    )
+
+
+def _assigns_value(class_node: ast.ClassDef, name: str) -> bool:
+    """Whether the class body assigns ``name`` a value, not just an annotation."""
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            return True
+    return False
+
+
+def _assigns(class_node: ast.ClassDef, name: str) -> bool:
+    """Whether the class body assigns ``name`` (annotated or plain)."""
+    for node in class_node.body:
+        targets = (
+            node.targets
+            if isinstance(node, ast.Assign)
+            else [node.target]
+            if isinstance(node, ast.AnnAssign)
+            else []
+        )
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            return True
+    return False
+
+
+def _sets_true(class_node: ast.ClassDef, name: str) -> bool:
+    """Whether the class body sets ``name = True`` (annotated or plain)."""
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            if isinstance(node.value, ast.Constant) and node.value.value is True:
+                return True
     return False
 
 

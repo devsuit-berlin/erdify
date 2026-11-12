@@ -187,7 +187,8 @@ class Dialect:
         """Which of ``names`` (the class and its ancestors) store columns in its table.
 
         All of them by default: a base's members are copied into the model.
-        Django's multi-table inheritance keeps a concrete parent's in its own table.
+        Django's multi-table inheritance and SQLAlchemy's mapped-class
+        inheritance keep a concrete parent's in its own table.
         """
         return set(names)
 

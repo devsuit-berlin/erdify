@@ -61,7 +61,10 @@ class Computed(SQLModel, table=True):
     __tablename__ = "prefix_" + "computed"   # erdify reports: computed
 ```
 
-The same applies to a `declared_attr`-computed `__tablename__`. Django's
+The same applies to a `declared_attr`-computed `__tablename__`. A SQLAlchemy
+subclass of a mapped class that gets its table name from a `declared_attr`
+(e.g. on a mixin) is not drawn, and its columns are not added to the parent's
+table either. Django's
 `Meta.db_table` *is* read when it is a literal.
 
 ## `__table_args__` is mostly not read
@@ -128,7 +131,9 @@ Only SQLAlchemy 2.0's annotated style (`id: Mapped[int] = mapped_column(...)`)
 is read. Classic declarative attributes (`id = Column(Integer, ...)`) have no
 annotation, so they are not drawn as columns. A class needs at least one
 `Mapped[...]` (or `WriteOnlyMapped` / `DynamicMapped`) member of its own to be
-detected; one mixing both styles shows only its `Mapped` columns.
+detected; one mixing both styles shows only its `Mapped` columns. A
+single-table subclass of an undetected class does not add its columns to any
+table either.
 
 ## Tables declared outside a class body
 
@@ -161,6 +166,9 @@ Not read:
   function), one without `Column(...)` arguments (a reflected
   `Table("t", metadata, autoload_with=engine)`), or one without a metadata
   argument (another library's `Table`).
+- A `__table__` that is neither a `Table(...)` nor a table variable
+  (`tables["engineer"]`, a function call): the class is not drawn, and a
+  single-table subclass of it does not add its columns to any table.
 - A table variable that the mapping file imports is found when one scanned
   file defines it; when several do, the class is not mapped. Two Core tables
   with the same variable name in different files are drawn once.
@@ -293,7 +301,7 @@ names, so it can be wrong in both directions.
 |------|--------|
 | Runtime-constructed models (`type()`, registries) | Not supported by design (no imports) |
 | Fields added via `setattr` / loops / `if TYPE_CHECKING` | Not supported |
-| Non-literal `__tablename__` / `declared_attr` | Falls back to the class name, silently |
+| Non-literal `__tablename__` / `declared_attr` | Falls back to the class name, silently; a SQLAlchemy class with a `declared_attr` table name is not drawn ([details](#non-literal-__tablename__)) |
 | Non-literal Django `db_column` / `Meta.db_table` | Falls back to the attribute name / Django's default table name, silently |
 | `__table_args__` (composite FKs, composite `UniqueConstraint`, partial or non-unique `Index`, `schema=`) | Not read; single-column `UniqueConstraint` / unique `Index` is read |
 | Django `Meta.unique_together` / `Meta.indexes` | Not read |
@@ -308,6 +316,7 @@ names, so it can be wrong in both directions.
 | Composite foreign keys | Not supported |
 | Settings inside `sa_column=Column(...)` (foreign key, `unique=`, `nullable=`, …) | Not read; only the column name is ([#309](https://github.com/devsuit-berlin/erdify/issues/309)) |
 | Unannotated `x = relationship("Target")` | Not detected |
+| Relationships declared on a SQLAlchemy single-table inheritance subclass, or pointing at one | Not drawn; the subclass's columns and foreign-key edges are, on the parent's table ([#317](https://github.com/devsuit-berlin/erdify/issues/317)) |
 | ninja-style `ModelSchema` (fields from an inner `Meta`/`Config`) | Detected and skipped with a warning, rather than drawn empty ([#171](https://github.com/devsuit-berlin/erdify/issues/171)) |
 | `attrs` / `msgspec` models | Not supported ([erdantic](../comparison.md) covers these) |
 | Live database introspection | Not supported by design |
