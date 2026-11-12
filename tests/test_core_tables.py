@@ -288,6 +288,34 @@ class TestMapImperatively:
         # Which of the two tables `users` names is unknown: no columns are guessed.
         assert "User" not in entities
 
+    def test_remote_side_naming_the_foreign_key_keeps_a_collection(self, tmp_path: Path) -> None:
+        """``remote_side`` on the referenced key is to-one, on the foreign key a collection."""
+        entities = _parse(
+            tmp_path,
+            "from sqlalchemy import Column, ForeignKey, Integer, Table\n"
+            "from sqlalchemy.orm import registry, relationship\n\n"
+            "reg = registry()\n\n"
+            "node = Table(\n"
+            "    'node', reg.metadata,\n"
+            "    Column('id', Integer, primary_key=True),\n"
+            "    Column('parent_id', ForeignKey('node.id')),\n"
+            ")\n\n"
+            "class Node:\n    pass\n\n"
+            "reg.map_imperatively(Node, node, properties={\n"
+            "    'parent': relationship(Node, remote_side=[node.c.id]),\n"
+            "    'kids': relationship(Node, remote_side=[node.c.parent_id], viewonly=True),\n"
+            "    'kids2': relationship(Node, remote_side='Node.parent_id', viewonly=True),\n"
+            "    'parent2': relationship(Node, remote_side=lambda: node.c.id, viewonly=True),\n"
+            "})\n",
+        )
+
+        assert entities["Node"].relationships == [
+            ("Node", "one", "parent"),
+            ("Node", "many", "kids"),
+            ("Node", "many", "kids2"),
+            ("Node", "one", "parent2"),
+        ]
+
     def test_options_left_at_their_default_are_unset(self, tmp_path: Path) -> None:
         """``secondary=None`` / ``remote_side=None`` change nothing (as in SQLAlchemy)."""
         entities = _parse(

@@ -233,9 +233,14 @@ class SQLAlchemyDialect(TableDialect):
             uselist = options.get("uselist")
             target_entity = entities.get(target)
             if target == entity.name:
-                # Self-referential: one-to-many unless remote_side= turns it around.
+                # Self-referential: one-to-many unless remote_side= names the
+                # referenced side; naming the foreign-key columns keeps it one-to-many.
+                own = _references(entity, entity.table_name)
+                remote = options.get("remote_side")
+                names = _column_names(remote) if remote is not None else set()
+                on_foreign_key = bool(names) and names <= {f.name for f in own}
                 references: List[FieldInfo] = (
-                    _references(entity, entity.table_name) if "remote_side" in options else []
+                    own if remote is not None and not on_foreign_key else []
                 )
             elif target_entity is not None:
                 references = _references(entity, target_entity.table_name)
@@ -437,6 +442,22 @@ def mapped_tables(
                 table, properties if isinstance(properties, ast.Dict) else None
             )
     return found
+
+
+def _column_names(value: ast.expr) -> set[str]:
+    """Column names a ``remote_side=`` names: ``[t.c.id]``, ``"Node.id"``, ``[id]``."""
+    if isinstance(value, ast.Lambda):
+        value = value.body
+    items = value.elts if isinstance(value, (ast.List, ast.Tuple, ast.Set)) else [value]
+    names: set[str] = set()
+    for item in items:
+        if isinstance(item, ast.Constant) and isinstance(item.value, str):
+            names.add(item.value.rpartition(".")[2])
+        elif isinstance(item, ast.Attribute):
+            names.add(item.attr)
+        elif isinstance(item, ast.Name):
+            names.add(item.id)
+    return names
 
 
 def _unset(value: ast.expr) -> bool:
