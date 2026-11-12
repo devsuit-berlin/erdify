@@ -20,13 +20,16 @@ class ModelParseError(Exception):
     """Raised in strict mode when one or more input files could not be parsed.
 
     Attributes:
-        errors: ``(file, message)`` for every file that failed, in scan order.
+        errors: ``(file, message)`` for every failure, in scan order: one per
+            file, or one per statement of a ``.sql`` file.
     """
 
     def __init__(self, errors: List[Tuple[Path, str]]):
         self.errors = errors
-        files = ", ".join(str(path) for path, _ in errors)
-        super().__init__(f"{len(errors)} file(s) could not be parsed (strict mode): {files}")
+        paths = list(dict.fromkeys(str(path) for path, _ in errors))
+        super().__init__(
+            f"{len(paths)} file(s) could not be parsed (strict mode): {', '.join(paths)}"
+        )
 
 
 class ASTDatabaseParser:

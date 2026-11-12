@@ -1,9 +1,13 @@
 """SQL DDL frontend for erdify (optional, requires the `sql` extra: sqlglot)."""
 
+import logging
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from fnmatch import fnmatchcase
 from pathlib import Path
+from typing import Any
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
 from .parser import ModelParseError
@@ -48,6 +52,62 @@ def discover_sql_files(
     return sorted(found)
 
 
+def _lookup(key: str, keys: dict[str, str]) -> str | None:
+    """The declared name ``key`` names: an exact key, else the one case-insensitive match."""
+    if key in keys:
+        return keys[key]
+    matches = [name for k, name in keys.items() if k.lower() == key.lower()]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _split_statements(tokens: list[Any], semicolon: Any) -> list[list[Any]]:
+    """Group tokens into statements at each semicolon (empty statements dropped)."""
+    statements: list[list[Any]] = [[]]
+    for token in tokens:
+        if token.token_type == semicolon:
+            statements.append([])
+        else:
+            statements[-1].append(token)
+    return [s for s in statements if s]
+
+
+#: Words that may stand between CREATE and TABLE in a plain table definition.
+_TABLE_PREFIXES = {"TEMP", "TEMPORARY", "UNLOGGED", "GLOBAL", "LOCAL"}
+
+
+def _index(names: list[str], name: str) -> int:
+    return names.index(name) if name in names else len(names)
+
+
+def _matching_paren(names: list[str]) -> int | None:
+    """Index of the parenthesis closing the first one opened, if any."""
+    depth = 0
+    for i, name in enumerate(names):
+        if name == "L_PAREN":
+            depth += 1
+        elif name == "R_PAREN":
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
+
+
+@contextmanager
+def _held_warnings(logger: logging.Logger) -> Iterator[list[logging.LogRecord]]:
+    """Hold back what ``logger`` logs; the caller may replay the records."""
+    held: list[logging.LogRecord] = []
+
+    def hold(record: logging.LogRecord) -> bool:
+        held.append(record)
+        return False
+
+    logger.addFilter(hold)
+    try:
+        yield held
+    finally:
+        logger.removeFilter(hold)
+
+
 class SqlDependencyError(RuntimeError):
     """Raised when SQL parsing is requested without the optional sqlglot dep."""
 
@@ -85,21 +145,31 @@ class SqlSchemaParser:
         self.exclude_patterns = exclude_patterns or []
         self._entities: dict[str, EntityInfo] = {}
         self._enums: dict[str, EnumInfo] = {}
+        #: Table name -> its primary-key columns, in key order.
+        self._primary_keys: dict[str, list[str]] = {}
+        #: Name keys (identifiers as the dialect folds them) -> declared names,
+        #: for tables and, per table, for columns.
+        self._table_keys: dict[str, str] = {}
+        self._column_keys: dict[str, dict[str, str]] = {}
+        self._dialect: Any = None
 
     def parse(self) -> tuple[dict[str, EntityInfo], dict[str, EnumInfo]]:
         """Parse ``CREATE TABLE``, ``CREATE TYPE ... AS ENUM``, ``CREATE INDEX``
         and ``ALTER TABLE ... FOREIGN KEY`` statements from all files.
 
-        A file that fails to parse is reported on stderr and skipped, unless
-        ``strict`` is set.
+        Each statement is parsed on its own: one that fails to parse is
+        reported on stderr and skipped (the rest of its file is still read),
+        unless ``strict`` is set. A file that can't be read or tokenized is
+        skipped as a whole.
 
         Returns:
             Tuple of (entities, enums), both keyed by table / type name.
 
         Raises:
             SqlDependencyError: ``sqlglot`` (``erdify[sql]``) is not installed.
-            ModelParseError: ``strict`` is set and at least one file failed to
-                parse. Every failure is still reported on stderr first.
+            ModelParseError: ``strict`` is set and at least one file or
+                statement failed to parse. Every failure is still reported on
+                stderr first.
         """
         try:
             import sqlglot
@@ -109,17 +179,23 @@ class SqlSchemaParser:
                 "SQL support requires sqlglot. Install it with: pip install erdify[sql]"
             ) from e
 
-        statements = []
+        statements: list[object] = []
         self._parse_errors = []
         for f in self.files:
             try:
                 # Read inside the try: an unreadable or non-UTF-8 file is a parse
                 # failure for this file only, like a syntax error.
                 text = f.read_text(encoding="utf-8")
-                statements.extend(sqlglot.parse(text, dialect=self.dialect))
+                dialect = self._dialect = sqlglot.Dialect.get_or_raise(self.dialect)
+                tokens = dialect.tokenize(text)
             except Exception as err:
-                print(f"Error parsing {f}: {err}", file=sys.stderr)
-                self._parse_errors.append((f, str(err)))
+                self._report(f, err)
+                continue
+            for chunk in _split_statements(tokens, sqlglot.TokenType.SEMICOLON):
+                try:
+                    statements.extend(self._parse_statement(chunk, text, dialect, exp))
+                except Exception as err:
+                    self._report(f, err)
 
         if self.strict and self._parse_errors:
             raise ModelParseError(self._parse_errors)
@@ -143,17 +219,102 @@ class SqlSchemaParser:
         self._finalize()
         return self._entities, self._enums
 
+    def _report(self, file: Path, err: Exception) -> None:
+        print(f"Error parsing {file}: {err}", file=sys.stderr)
+        self._parse_errors.append((file, str(err)))
+
+    @staticmethod
+    def _parse_statement(tokens: list[Any], text: str, dialect: Any, exp: Any) -> list[object]:
+        """Parse one statement's tokens.
+
+        sqlglot parses a ``CREATE TABLE`` it doesn't fully support (e.g. SQLite's
+        ``WITHOUT ROWID``) as an opaque ``Command``. The table is then parsed
+        again from its head up to the closing parenthesis of the column list,
+        so trailing table options it doesn't know are ignored.
+
+        Raises:
+            ValueError: the statement is a ``CREATE TABLE`` that can't be read.
+        """
+        # sqlglot warns when it falls back to a Command; the warning is replayed
+        # unless the table is read after all.
+        logger = logging.getLogger("sqlglot")
+        with _held_warnings(logger) as held:
+            parsed = [s for s in dialect.parser().parse(tokens, text) if s is not None]
+            head = SqlSchemaParser._table_head(parsed, tokens, text, dialect, exp)
+        if head is not None:
+            return head
+        for record in held:
+            logger.handle(record)
+        if not (len(parsed) == 1 and isinstance(parsed[0], exp.Command)):
+            return parsed
+        if SqlSchemaParser._is_plain_create_table(tokens):
+            raise ValueError(f"Unsupported CREATE TABLE syntax. Line {tokens[0].line}.")
+        return parsed
+
+    @staticmethod
+    def _is_plain_create_table(tokens: list[Any]) -> bool:
+        """``CREATE [TEMP | TEMPORARY | UNLOGGED | GLOBAL | LOCAL] TABLE ... (``."""
+        names = [t.token_type.name for t in tokens]
+        head_words = [t.text.upper() for t in tokens[: _index(names, "TABLE")]]
+        return (
+            names[:1] == ["CREATE"]
+            and "TABLE" in names[: _index(names, "L_PAREN")]
+            and set(head_words[1:]) <= _TABLE_PREFIXES
+        )
+
+    @staticmethod
+    def _table_head(
+        parsed: list[Any], tokens: list[Any], text: str, dialect: Any, exp: Any
+    ) -> list[object] | None:
+        """A plain ``CREATE TABLE`` that fell back to a Command, parsed again from
+        its head up to the closing parenthesis of its column list, or ``None``."""
+        if not (len(parsed) == 1 and isinstance(parsed[0], exp.Command)):
+            return None
+        if not SqlSchemaParser._is_plain_create_table(tokens):
+            return None
+        end = _matching_paren([t.token_type.name for t in tokens])
+        if end is None:
+            return None
+        try:
+            head = dialect.parser().parse(tokens[: end + 1], text)
+        except Exception:
+            return None
+        if (
+            len(head) == 1
+            and isinstance(head[0], exp.Create)
+            and (head[0].args.get("kind") or "").upper() == "TABLE"
+        ):
+            return list(head)
+        return None
+
     def _add_table(self, create: "object", exp: "object") -> None:
         """Register a ``CREATE TABLE`` as an entity with its columns (no FKs yet)."""
         schema = create.this  # type: ignore[attr-defined]  # exp.Schema: table + column/constraint expressions
         table_name = schema.this.name
         entity = EntityInfo(name=table_name, table_name=table_name, source="sql")
 
-        pk_cols = self._table_level_pk_columns(schema, exp)
-        unique_cols = self._table_level_unique_columns(schema, exp)
-        for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]
+        coldefs = list(schema.find_all(exp.ColumnDef))  # type: ignore[attr-defined]
+        columns = {self._key(c.this): c.name for c in coldefs}
+        self._table_keys[self._key(schema.this)] = table_name
+        self._column_keys[table_name] = columns
+        # Constraint columns name declared columns as the dialect folds names.
+        pk_order = [
+            name
+            for name in (
+                _lookup(self._key(i), columns) for i in self._table_level_pk_columns(schema, exp)
+            )
+            if name is not None
+        ]
+        pk_cols = set(pk_order)
+        unique_cols = {
+            _lookup(self._key(i), columns) for i in self._table_level_unique_columns(schema, exp)
+        }
+        for coldef in coldefs:
             entity.fields.append(self._column(coldef, exp, pk_cols, unique_cols))
         self._entities[table_name] = entity
+        self._primary_keys[table_name] = pk_order or [
+            f.name for f in entity.fields if f.is_primary_key
+        ]
 
     def _add_enum(self, create: "object", exp: "object") -> None:
         """Register a ``CREATE TYPE ... AS ENUM`` with its string literal values."""
@@ -170,7 +331,11 @@ class SqlSchemaParser:
             self._enums[name] = EnumInfo(name=name, values=values)
 
     def _column(
-        self, coldef: "object", exp: "object", pk_cols: set[str], unique_cols: set[str]
+        self,
+        coldef: "object",
+        exp: "object",
+        pk_cols: set[str],
+        unique_cols: set[str | None],
     ) -> FieldInfo:
         """Build a FieldInfo from a column definition (PK, nullability, default,
         uniqueness); foreign keys are resolved in the second pass."""
@@ -182,9 +347,11 @@ class SqlSchemaParser:
             constraints,
             exp.PrimaryKeyColumnConstraint,  # type: ignore[attr-defined]
         )
-        not_null = self._has_constraint(
-            constraints,
-            exp.NotNullColumnConstraint,  # type: ignore[attr-defined]
+        # sqlglot reads an explicit NULL as NotNullColumnConstraint(allow_null=True).
+        not_null = any(
+            isinstance(c.kind, exp.NotNullColumnConstraint)  # type: ignore[attr-defined]
+            and not c.kind.args.get("allow_null")
+            for c in constraints
         )
         default = self._default_value(constraints, exp)
         # A primary key is inherently unique, but is_unique is reserved for a
@@ -222,20 +389,20 @@ class SqlSchemaParser:
         return None
 
     @staticmethod
-    def _table_level_pk_columns(schema: "object", exp: "object") -> set[str]:
-        """Return names of columns covered by a table-level ``PRIMARY KEY (...)``."""
-        cols: set[str] = set()
+    def _table_level_pk_columns(schema: "object", exp: "object") -> list[Any]:
+        """Return the column identifiers of a table-level ``PRIMARY KEY (...)``, in key order."""
+        cols: list[Any] = []
         for pk in schema.find_all(exp.PrimaryKey):  # type: ignore[attr-defined]
-            for col in pk.find_all(exp.Column):  # type: ignore[attr-defined]
-                cols.add(col.name)
-            for ident in pk.expressions:
-                if isinstance(ident, exp.Identifier):  # type: ignore[attr-defined]
-                    cols.add(ident.name)
+            for part in pk.expressions:
+                # An Identifier, or a part wrapping one (a Column, an Ordered).
+                node = part.find(exp.Identifier)  # type: ignore[attr-defined]
+                if node is not None:
+                    cols.append(node)
         return cols
 
     @staticmethod
-    def _table_level_unique_columns(schema: "object", exp: "object") -> set[str]:
-        """Return names of columns covered by a single-column table-level UNIQUE.
+    def _table_level_unique_columns(schema: "object", exp: "object") -> list[Any]:
+        """Return the identifiers of columns covered by a single-column table-level UNIQUE.
 
         sqlglot represents a table-level ``UNIQUE(col)`` as an
         ``exp.UniqueColumnConstraint`` wrapping a nested ``exp.Schema`` whose
@@ -247,119 +414,148 @@ class SqlSchemaParser:
         column. Only single-column constraints are returned — composite
         ``UNIQUE(a, b)`` (anonymous or named) is ignored.
         """
-        cols: set[str] = set()
+        cols: list[Any] = []
         for uc in schema.find_all(exp.UniqueColumnConstraint):  # type: ignore[attr-defined]
             inner = uc.this
-            names = [
-                i.name
+            idents = [
+                i
                 for i in getattr(inner, "expressions", [])
                 if isinstance(i, exp.Identifier)  # type: ignore[attr-defined]
             ]
-            if len(names) == 1:
-                cols.add(names[0])
+            if len(idents) == 1:
+                cols.append(idents[0])
         return cols
 
-    def _set_fk(self, table: str, column: str, ref_table: str, ref_col: str) -> None:
-        """Mark ``table.column`` as a foreign key to ``ref_table.ref_col``.
+    def _key(self, node: Any) -> str:
+        """The name of an identifier (or a Table / Column node) as the dialect folds it.
 
-        No-op when the reference target is unresolved (empty ``ref_table``) or the
-        table/column is unknown, so a bogus ``".id"`` target is never recorded.
+        Unquoted identifiers are case-insensitive (PostgreSQL folds them to lower
+        case); quoted ones keep their case where the dialect does, so
+        ``"Account"`` and ``account`` stay two tables in PostgreSQL.
         """
-        if not ref_table:
-            return
-        entity = self._entities.get(table)
-        if entity is None:
-            return
-        for f in entity.fields:
-            if f.name == column:
-                f.is_foreign_key = True
-                f.foreign_table = f"{ref_table}.{ref_col or 'id'}"
-                return
+        ident = node if type(node).__name__ == "Identifier" else node.this
+        if not hasattr(ident, "copy"):
+            return str(ident)
+        return str(self._dialect.normalize_identifier(ident.copy()).name)
+
+    def _entity(self, node: Any) -> EntityInfo | None:
+        """The table a Table node or identifier names (see :func:`_lookup`)."""
+        name = _lookup(self._key(node), self._table_keys)
+        return self._entities.get(name) if name is not None else None
+
+    def _set_fks(
+        self, entity: EntityInfo, columns: list[Any], ref: "object", exp: "object"
+    ) -> None:
+        """Mark ``columns`` (identifiers) of ``entity`` as a foreign key per ``REFERENCES``.
+
+        Composite keys pair local and referenced columns in order. No referenced
+        columns (a bare ``REFERENCES t``) pairs them with ``t``'s primary key,
+        or with ``id`` when ``t`` is unknown. Names are resolved the way the
+        dialect resolves them (:meth:`_key`); a target that matches no table is
+        kept as written.
+        """
+        table_node = ref.find(exp.Table)  # type: ignore[attr-defined]
+        if table_node is None or not table_node.name:
+            return  # unresolved target: never record a bogus ".id"
+        target = self._entity(table_node)
+        schema_node = ref.this  # type: ignore[attr-defined]
+        ref_idents = list(getattr(schema_node, "expressions", None) or [])
+        if target is not None:
+            target_columns = self._column_keys[target.name]
+            ref_cols = [_lookup(self._key(i), target_columns) or i.name for i in ref_idents]
+            ref_cols = ref_cols or self._primary_keys.get(target.name, [])
+            ref_table = target.name
+        else:
+            ref_cols = [i.name for i in ref_idents]
+            ref_table = table_node.name
+        local = self._column_keys[entity.name]
+        for i, ident in enumerate(columns):
+            rc = ref_cols[i] if i < len(ref_cols) else (ref_cols[0] if ref_cols else "id")
+            name = _lookup(self._key(ident), local)
+            for f in entity.fields:
+                # A column in two foreign keys keeps the first declared one.
+                if f.name == name and not f.is_foreign_key:
+                    f.is_foreign_key = True
+                    f.foreign_table = f"{ref_table}.{rc}"
 
     def _table_foreign_keys(self, create: "object", exp: "object") -> None:
-        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses.
-
-        Composite keys pair local and referenced columns positionally.
-        """
+        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses."""
         schema = create.this  # type: ignore[attr-defined]
-        table = schema.this.name
-        # Inline REFERENCES on a column definition.
+        entity = self._entities.get(schema.this.name)
+        if entity is None:
+            return
+        # Inline REFERENCES on a column definition: exactly one local column.
         for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]
             for c in coldef.constraints:
                 ref = c.kind if hasattr(c, "kind") else None
                 if isinstance(ref, exp.Reference):  # type: ignore[attr-defined]
-                    rt, rcs = self._reference_target_multi(ref, exp)
-                    # Inline REFERENCES always has exactly one local column.
-                    self._set_fk(table, coldef.name, rt, rcs[0] if rcs else "id")
-        # Table-level FOREIGN KEY (...) REFERENCES t(c1, c2, ...).
-        for fk in schema.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
-            cols = [
-                e.name
-                for e in fk.expressions
-                if isinstance(e, exp.Identifier)  # type: ignore[attr-defined]
-            ]
-            ref = fk.args.get("reference")
-            if ref is not None:
-                rt, rcs = self._reference_target_multi(ref, exp)
-            else:
-                rt, rcs = "", []
-            for i, col in enumerate(cols):
-                rc = rcs[i] if i < len(rcs) else (rcs[0] if rcs else "id")
-                self._set_fk(table, col, rt, rc)
+                    self._set_fks(entity, [coldef.this], ref, exp)
+        self._foreign_key_clauses(entity, schema, exp)
 
     def _alter_foreign_keys(self, alter: "object", exp: "object") -> None:
-        """Apply ``ALTER TABLE ... ADD FOREIGN KEY`` clauses (paired positionally)."""
-        table = alter.this.name if alter.this is not None else ""  # type: ignore[attr-defined]
-        for fk in alter.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
+        """Apply ``ALTER TABLE ... ADD FOREIGN KEY`` clauses."""
+        if alter.this is None:  # type: ignore[attr-defined]
+            return
+        entity = self._entity(alter.this)  # type: ignore[attr-defined]
+        if entity is not None:
+            self._foreign_key_clauses(entity, alter, exp)
+
+    def _foreign_key_clauses(self, entity: EntityInfo, node: "object", exp: "object") -> None:
+        """Apply every ``FOREIGN KEY (...) REFERENCES t(...)`` below ``node``."""
+        for fk in node.find_all(exp.ForeignKey):  # type: ignore[attr-defined]
             cols = [
-                e.name
+                e
                 for e in fk.expressions
                 if isinstance(e, exp.Identifier)  # type: ignore[attr-defined]
             ]
             ref = fk.args.get("reference")
             if ref is not None:
-                rt, rcs = self._reference_target_multi(ref, exp)
-            else:
-                rt, rcs = "", []
-            for i, col in enumerate(cols):
-                rc = rcs[i] if i < len(rcs) else (rcs[0] if rcs else "id")
-                self._set_fk(table, col, rt, rc)
-
-    @staticmethod
-    def _reference_target_multi(ref: "object", exp: "object") -> tuple[str, list[str]]:
-        """Extract (ref_table_name, [ref_col_names]) from an exp.Reference node.
-
-        The Reference wraps a Schema whose .this is the target Table and whose
-        .expressions are the referenced column Identifiers.  Using
-        schema.expressions avoids the ambiguity of find_all(Identifier) which
-        also returns the table-name identifier.
-
-        Returns all referenced columns so callers can pair them positionally with
-        local FK columns (composite FK support). Falls back to ["id"] when no
-        explicit columns are listed (bare REFERENCES t with no column list).
-        """
-        table_node = ref.find(exp.Table)  # type: ignore[attr-defined]
-        ref_table = table_node.name if table_node is not None else ""
-        schema_node = ref.this  # type: ignore[attr-defined]
-        if hasattr(schema_node, "expressions") and schema_node.expressions:
-            ref_cols = [e.name for e in schema_node.expressions]
-        else:
-            ref_cols = ["id"]
-        return ref_table, ref_cols
+                self._set_fks(entity, cols, ref, exp)
 
     def _mark_index(self, create: "object", exp: "object") -> None:
-        """Set FieldInfo.index=True for columns covered by a CREATE INDEX statement."""
+        """Mark the columns of a ``CREATE [UNIQUE] INDEX``.
+
+        Each plain column of the index gets ``FieldInfo.index``; an expression
+        (``lower(col)``) is not a column. A unique index on one plain column,
+        without a ``WHERE`` clause, makes that column unique like a ``UNIQUE``
+        constraint (a primary key is never marked, see :meth:`_column`).
+        """
         index = create.this  # type: ignore[attr-defined]  # exp.Index
         table_node = index.find(exp.Table)  # type: ignore[attr-defined]
         if table_node is None:
             return
-        entity = self._entities.get(table_node.name)
+        entity = self._entity(table_node)
         if entity is None:
             return
-        indexed = {c.name for c in index.find_all(exp.Column)}  # type: ignore[attr-defined]
+        params = index.args.get("params")
+        parts = [
+            self._index_part(p, exp)
+            for p in (params.args.get("columns") or [] if params is not None else [])
+        ]
+        columns = self._column_keys[entity.name]
+        indexed = {
+            _lookup(self._key(p), columns)
+            for p in parts
+            if isinstance(p, exp.Column)  # type: ignore[attr-defined]
+        }
+        unique = (
+            bool(create.args.get("unique"))  # type: ignore[attr-defined]
+            and len(parts) == 1
+            and len(indexed) == 1
+            and params.args.get("where") is None
+        )
         for f in entity.fields:
             if f.name in indexed:
                 f.index = True
+                if unique and not f.is_primary_key:
+                    f.is_unique = True
+
+    @staticmethod
+    def _index_part(part: Any, exp: "object") -> Any:
+        """An index part without its ordering, collation or operator class."""
+        while isinstance(part, (exp.Ordered, exp.Collate, exp.Opclass)):  # type: ignore[attr-defined]
+            part = part.this
+        return part
 
     def _finalize(self) -> None:
         """Detect link tables, then apply ``exclude_patterns``."""

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `erdify[sql]` requires sqlglot 30.8 or later (was 25). Older releases parse
+  `CREATE TYPE ... AS ENUM` as an opaque command, so enums were silently
+  missing, and before 30.1 a table with a table-level `UNIQUE` was lost. CI
+  now runs the SQL tests on sqlglot 30.8, 30.17 and the current release
+  ([Installation](https://erdify.devsuit.io/installation/#supported-framework-versions)).
+
+### Fixed
+
+- SQL DDL: an explicit `NULL` column constraint (`label TEXT NULL`) is nullable;
+  it was read as `NOT NULL`.
+- SQL DDL: a foreign key without a column list (`REFERENCES country`)
+  references the parent's primary key, paired in key order for a composite
+  key, instead of a column `id` that may not exist.
+- SQL DDL: table and column names are resolved the way the dialect folds
+  them: `REFERENCES Customer(ID)` is an edge to `customer`, and
+  `FOREIGN KEY (PAYER_ID)` finds the column `payer_id` (it was dropped). With
+  `--sql-dialect postgres`, a quoted `"Account"` stays apart from `account`.
+- SQL DDL: a `CREATE UNIQUE INDEX` on one plain column, without `WHERE`, makes
+  the column unique like a `UNIQUE` constraint (`UK`, and a one-to-one edge for
+  a foreign key), also with `COLLATE` or an operator class. An expression
+  index (`lower(col)`) no longer sets the JSON `index` flag on the column
+  inside it, as documented.
+- SQL DDL: each statement is parsed on its own, so one that fails to parse
+  (e.g. a generated column with `STORED` without `--sql-dialect`, now
+  documented) no longer drops every table of its file. A `CREATE TABLE` with
+  trailing options sqlglot doesn't know (SQLite's `WITHOUT ROWID`) is read
+  instead of being dropped silently. A `CREATE TABLE` that can't be read
+  either is now reported (`Error parsing ...`) instead of being skipped
+  silently, so it fails `--strict`; `ModelParseError.errors` lists one entry
+  per failing statement, and the message names each file once.
+
+These were found by new ground-truth tests that check erdify's reading of SQL
+DDL against the schema SQLite builds
+([#266](https://github.com/devsuit-berlin/erdify/issues/266)).
+
+### Output changes
+
+Diagrams of SQL schemas change where they use the constructs above: columns
+declared `NULL` become optional (and their edges `o|`), bare `REFERENCES`
+point at the right column (JSON `foreign_table`), edges written with
+differently-cased names appear, unique-indexed foreign keys are drawn 1:1, and
+tables that were dropped appear. Regenerate the diagram once if you gate CI on
+`--check`.
+
 ## [1.4.5] - 2026-11-12
 
 ### Fixed

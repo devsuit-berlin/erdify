@@ -19,8 +19,8 @@ framework doesn't need to be installed alongside erdify. The version still
 matters: it decides which syntax exists and what schema the framework builds
 from it (default table names, which settings a column takes, and so on). erdify
 follows these versions; CI runs the ones in the "Checked in CI" column. For
-SQLModel, SQLAlchemy and Django, it checks erdify's output against the schema
-the real framework builds (the ground-truth tests). "Current release" is the version in erdify's
+SQLModel, SQLAlchemy, Django and SQL DDL, it checks erdify's output against the schema
+the real framework (for SQL DDL: SQLite) builds (the ground-truth tests). "Current release" is the version in erdify's
 lockfile, which Dependabot keeps up to date.
 
 | Framework | Supported | Checked in CI |
@@ -30,11 +30,14 @@ lockfile, which Dependabot keeps up to date.
 | Django | 5.2, 6.0, 6.1 | newest patch release of each series |
 | Pydantic | 2 | the current release (fixtures import; ground-truth tests are planned, [#267](https://github.com/devsuit-berlin/erdify/issues/267)) |
 | dataclasses | the standard library of each supported Python | every supported Python |
-| SQL DDL (`erdify[sql]`) | sqlglot 25 and later | the current sqlglot release (ground-truth tests are planned, [#266](https://github.com/devsuit-berlin/erdify/issues/266)) |
+| SQL DDL (`erdify[sql]`) | sqlglot 30.8 and later | 30.8 (the oldest), 30.17 (see below) and the current release |
 
 Where a framework changed what it builds in a release, erdify's diagram is
 checked against both sides of that release, and that release is itself a CI
 leg.
+For sqlglot, that is 30.17, the first release that parses SQLite's short
+generated-column form (`col TEXT AS (expr)` with `--sql-dialect sqlite`);
+with an older sqlglot, a table that uses it is skipped with a parse error.
 
 The newest releases are also tested every week by a scheduled workflow, without
 waiting for the lockfile: the whole test suite runs on the newest SQLModel,

@@ -214,6 +214,22 @@ the installed version: `REQUIRES_SQLMODEL` skips a catalog module before the
 release that added its feature, and `SQLMODEL_DIFFERENCES` holds known
 differences before a release: erdify follows the newest SQLModel.
 
+`tests/test_ground_truth_sql.py` checks the SQL DDL frontend against SQLite
+(stdlib `sqlite3`, no extra dependency): every DDL source (`tests/fixtures/sql`,
+the example in `docs/frameworks/sql.md`, the edge-case catalog in
+`tests/fixtures/sql_edge_cases/`, and every inline string with a
+`CREATE TABLE`) runs in an in-memory database, and `PRAGMA table_xinfo` /
+`foreign_key_list` / `index_list` are compared with erdify's parse. The DDL is
+run as written; a source in another dialect is listed in `DIALECTS`, and only
+the statements SQLite rejects are transpiled by sqlglot. Test DDL must pass
+SQLite's foreign-key check (the parent table exists, the parent key is a
+primary key or unique); a deliberate error is listed in `EXPECTED_CHECK_ERRORS`,
+DDL SQLite can't run (`ALTER TABLE ... ADD CONSTRAINT`) in `EXPECTED_REJECTED`.
+
+```bash
+uv run pytest tests/test_ground_truth_sql.py -rsx
+```
+
 The supported framework versions are listed in `docs/installation.md`
 ("Supported framework versions"). When you add or drop one, update that table,
 the CI matrix in `.github/workflows/test.yml`, and the changelog together.

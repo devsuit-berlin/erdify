@@ -211,6 +211,55 @@ jobs:
           [[ "$SQLMODEL" != locked ]] && extra+=(--with "sqlmodel==$SQLMODEL")
           uv run "${extra[@]}" pytest tests/test_ground_truth_sqlalchemy.py tests/test_fixtures_valid.py -rsx
 
+  # SQL DDL ground truth (#266): tests/test_ground_truth_sql.py runs every DDL
+  # source in SQLite and compares the schema with erdify's parse. The `test`
+  # matrix runs the locked sqlglot; this job repeats the SQL tests on the
+  # oldest supported sqlglot (30.8) and on each release where sqlglot changed
+  # what erdify can parse (30.17: SQLite's short generated-column form). Keep
+  # the supported versions in docs/installation.md in sync with this matrix.
+  sql:
+    name: sqlglot ${{ matrix.sqlglot }} ground truth
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sqlglot: ["30.8.0", "30.17.0", "locked"]
+    env:
+      SQLGLOT: ${{ matrix.sqlglot }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "latest-known"
+          python-version: "3.13"
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Assert the matrix sqlglot is in use
+        run: |
+          extra=()
+          [[ "$SQLGLOT" != locked ]] && extra+=(--with "sqlglot==$SQLGLOT")
+          # On the `locked` leg, sqlglot must be the lockfile's version.
+          uv run "${extra[@]}" python -c "
+          import os, sqlglot, sqlite3, tomllib
+          print('sqlglot', sqlglot.__version__, '/ SQLite', sqlite3.sqlite_version)
+          expected = os.environ['SQLGLOT']
+          if expected == 'locked':
+              lock = tomllib.load(open('uv.lock', 'rb'))
+              expected = next(p['version'] for p in lock['package'] if p['name'] == 'sqlglot')
+          assert sqlglot.__version__ == expected, (sqlglot.__version__, expected)
+          "
+      - name: Run the SQL tests
+        run: |
+          extra=()
+          [[ "$SQLGLOT" != locked ]] && extra+=(--with "sqlglot==$SQLGLOT")
+          uv run "${extra[@]}" pytest tests/test_ground_truth_sql.py tests/test_sql.py -rsx
+
   # README coverage badge. Datadog exposes no public badge endpoint, so the
   # percentage is published as a shields.io endpoint payload at
   # https://raw.githubusercontent.com/devsuit-berlin/erdify/badges/coverage.json
@@ -292,7 +341,7 @@ jobs:
   gate:
     name: Tests passed
     if: always()
-    needs: [test, django, sqlalchemy]
+    needs: [test, django, sqlalchemy, sql]
     runs-on: ubuntu-latest
     steps:
       # `badges` holds only bot-written badge payloads. A pull request from it
@@ -314,5 +363,5 @@ jobs:
       - name: Fail if any matrix job failed
         if: >-
           needs.test.result != 'success' || needs.django.result != 'success'
-          || needs.sqlalchemy.result != 'success'
+          || needs.sqlalchemy.result != 'success' || needs.sql.result != 'success'
         run: exit 1
