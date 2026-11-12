@@ -218,9 +218,10 @@ empty diagram is written, and the exit code is `0`.
 By default, a model or `.sql` file that erdify cannot parse (a syntax error, a
 file that isn't valid SQL) does not stop the run. erdify prints
 `Error parsing <file>: ...` on stderr, skips the file and renders the rest, and
-the exit code is `0`. That keeps a single broken or work-in-progress file from
-blocking everything else, but the diagram is then silently missing that file's
-entities.
+the exit code is `0`. In a `.sql` file, each statement is parsed on its own:
+only the statement that fails is skipped. That keeps a single broken or
+work-in-progress file from blocking everything else, but the diagram is then
+silently missing that file's (or that statement's) entities.
 
 `--strict` turns this into an error. erdify still reports every failing file,
 then **exits `1` without writing anything**, so an existing diagram is left

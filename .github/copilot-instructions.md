@@ -102,6 +102,30 @@ test helper prepends to a bare body).
   that added the feature) and `SQLMODEL_DIFFERENCES` (erdify follows the newest
   SQLModel; a known difference before the release that changed it).
 
+`tests/test_ground_truth_sql.py` is the SQL DDL counterpart
+(`tests/ground_truth/sqlite_ref.py`, stdlib `sqlite3`): each source runs in an
+in-memory SQLite database, statement by statement, and the schema comes from
+`PRAGMA table_xinfo` (columns, `notnull`, `pk`; a primary key counts as not
+nullable, the SQL standard, not SQLite's legacy quirk), `foreign_key_list` (a
+bare `REFERENCES t` is `t`'s primary key; names resolve case-insensitively)
+and `index_list` / `index_info` (a single-column, non-partial unique index
+makes a column unique). Enums are not compared (SQLite has none). Sources: the
+SQL fixture, the `sql` block of `docs/frameworks/sql.md`, the **edge-case
+catalog** `tests/fixtures/sql_edge_cases/` and every inline string with a
+`CREATE TABLE`.
+
+- The same rules apply: a mismatch is an erdify bug (`KNOWN_DIFFERENCES` with
+  an issue); DDL SQLite can't run (`ALTER TABLE ... ADD CONSTRAINT`, a syntax
+  error on purpose) is listed in `EXPECTED_REJECTED` with a reason.
+- A source in another dialect is listed in `DIALECTS` (passed to erdify as
+  `--sql-dialect`); only the statements SQLite rejects are transpiled by
+  sqlglot, and a `CREATE TYPE` is dropped.
+- Test DDL must pass SQLite's foreign-key check (the parent table exists, the
+  parent key is a primary key or unique). A deliberate error is listed in
+  `EXPECTED_CHECK_ERRORS`; the fixture, the docs example and the catalog
+  always must pass.
+- New SQL parsing support → add an edge-case file for it.
+
 - `.github/workflows/upstream.yml` (weekly, not a required check) runs the
   whole suite on the newest releases (newest SQLModel / Pydantic / sqlglot /
   Django from PyPI on top of `uv lock --upgrade`) and

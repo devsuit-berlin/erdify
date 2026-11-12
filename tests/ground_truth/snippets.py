@@ -217,3 +217,23 @@ def _literals(
             yield scope, child
         else:
             yield from _literals(child, scope)
+
+
+def sql_snippets() -> list[Snippet]:
+    """Sources in ``tests/test_*.py`` that are SQL DDL with at least one table.
+
+    A source (a literal, or a folded ``+`` concatenation as in
+    :func:`sqlalchemy_snippets`) counts when it contains ``CREATE TABLE`` (any
+    case).
+    """
+    found: list[Snippet] = []
+    for path in sorted(TESTS_DIR.glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        seen: Counter[str] = Counter()
+        for scope, line, text in _sources(tree, (), _string_constants(tree)):
+            if "create table" not in text.lower():
+                continue
+            name = f"{path.name}::{'.'.join(scope) or '<module>'}"
+            seen[name] += 1
+            found.append(Snippet(name if seen[name] == 1 else f"{name}[{seen[name]}]", line, text))
+    return found

@@ -525,7 +525,7 @@ docs = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "sqlglot", marker = "extra == 'sql'", specifier = ">=25" }]
+requires-dist = [{ name = "sqlglot", marker = "extra == 'sql'", specifier = ">=30.8" }]
 provides-extras = ["sql"]
 
 [package.metadata.requires-dev]

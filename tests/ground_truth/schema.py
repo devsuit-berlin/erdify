@@ -70,14 +70,22 @@ class Schema:
     checks: tuple[str, ...] = ()
 
 
-def from_erdify(path: Path, source: str | Iterable[str], *, relationships: bool = False) -> Schema:
+def from_erdify(
+    path: Path,
+    source: str | Iterable[str],
+    *,
+    relationships: bool = False,
+    sql_dialect: str | None = None,
+) -> Schema:
     """Parse ``path`` with erdify and normalise the entities of ``source``.
 
-    ``source`` is one of erdify's model sources or several of them;
-    ``relationships`` also normalises the declared relationships.
+    ``source`` is one of erdify's model sources (``"sql"`` for DDL) or several
+    of them; ``relationships`` also normalises the declared relationships.
+    ``path`` may be a single file (a ``.sql`` file is parsed with
+    ``sql_dialect``).
     """
     sources = {source} if isinstance(source, str) else set(source)
-    entities, enums = parse_models_directory(path)
+    entities, enums = parse_models_directory(path, sql_dialect=sql_dialect)
     return Schema(
         tables={
             name: _table(entity, relationships)

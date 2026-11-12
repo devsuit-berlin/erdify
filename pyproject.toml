@@ -39,7 +39,7 @@ classifiers = [
 dependencies = []  # No runtime dependencies - uses stdlib ast module
 
 [project.optional-dependencies]
-sql = ["sqlglot>=25"]
+sql = ["sqlglot>=30.8"]
 
 [dependency-groups]
 dev = [

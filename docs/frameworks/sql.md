@@ -61,16 +61,18 @@ sql_dialect = "postgres"
 
 | Construct | Support | Notes |
 |-----------|---------|-------|
-| `CREATE TABLE` | ✅ | Table name becomes the entity name; schema-qualified names (`schema.table`) are normalised to the table name part |
+| `CREATE TABLE` | ✅ | Table name becomes the entity name; schema-qualified names (`schema.table`) are normalised to the table name part. Trailing table options sqlglot doesn't know (SQLite's `WITHOUT ROWID`) are ignored |
 | Primary keys — inline (`col INT PRIMARY KEY`) | ✅ | |
 | Primary keys — table constraint (`PRIMARY KEY (col, …)`) | ✅ | Composite PKs supported |
-| Foreign keys — inline (`col INT REFERENCES other(id)`) | ✅ | |
+| Foreign keys — inline (`col INT REFERENCES other(id)`) | ✅ | Without a column list (`REFERENCES other`), the key references `other`'s primary key, paired in key order for a composite key |
 | Foreign keys — table constraint (`FOREIGN KEY … REFERENCES …`) | ✅ | |
 | Foreign keys — `ALTER TABLE … ADD FOREIGN KEY` | ✅ | Two-pass resolution; forward references resolved after all tables are parsed |
-| `NOT NULL` | ✅ | Reflected in the `nullable` field attribute. A primary-key column is always treated as `NOT NULL` (SQL standard), including under `--sql-dialect sqlite`, where a non-`INTEGER` or composite key of a rowid table technically accepts `NULL` (a legacy quirk SQLite documents as a bug) |
+| `NOT NULL` / `NULL` | ✅ | Reflected in the `nullable` field attribute; an explicit `NULL` (or no constraint) is nullable. A primary-key column is always treated as `NOT NULL` (SQL standard), including under `--sql-dialect sqlite`, where a non-`INTEGER` or composite key of a rowid table technically accepts `NULL` (a legacy quirk SQLite documents as a bug) |
 | `DEFAULT` | ✅ | Default expression captured as a string |
 | `CREATE TYPE … AS ENUM` | ✅ | Requires `--sql-dialect postgres`; silently skipped under the generic dialect |
 | `CREATE INDEX` | ✅ (JSON only) | Detected and emitted in `--format json`; not drawn in PlantUML or Mermaid diagrams (consistent with the Indexes note in the [feature matrix](../features.md)) |
+| `CREATE UNIQUE INDEX` | ✅ | On one plain column and without `WHERE`, the column is unique like a `UNIQUE` constraint (`UK`, 1:1 for a foreign key). A composite, partial or expression unique index doesn't make a column unique |
+| Identifier case | ✅ | Table and column names are matched case-insensitively (`REFERENCES Customer(ID)` is `customer.id`); an exact match wins, so quoted names that differ only in case stay apart |
 
 > **NOTE:** Functional/expression indexes (e.g. `CREATE INDEX ... ON t(lower(col))`) are not mapped
 > to a column — only plain-column indexes set the JSON `index` flag. Expression indexes are silently
@@ -85,13 +87,21 @@ child end is `|o` (uniqueness caps a parent at zero-or-one child), and the
 parent end follows FK nullability — so it renders `|o--||` when the column is
 `NOT NULL`, and `|o--o|` when it is nullable. Both
 column-level `col ... UNIQUE` and single-column table-level `UNIQUE (col)`
-(anonymous or named `CONSTRAINT ... UNIQUE (col)`) are recognized; composite
-`UNIQUE (a, b)` is not. A unique non-primary-key column is also flagged with a
+(anonymous or named `CONSTRAINT ... UNIQUE (col)`) and a single-column
+`CREATE UNIQUE INDEX` are recognized; composite `UNIQUE (a, b)` is not. A unique non-primary-key column is also flagged with a
 `UK` marker in the entity block ([#97](https://github.com/devsuit-berlin/erdify/issues/97)).
 A foreign key that is also the table's only primary-key column (a shared
 primary key, e.g. `id INTEGER PRIMARY KEY REFERENCES users(id)`) is unique by
 definition and is drawn 1:1 as well; one that is part of a composite primary
 key stays N:1.
+
+A statement that fails to parse is reported on stderr and skipped; the rest of
+its file is still read (with [`--strict`](../usage/cli.md#files-that-cannot-be-parsed-strict),
+erdify exits `1` instead).
+
+erdify's reading of DDL is checked against the schema SQLite builds from the
+same statements (tables, keys, nullability, uniqueness) by the
+[ground-truth tests](https://github.com/devsuit-berlin/erdify/blob/main/CONTRIBUTING.md#ground-truth-tests).
 
 ## Deferred / Not Supported
 
@@ -102,6 +112,7 @@ The following constructs are intentionally out of scope for v1:
 | Composite `UNIQUE (a, b)` → relationship | Not supported (single-column only) |
 | `CREATE VIEW` | Not supported |
 | `CHECK` constraints | Not supported |
+| Generated columns with `STORED` / `VIRTUAL` without `--sql-dialect` | sqlglot's generic dialect can't parse them: that `CREATE TABLE` is skipped with a parse error. Pass `--sql-dialect` (e.g. `postgres`, `mysql`, `sqlite`) |
 | Triggers / stored procedures | Not supported |
 | Live database introspection | Not supported (no connection required by design) |
 
