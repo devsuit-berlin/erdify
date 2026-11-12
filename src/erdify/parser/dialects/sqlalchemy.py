@@ -279,6 +279,19 @@ class SQLAlchemyDialect(TableDialect):
         columns = {f.name: f for f in entity.fields}
         renamed: Dict[str, str] = {}
         for arg in call.args:
+            # ForeignKeyConstraint(["col"], ["t.name"], link_to_name=True): the
+            # local column is named through its key, the target by its name.
+            if is_call_to(arg, "ForeignKeyConstraint") and isinstance(arg, ast.Call):
+                local = _strings_of(arg.args[0]) if arg.args else []
+                field = columns.get(renamed_back(call, local[0])) if len(local) == 1 else None
+                if field is not None and any(
+                    kw.arg == "link_to_name"
+                    and isinstance(kw.value, ast.Constant)
+                    and kw.value.value is True
+                    for kw in arg.keywords
+                ):
+                    self._name_targets[id(field)] = field
+                continue
             if not is_call_to(arg, "Column") or not isinstance(arg, ast.Call):
                 continue
             name = self._explicit_column_name(arg, use_key=False)
@@ -294,6 +307,15 @@ class SQLAlchemyDialect(TableDialect):
                 self._untyped.append((field, self._metadata_kind(entity)))
         if renamed:
             owner._renamed_keys.setdefault(entity.table_name, {}).update(renamed)
+
+
+def renamed_back(call: ast.Call, key: str) -> str:
+    """The name of the column of a Core ``Table(...)`` whose key is ``key``."""
+    for arg in call.args:
+        if is_call_to(arg, "Column") and isinstance(arg, ast.Call):
+            if explicit_column_name(arg) == key:
+                return explicit_column_name(arg, use_key=False) or key
+    return key
 
 
 class _MappedTable(NamedTuple):
@@ -607,8 +629,24 @@ def _core_type(arg: ast.expr) -> str:
         enum_class = expr_name(first)
         if enum_class is not None:
             return enum_class.rpartition(".")[2]
+    options = {
+        kw.arg: kw.value.value
+        for kw in (call.keywords if call is not None else [])
+        if kw.arg and isinstance(kw.value, ast.Constant)
+    }
+    # Options that change the Python type: Uuid(as_uuid=False) holds strings,
+    # Numeric(asdecimal=False) floats and Float(asdecimal=True) Decimals.
+    if name in ("Uuid", "UUID") and options.get("as_uuid") is False:
+        return "str"
+    if "asdecimal" in options and name in _DECIMAL_TYPES:
+        return "Decimal" if options["asdecimal"] else "float"
     return _PYTHON_TYPES.get(name, name)
 
+
+#: Types whose ``asdecimal=`` option picks ``Decimal`` or ``float``.
+_DECIMAL_TYPES = frozenset(
+    {"Numeric", "NUMERIC", "DECIMAL", "Float", "Double", "REAL", "FLOAT", "DOUBLE"}
+)
 
 #: SQLAlchemy column types -> the Python type of their values.
 _PYTHON_TYPES = {

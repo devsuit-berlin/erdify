@@ -119,6 +119,9 @@ class TestCoreTables:
             "    sa.Column('tags', postgresql.ARRAY(sa.String)),\n"
             "    sa.Column('priority', sa.Integer, default=3),\n"
             "    sa.Column('state', sa.Enum('open', 'closed', name='state')),\n"
+            "    sa.Column('ref', sa.Uuid(as_uuid=False)),\n"
+            "    sa.Column('ratio', sa.Numeric(10, 2, asdecimal=False)),\n"
+            "    sa.Column('score', sa.Float(asdecimal=True)),\n"
             ")\n",
         )
 
@@ -130,6 +133,9 @@ class TestCoreTables:
         assert columns["tags"].type_str == "ARRAY"
         assert columns["priority"].default_value == "3"
         assert columns["state"].type_str == "str"
+        assert columns["ref"].type_str == "str"
+        assert columns["ratio"].type_str == "float"
+        assert columns["score"].type_str == "Decimal"
 
     def test_foreign_key_only_column_takes_the_referenced_type(self) -> None:
         entities, _ = parse_models_directory(CATALOG / "core_tables.py")
@@ -155,6 +161,11 @@ class TestCoreTables:
         columns = _columns(entities["keyword_only"])
         assert columns["id"].is_primary_key and columns["id"].type_str == "int"
         assert columns["label"].type_str == "str" and not columns["label"].is_nullable
+
+    def test_constraint_with_link_to_name_targets_the_named_column(self) -> None:
+        entities, _ = parse_models_directory(CATALOG / "core_table_options.py")
+
+        assert _columns(entities["code_use"])["code_pk"].foreign_table == "code.pk"
 
     def test_foreign_key_through_a_column_key_names_the_column(self) -> None:
         entities, _ = parse_models_directory(CATALOG / "core_table_options.py")

@@ -99,3 +99,19 @@ keyword_only: Table = Table(
     Column(name="id", type_=Integer, primary_key=True),
     Column(name="label", type_=String(20), nullable=False),
 )
+
+# A constraint naming its target column by name (link_to_name=True), not by key.
+code = Table(
+    "code",
+    Base.metadata,
+    Column("id", Integer, key="pk", primary_key=True),
+    Column("pk", String(10), key="alias", unique=True),
+)
+
+code_use = Table(
+    "code_use",
+    Base.metadata,
+    Column("id", Integer, primary_key=True),
+    Column("code_pk", String(10)),
+    ForeignKeyConstraint(["code_pk"], ["code.pk"], link_to_name=True),
+)
