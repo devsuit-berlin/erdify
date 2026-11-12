@@ -236,6 +236,27 @@ class TestMixinPrecedence:
         seats = next(f for f in entities["Vehicle"].fields if f.name == "seats")
         assert seats.is_nullable  # Car, mapped after Truck
 
+    def test_core_column_key_names_the_attribute(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "vehicle = Table('vehicle', Base.metadata, Column('id', Integer, primary_key=True),"
+            " Column('db_kind', String, key='kind', nullable=False))\n\n\n"
+            "class Vehicle(Base):\n    __table__ = vehicle\n\n\n"
+            "class Kinded:\n    kind: Mapped[str | None]\n\n\n"
+            "class Car(Kinded, Vehicle):\n    wheels: Mapped[int | None]\n",
+        )
+        assert _columns(entities, "Vehicle") == ["id", "db_kind", "wheels"]
+
+    def test_abstract_base_with_a_tablename_is_copied(self, tmp_path: Path) -> None:
+        """SQLAlchemy ignores an ``__abstract__`` class's ``__tablename__``."""
+        entities = _parse(
+            tmp_path,
+            "class Abstract(Base):\n    __abstract__ = True\n    __tablename__ = 'ignored'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
+            "class Real(Abstract):\n    __tablename__ = 'real'\n    name: Mapped[str]\n",
+        )
+        assert sorted(_columns(entities, "Real")) == ["id", "name"]
+
 
 class TestNotReadable:
     """Subclasses whose table erdify can't see are left out, not merged into the parent."""

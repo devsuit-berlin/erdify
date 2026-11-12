@@ -146,6 +146,8 @@ class SQLAlchemyDialect(TableDialect):
     def detect(self, class_node: ast.ClassDef) -> bool:
         if class_node.name in self._mapped_tables:
             return True
+        if _sets_true(class_node, "__abstract__"):
+            return False  # never mapped; SQLAlchemy ignores its __tablename__
         return has_tablename(class_node) and has_mapped_field(class_node)
 
     def table_name(self, class_node: ast.ClassDef) -> str | None:
@@ -206,6 +208,8 @@ class SQLAlchemyDialect(TableDialect):
         """
         for ancestor in self._ancestors(name):
             node = self.classes.all[ancestor]
+            if _sets_true(node, "__abstract__"):
+                continue  # not mapped; SQLAlchemy ignores its __tablename__
             if self._tablename_is_function(ancestor) and any(
                 self.detect(self.classes.all[a]) for a in self._ancestors(ancestor)
             ):
@@ -268,7 +272,11 @@ class SQLAlchemyDialect(TableDialect):
         excluded: Set[str] = set()
         for name in names:
             node = self.classes.all[name]
-            if name != class_node.name and (self.detect(node) or self._is_single_table(node)):
+            if (
+                name != class_node.name
+                and not _sets_true(node, "__abstract__")  # its columns are copied
+                and (self.detect(node) or self._is_single_table(node))
+            ):
                 excluded.update(self.classes.mro(name) or self.classes.dfs_order(node, set()))
         return excluded
 
@@ -303,10 +311,19 @@ class SQLAlchemyDialect(TableDialect):
         return fields, rels
 
     def _mapped_attrs(self, name: str) -> Set[str]:
-        """Attributes class ``name`` maps itself: its body's, or its Core table's columns."""
+        """Attributes class ``name`` maps itself: its body's, or its Core table's columns.
+
+        A Core column is mapped under its key (``key=``, else its name).
+        """
         mapped = self._mapped_tables.get(name)
         if mapped is not None:
-            return {f.name for f in core_table_fields(mapped.table)}
+            return {
+                key
+                for arg in mapped.table.args
+                if isinstance(arg, ast.Call) and is_call_to(arg, "Column")
+                for key in [explicit_column_name(arg)]
+                if key is not None
+            }
         return set(self.declared_names(self.classes.all[name]))
 
     def _add_single_table_columns(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:

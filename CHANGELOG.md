@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#302](https://github.com/devsuit-berlin/erdify/issues/302)). Relationships
   declared on or pointing at such a subclass are not drawn yet
   ([#317](https://github.com/devsuit-berlin/erdify/issues/317)).
+- A SQLAlchemy class with `__abstract__ = True` is not drawn, also when it
+  sets `__tablename__`: SQLAlchemy ignores it and copies the class's columns
+  into its subclasses.
 
 ### Output changes
 
@@ -30,7 +33,8 @@ SQLAlchemy projects with joined-table inheritance lose the parent's columns
 and relationships on each subclass entity (they stay on the parent's);
 projects with single-table inheritance gain the subclasses' columns on the
 parent's entity, and a subclass with `__tablename__ = None` is no longer drawn
-as an entity of its own (with the table name `None`). Regenerate the diagram once if you
+as an entity of its own (with the table name `None`), nor is an
+`__abstract__` class that sets `__tablename__`. Regenerate the diagram once if you
 gate CI on `--check`.
 
 ## [1.4.4] - 2026-11-12
