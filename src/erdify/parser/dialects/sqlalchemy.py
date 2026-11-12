@@ -582,6 +582,8 @@ def parse_core_column(call: ast.Call) -> FieldInfo | None:
 
     is_primary_key = bool(flag("primary_key"))
     nullable = flag("nullable")
+    # An Identity() column is NOT NULL unless it says otherwise.
+    identity = any(is_call_to(arg, "Identity") for arg in call.args)
     fk_target = extract_foreign_key_arg(call)
 
     # The column type: type_=, else the first positional argument (after the
@@ -608,7 +610,11 @@ def parse_core_column(call: ast.Call) -> FieldInfo | None:
         type_str=type_str,
         is_primary_key=is_primary_key,
         is_foreign_key=fk_target is not None,
-        is_nullable=(not is_primary_key) if nullable is None else nullable and not is_primary_key,
+        is_nullable=(
+            not (is_primary_key or identity)
+            if nullable is None
+            else nullable and not is_primary_key
+        ),
         foreign_table=fk_target,
         index=bool(flag("index")),
         default_value=default_value,

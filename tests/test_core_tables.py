@@ -88,13 +88,14 @@ class TestCoreTables:
     def test_columns_are_nullable_unless_primary_key_or_not_null(self, tmp_path: Path) -> None:
         entities = _parse(
             tmp_path,
-            "from sqlalchemy import Column, Integer, MetaData, String, Table\n\n"
+            "from sqlalchemy import Column, Identity, Integer, MetaData, String, Table\n\n"
             "metadata = MetaData()\n\n"
             "note = Table(\n"
             "    'note', metadata,\n"
             "    Column('id', Integer, primary_key=True, nullable=True),\n"
             "    Column('title', String(50), nullable=False),\n"
             "    Column('body', String(500)),\n"
+            "    Column('seq', Integer, Identity()),\n"
             ")\n",
         )
 
@@ -102,6 +103,7 @@ class TestCoreTables:
         assert not columns["id"].is_nullable
         assert not columns["title"].is_nullable
         assert columns["body"].is_nullable
+        assert not columns["seq"].is_nullable  # Identity() is NOT NULL
 
     def test_column_types_map_to_python_types(self, tmp_path: Path) -> None:
         entities = _parse(
