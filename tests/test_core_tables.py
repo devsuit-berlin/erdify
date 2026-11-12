@@ -185,6 +185,28 @@ class TestCoreTables:
 
         assert _columns(entities["login"])["user_id"].type_str == "int"
 
+    def test_same_table_in_two_metadata_collections_gives_no_type(self, tmp_path: Path) -> None:
+        for name, kind in (("billing", "Integer"), ("crm", "String(36)")):
+            (tmp_path / f"{name}.py").write_text(
+                "from sqlalchemy import Column, Integer, MetaData, String, Table\n\n"
+                "metadata = MetaData()\n\n"
+                f"{name}_user = Table('user', metadata, Column('id', {kind}, primary_key=True))\n",
+                encoding="utf-8",
+            )
+        (tmp_path / "audit.py").write_text(
+            "from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table\n\n"
+            "metadata = MetaData()\n\n"
+            "login = Table(\n"
+            "    'login', metadata,\n"
+            "    Column('id', Integer, primary_key=True),\n"
+            "    Column('user_id', ForeignKey('user.id')),\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.py"])
+
+        assert _columns(entities["login"])["user_id"].type_str == ""
+
     def test_a_table_call_without_columns_is_not_drawn(self, tmp_path: Path) -> None:
         entities = _parse(
             tmp_path,
@@ -213,6 +235,7 @@ class TestDeclarativeWithImperativeTable:
 
         assert "Shelf" in entities
         assert "shelf_table" not in entities
+        assert entities["Book"].table_name == "book"  # __table__: Table = Table(...)
         assert entities["Shelf"].relationships == [("Book", "many", "books")]
 
 
@@ -302,6 +325,7 @@ class TestMapImperatively:
         assert customer.inverse_relationships == {"orders": "customer", "profile": "customer"}
         assert order.relationships == [
             ("Customer", "one", "customer"),
+            ("Customer", "many", "customers"),
             ("Order", "one", "parent"),
             ("Order", "many", "children"),
         ]

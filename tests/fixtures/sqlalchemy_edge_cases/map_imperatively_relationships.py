@@ -87,6 +87,8 @@ def start_mappers() -> None:
         order,
         properties={
             "customer": relationship("Customer", back_populates="orders"),
+            # uselist=True: a collection although the foreign key points at Customer.
+            "customers": relationship(Customer, uselist=True, viewonly=True),
             "parent": relationship(lambda: Order, remote_side=[order.c.id]),
             "children": relationship(Order, overlaps="parent"),
             "labels": relationship(Label, secondary=order_label),

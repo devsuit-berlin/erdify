@@ -181,11 +181,15 @@ class SQLAlchemyDialect(TableDialect):
         # SQLModel and SQLAlchemy keep separate metadata: a foreign key only
         # references a table of its own kind (a Core table on SQLModel.metadata
         # is SQLModel's).
-        columns: Dict[str, Dict[str, FieldInfo]] = {}
+        # Several MetaData collections of one kind may define the same table:
+        # such a reference is ambiguous (None) and keeps no type.
+        columns: Dict[str, Dict[str, FieldInfo | None]] = {}
         for entity in entities.values():
             kind = self._metadata_kind(entity)
             for f in entity.fields:
-                columns.setdefault(kind, {})[f"{entity.table_name}.{f.name}"] = f
+                ref = f"{entity.table_name}.{f.name}"
+                known = columns.setdefault(kind, {})
+                known[ref] = None if ref in known else f
         # A chain of ForeignKey-only columns takes the type from its end.
         changed = True
         while changed:
@@ -236,11 +240,15 @@ class SQLAlchemyDialect(TableDialect):
                 references = _references(entity, target_entity.table_name)
             else:
                 references = []
-            if references:
+            explicit = uselist.value if isinstance(uselist, ast.Constant) else None
+            if explicit is True:  # uselist=True: a collection whatever the direction
+                kind, nullable = "many", False
+            elif references:
                 kind, nullable = "one", any(f.is_nullable for f in references)
+            elif explicit is False:
+                kind, nullable = "one", True
             else:
-                to_one = isinstance(uselist, ast.Constant) and uselist.value is False
-                kind, nullable = ("one", True) if to_one else ("many", False)
+                kind, nullable = "many", False
             entity.relationships.append((target, kind, key.value))
             if nullable:
                 entity.nullable_relationships.append(key.value)
@@ -372,9 +380,16 @@ def mapped_tables(
     found: Dict[str, _MappedTable] = {}
     for name, class_node in classes.items():
         for node in class_node.body:
-            if isinstance(node, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id == "__table__" for t in node.targets
-            ):
+            # __table__ = Table(...), also annotated (__table__: Table = ...).
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else [node.target]
+                if isinstance(node, ast.AnnAssign)
+                else []
+            )
+            if any(isinstance(t, ast.Name) and t.id == "__table__" for t in targets):
+                assert isinstance(node, (ast.Assign, ast.AnnAssign))
                 table = resolve(node.value, tree_of(class_node))
                 if table is not None:
                     found[name] = _MappedTable(table)

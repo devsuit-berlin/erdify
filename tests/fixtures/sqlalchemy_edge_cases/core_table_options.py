@@ -35,7 +35,7 @@ class Shelf(Base):
 
 
 class Book(Base):
-    __table__ = Table(
+    __table__: Table = Table(
         "book",
         Base.metadata,
         Column("id", Integer, primary_key=True),

@@ -214,6 +214,10 @@ EXPECTED_UNLOADABLE = {
     ".entities": "aliases defined in terms of each other; erdify must not loop",
     "test_core_tables.py::ORM_FOR_DOMAIN_MODULE": "imports the domain module of the test",
     "test_core_tables.py::AMBIGUOUS_TABLE_IMPORT": "imports a table module of the test",
+    "test_core_tables.py::TestCoreTables"
+    ".test_same_table_in_two_metadata_collections_gives_no_type": (
+        "references a table another file of the test defines"
+    ),
     "test_cardinality.py::TestTableArgsForms.BASE": TEMPLATE,
     "test_cardinality.py::TestExplicitColumnName.SRC": TEMPLATE,
     "test_column_annotations.py::SQLALCHEMY": TEMPLATE,
