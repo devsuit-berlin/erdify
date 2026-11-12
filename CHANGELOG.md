@@ -26,6 +26,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A SQLAlchemy class with `__abstract__ = True` is not drawn, also when it
   sets `__tablename__`: SQLAlchemy ignores it and copies the class's columns
   into its subclasses.
+- A SQLAlchemy `@declared_attr` method (also `@declared_attr.cascading`) is read
+  like the annotated attribute it maps: `def owner(cls) -> Mapped["Owner"]:
+  return relationship()` on a mixin is the relationship `owner`, and one that
+  returns `mapped_column(...)` is a column. SQLAlchemy only accepts a
+  relationship on a mixin in this form. A method needs a return annotation and
+  a body that is a single `return`
+  ([#298](https://github.com/devsuit-berlin/erdify/issues/298)).
+- A SQLAlchemy / SQLModel to-one relationship declared on the referenced side
+  of a one-to-one (a unique foreign key is on the target's table, none on its own
+  or a mapped parent's) is optional, whatever its annotation says: nothing in
+  the database forces the other row to exist. A foreign key erdify can't read
+  (inside `sa_column=`) leaves the annotation in charge
+  ([#299](https://github.com/devsuit-berlin/erdify/issues/299)).
+- SQLModel `Field()` settings given in `Annotated[...]` metadata are applied,
+  as SQLModel 0.0.32 and later do: the first `Field()` of a top-level
+  `Annotated[...]`, with an assigned plain value as its default; an assigned
+  `Field()` replaces it
+  ([#295](https://github.com/devsuit-berlin/erdify/issues/295)).
+- A class that extends another class of the same name (`class
+  Item(Item, table=True)`, the base defined earlier in the file or imported
+  with `from ... import Item`) inherits that class's fields, unless that base
+  is a table model of its own
+  ([#300](https://github.com/devsuit-berlin/erdify/issues/300)).
 
 ### Output changes
 
@@ -34,8 +57,13 @@ and relationships on each subclass entity (they stay on the parent's);
 projects with single-table inheritance gain the subclasses' columns on the
 parent's entity, and a subclass with `__tablename__ = None` is no longer drawn
 as an entity of its own (with the table name `None`), nor is an
-`__abstract__` class that sets `__tablename__`. Regenerate the diagram once if you
-gate CI on `--check`.
+`__abstract__` class that sets `__tablename__`. Columns and relationships
+from SQLAlchemy `@declared_attr` methods, SQLModel keys, uniques and foreign
+keys from `Annotated[...]` metadata, and the fields of a same-named base class
+appear where they were missing. In `--format json`, a to-one relationship on
+the referenced side of a one-to-one has `"nullable": true`, and its edge is
+drawn optional when no foreign key already draws one. Regenerate the diagram
+once if you gate CI on `--check`.
 
 ## [1.4.4] - 2026-11-12
 

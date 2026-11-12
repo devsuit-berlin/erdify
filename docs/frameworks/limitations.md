@@ -207,11 +207,15 @@ mapped_column(primary_key=True)]`, also `X: TypeAlias = ...`, a re-export
   the type. A PEP 695 `type X = ...` alias is not read, since SQLAlchemy does
   not take a `mapped_column()` from it, and neither is a subscripted one
   (`Pk[int]`).
-- Only SQLAlchemy models read this metadata; SQLModel, Pydantic and dataclass
-  fields keep the alias name and get no settings from it. SQLModel 0.0.32 and
-  later do apply `Field()` settings given in `Annotated[...]` metadata
-  (`id: Annotated[int, Field(primary_key=True)]`); erdify doesn't read them yet
-  ([#295](https://github.com/devsuit-berlin/erdify/issues/295)).
+- Only SQLAlchemy models read `mapped_column()` metadata and column type
+  aliases; SQLModel, Pydantic and dataclass fields keep the alias name and get
+  no settings from it. SQLModel models read a `Field()` in inline
+  `Annotated[...]` metadata (`id: Annotated[int, Field(primary_key=True)]`)
+  the way SQLModel 0.0.32 and later do: the first `Field()` of a top-level
+  `Annotated[...]` applies (not one inside `Optional[...]`), an assigned plain
+  value is its default, and an assigned `Field()` replaces it. Older SQLModel
+  releases ignore it, so their tables differ. A module-level alias of such an
+  `Annotated[...]` is not expanded.
 - The defining module must be scanned: with the default `--include models.py`,
   aliases in `coltypes.py` are only found with `--include '**/*.py'` (or a
   pattern that matches the file).
@@ -227,12 +231,29 @@ annotated: Mapped["Coach"] = relationship("Coach")   # drawn
 bare = relationship("Coach")                          # ignored
 ```
 
+A SQLAlchemy `@declared_attr` method (the form SQLAlchemy requires for a
+relationship on a mixin) is read like that annotated attribute when it has a
+return annotation and its body is a single `return` (after a docstring):
+
+```python
+@declared_attr
+def owner(cls) -> Mapped["Owner"]:                    # drawn
+    return relationship()
+```
+
+The same goes for one that returns `mapped_column(...)`. One without a return
+annotation, or with more statements, is not read, although SQLAlchemy maps it.
+A `@declared_attr.cascading` column is drawn once, on the table of the class
+that inherits it first; SQLAlchemy repeats it on every joined-table subclass's
+table.
+
 The annotation must name **exactly one class**, possibly optional (`X | None`,
 `Optional[X]`, `Union[X, None]`), wrapped (`Mapped`, `Annotated`), or in a
 collection (`list`, `set`, `Sequence`, `Iterable`, `tuple[X, ...]`, a mapping's
 value, and SQLAlchemy's collection-only `WriteOnlyMapped` / `DynamicMapped`). A union of several classes
 (`Mapped[Union["Cat", "Dog"]]`) names no single class, so nothing is drawn for
-it. A type alias for a relationship (`Mapped[ChildList]`) is taken as a class
+it (SQLAlchemy maps it to the first one,
+[#319](https://github.com/devsuit-berlin/erdify/issues/319)). A type alias for a relationship (`Mapped[ChildList]`) is taken as a class
 name, so it draws an edge only if a model of that name exists.
 A module-qualified name (`schemas.User`) resolves by its last part inside `relationship()` /
 `Relationship()`; on a plain Pydantic / dataclass field it stays a column,
@@ -316,6 +337,10 @@ names, so it can be wrong in both directions.
 | Composite foreign keys | Not supported |
 | Settings inside `sa_column=Column(...)` (foreign key, `unique=`, `nullable=`, …) | Not read; only the column name is ([#309](https://github.com/devsuit-berlin/erdify/issues/309)) |
 | Unannotated `x = relationship("Target")` | Not detected |
+| SQLAlchemy `@declared_attr` without a return annotation, or with a body other than a single `return` | Not read ([details](#relationships-need-an-annotation)) |
+| A table model extending a same-named table model (`class Item(Item)` with a `__tablename__` / Django model of its own) | Only the extending class is drawn; the base's table is not. A non-table base (SQLModel without `table=True`, Pydantic, mixin, abstract model) is inherited from |
+| SQLAlchemy `@declared_attr.cascading` column on a joined-table hierarchy | Drawn on the first table only, not repeated on each subclass's table |
+| A to-one relationship whose reverse one-to-one foreign key erdify can't see (inside `sa_column=`, `ForeignKeyConstraint`) or isn't unique, or whose class also has a foreign key to the target's table (`foreign_keys=` picks the other one) | Optionality comes from the annotation |
 | Relationships declared on a SQLAlchemy single-table inheritance subclass, or pointing at one | Not drawn; the subclass's columns and foreign-key edges are, on the parent's table ([#317](https://github.com/devsuit-berlin/erdify/issues/317)) |
 | ninja-style `ModelSchema` (fields from an inner `Meta`/`Config`) | Detected and skipped with a warning, rather than drawn empty ([#171](https://github.com/devsuit-berlin/erdify/issues/171)) |
 | `attrs` / `msgspec` models | Not supported ([erdantic](../comparison.md) covers these) |

@@ -1,6 +1,7 @@
 """The parser entry points: :class:`ASTDatabaseParser` and :func:`parse_models_directory`."""
 
 import ast
+import copy
 import sys
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
@@ -113,6 +114,10 @@ class ASTDatabaseParser:
         self._file_trees: Dict[Path, ast.Module] = {}
         #: The file each class definition (by ``id`` of its node) was read from.
         self._class_files: Dict[int, Path] = {}
+        #: Names given to the definitions a namesake extends -> their own name (#300).
+        self._shadowed: Dict[str, str] = {}
+        #: id() of such a definition -> the name it is kept under.
+        self._renamed: Dict[int, str] = {}
         #: Classes and dialects (with their caches); renewed for each parse run.
         self._ctx = self._new_context()
 
@@ -130,6 +135,7 @@ class ASTDatabaseParser:
         self._parse_errors = []
 
         # First pass: parse all files and collect class definitions
+        definitions: List[Tuple[ast.ClassDef, Path]] = []
         for model_file in model_files:
             try:
                 with open(model_file, encoding="utf-8") as f:  # PEP 3120 default
@@ -140,27 +146,21 @@ class ASTDatabaseParser:
                 # Collect all class definitions
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
-                        self._all_classes[node.name] = node
-                        self._class_files[id(node)] = model_file
+                        definitions.append((node, model_file))
             except Exception as e:
                 print(f"Error parsing {model_file}: {e}", file=sys.stderr)
                 self._parse_errors.append((model_file, str(e)))
 
         if self.strict and self._parse_errors:
             raise ModelParseError(self._parse_errors)
-
-        # Framework base classes the scanned models build on but whose source
-        # isn't scanned (e.g. Django's AbstractUser, #277). They have no file.
-        defined = set(self._all_classes)
-        for dialect_class in DIALECTS:
-            builtins = dialect_class.builtin_classes(self._file_trees.values(), defined)
-            for name, node in builtins.items():
-                self._all_classes.setdefault(name, node)
+        self._collect_classes(definitions)
 
         # Second pass: process enum and model classes. Dialects (and their
         # caches) are fresh for each run.
         self._ctx = self._new_context()
         for class_node in self._all_classes.values():
+            if class_node.name in self._shadowed:
+                continue
             if is_enum_class(class_node, self._all_classes):
                 self._parse_enum_class(class_node)
                 continue
@@ -190,6 +190,141 @@ class ASTDatabaseParser:
         self._apply_exclude_patterns()
 
         return self._entities, self._enums
+
+    def _collect_classes(self, definitions: List[Tuple[ast.ClassDef, Path]]) -> None:
+        """Index every class by name; a later definition replaces an earlier one.
+
+        ``class Item(Item)`` extends another definition of ``Item`` (#300): a
+        class cannot extend itself. Its base is the latest ``Item`` before it
+        in the same file or, in another file, the ``Item`` its ``from ...
+        import Item`` names. That base is kept under a name of its own,
+        ``Item@<line>``, which a copy of the extending class names as its base
+        instead; it is not drawn, as the extending definition replaces it. A
+        base that is a table model of its own (a Django model, a mapped
+        SQLAlchemy class, a SQLModel table) would need drawing as a separate
+        table, so it is not linked: the classes are indexed as before.
+        """
+        links: Dict[int, ast.ClassDef] = {}  # id() of an extending class -> its base
+        for index, (node, model_file) in enumerate(definitions):
+            if not _extends_namesake(node):
+                continue
+            base = next(
+                (
+                    earlier
+                    for earlier, earlier_file in reversed(definitions[:index])
+                    if earlier.name == node.name and earlier_file == model_file
+                ),
+                None,
+            )
+            if base is None:
+                base = self._imported_namesake(node, model_file)
+            if base is not None:
+                links[id(node)] = base
+        while True:
+            self._index_classes(definitions, links)
+            if not links:
+                return
+            ctx = self._new_context()
+            tables = [
+                extending
+                for extending, base in links.items()
+                for kind in [ctx.classify(self._all_classes[self._renamed[id(base)]])]
+                if kind is not None and not ctx.dialect(kind).keyless
+            ]
+            if not tables:
+                return
+            for extending in tables:
+                del links[extending]
+
+    def _index_classes(
+        self, definitions: List[Tuple[ast.ClassDef, Path]], links: Mapping[int, ast.ClassDef]
+    ) -> None:
+        """Fill the class index from ``definitions``, applying the namesake ``links``."""
+        self._all_classes = {}
+        self._class_files = {}
+        self._shadowed = {}
+        self._renamed = {}
+        files = {id(node): model_file for node, model_file in definitions}
+        bases = {id(base) for base in links.values()}
+        for node, model_file in definitions:
+            self._class_files[id(node)] = model_file
+        for node, model_file in definitions:
+            if id(node) in bases:
+                continue
+            if id(node) in links:
+                node = self._extend(node, links, files)
+                self._class_files[id(node)] = model_file
+            self._all_classes[node.name] = node
+        # Framework base classes the scanned models build on but whose source
+        # isn't scanned (e.g. Django's AbstractUser, #277). They have no file.
+        defined = set(self._all_classes)
+        for dialect_class in DIALECTS:
+            builtins = dialect_class.builtin_classes(self._file_trees.values(), defined)
+            for name, builtin in builtins.items():
+                self._all_classes.setdefault(name, builtin)
+
+    def _extend(
+        self, node: ast.ClassDef, links: Mapping[int, ast.ClassDef], files: Mapping[int, Path]
+    ) -> ast.ClassDef:
+        """A copy of ``node`` whose base of its own name is its linked base, renamed.
+
+        The base is kept under a new name; one that extends a namesake itself
+        is linked the same way first.
+        """
+        base = links[id(node)]
+        name = self._renamed.get(id(base))
+        if name is None:
+            name = f"{node.name}@{base.lineno}"
+            while name in self._shadowed:
+                name += "'"
+            self._renamed[id(base)] = name
+            self._shadowed[name] = node.name
+            renamed = copy.copy(self._extend(base, links, files) if id(base) in links else base)
+            renamed.name = name
+            self._all_classes[name] = renamed
+            self._class_files[id(renamed)] = files[id(base)]
+        extending = copy.copy(node)
+        extending.bases = [
+            ast.copy_location(ast.Name(id=name, ctx=ast.Load()), b)
+            if isinstance(b, ast.Name) and b.id == node.name
+            else b
+            for b in node.bases
+        ]
+        return extending
+
+    def _imported_namesake(self, node: ast.ClassDef, model_file: Path) -> ast.ClassDef | None:
+        """The class ``from <module> import <name>`` binds, when exactly one scanned file is it.
+
+        That is the module's last top-level definition of the name; several
+        files matching the module path leave it unresolved.
+        """
+        imported = self._import_source(model_file, node.name)
+        if imported is None:
+            return None
+        found: List[ast.ClassDef] = []
+        for other_file, tree in self._file_trees.items():
+            if other_file == model_file or not _is_module_file(other_file, model_file, imported):
+                continue
+            top = [
+                stmt
+                for stmt in tree.body
+                if isinstance(stmt, ast.ClassDef) and stmt.name == node.name
+            ]
+            if top:
+                found.append(top[-1])
+        return found[0] if len(found) == 1 else None
+
+    def _import_source(self, model_file: Path, name: str) -> Tuple[int, str] | None:
+        """``(level, module)`` of the ``from <module> import <name>`` in a file, if any."""
+        tree = self._file_trees.get(model_file)
+        if tree is None:
+            return None
+        for stmt in tree.body:
+            if isinstance(stmt, ast.ImportFrom) and any(
+                alias.name == name and alias.asname in (None, name) for alias in stmt.names
+            ):
+                return stmt.level, stmt.module or ""
+        return None
 
     def _discover_model_files(self) -> List[Path]:
         """Find model files (see :func:`discover_model_files`) and record the walk."""
@@ -297,7 +432,7 @@ class ASTDatabaseParser:
         base_classes: List[str] = []
         for base in class_node.bases:
             if isinstance(base, ast.Name):
-                base_classes.append(base.id)
+                base_classes.append(self._shadowed.get(base.id, base.id))
 
         entity = EntityInfo(
             name=class_node.name,
@@ -323,6 +458,25 @@ class ASTDatabaseParser:
         entity.is_link_table = is_structural_link_table(entity.fields)
 
         self._entities[class_node.name] = entity
+
+
+def _is_module_file(path: Path, importer: Path, source: Tuple[int, str]) -> bool:
+    """Whether ``path`` is the module ``source`` (``(level, module)``) names from ``importer``."""
+    level, module = source
+    parts = [part for part in module.split(".") if part]
+    stem = path.with_suffix("")
+    own = list(stem.parent.parts) if path.name == "__init__.py" else list(stem.parts)
+    if level == 0:
+        return bool(parts) and own[-len(parts) :] == parts
+    package = importer.parent
+    for _ in range(level - 1):
+        package = package.parent
+    return own == list(package.joinpath(*parts).parts)
+
+
+def _extends_namesake(node: ast.ClassDef) -> bool:
+    """Whether a class names a base of its own name (``class Item(Item)``)."""
+    return any(isinstance(base, ast.Name) and base.id == node.name for base in node.bases)
 
 
 def parse_models_directory(

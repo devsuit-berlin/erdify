@@ -65,12 +65,9 @@ SNIPPET_HEADERS = {
 
 # erdify output that differs from SQLAlchemy's schema, pending a fix.
 KNOWN_DIFFERENCES = {
-    "mixins": "#298: a relationship from a @declared_attr on a mixin is not read",
-    "one_to_one_required_reverse": (
-        "#299: a to-one reference from the referenced side is always optional"
-    ),
-    "test_inheritance.py::TestInconsistentHierarchy.test_self_named_base.src": (
-        "#300: a model extending an earlier class of the same name inherits its fields"
+    "test_model_references.py::TestRedeclaration"
+    ".test_unresolvable_redeclaration_shadows_the_inherited_relationship.src": (
+        "#319: SQLAlchemy maps a Union[A, B] relationship to its first member"
     ),
 }
 
@@ -84,17 +81,12 @@ REQUIRES_SQLMODEL = {
     "sqlmodel_annotated_field": ((0, 0, 32), "Field() in Annotated metadata"),
 }
 
-# Known differences that exist only from a SQLModel release on (before it,
-# erdify matches SQLModel): name -> (release, reason).
+# erdify follows the newest SQLModel; where an older release built something
+# else, the source differs before that release: name -> (release, reason).
 SQLMODEL_DIFFERENCES = {
-    "sqlmodel_annotated_field": (
+    "test_annotated_metadata.py::TestMergeLikeSqlAlchemy.test_sqlmodel_field_in_metadata_applies": (
         (0, 0, 32),
-        "#295: SQLModel 0.0.32+ applies Field() from Annotated metadata",
-    ),
-    "test_annotated_metadata.py::TestMergeLikeSqlAlchemy"
-    ".test_sqlmodel_field_in_metadata_is_ignored": (
-        (0, 0, 32),
-        "#295: SQLModel 0.0.32+ applies Field() from Annotated metadata",
+        "#295: SQLModel before 0.0.32 ignores Field() in Annotated metadata",
     ),
 }
 
@@ -112,8 +104,20 @@ LIMITATIONS = {
         "limitations.md: schema= is ignored"
     ),
     "bare_relationship": "limitations.md: relationships need an annotation",
+    "test_declared_attr.py::TestDeclaredAttr.test_unreadable_methods_are_ignored.entities": (
+        "limitations.md: a declared_attr needs a return annotation and a single return"
+    ),
     "sqlmodel_sa_column_foreign_key": (
         "limitations.md: settings inside sa_column are not read (#309)"
+    ),
+    "test_declared_attr.py::TestReverseToOne.test_unreadable_foreign_key_keeps_the_annotation"
+    ".entities": "limitations.md: settings inside sa_column are not read (#309)",
+    "test_declared_attr.py::TestReverseToOne"
+    ".test_non_unique_foreign_key_back_keeps_the_annotation.entities": (
+        "limitations.md: settings inside sa_column are not read (#309)"
+    ),
+    "test_declared_attr.py::TestCascading.test_joined_subclass_gets_no_copy.entities": (
+        "limitations.md: a cascading declared_attr is not repeated on joined-table subclasses"
     ),
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_declared_attr_tablename_from_a_mixin"
     ".entities": "limitations.md: a declared_attr __tablename__ is not read",
@@ -165,13 +169,6 @@ EXPECTED_REJECTED = {
     ),
     "test_ground_truth_sqlalchemy.py::test_reference_rejects_a_table_without_primary_key": (
         "the harness's own test of a rejected source"
-    ),
-    "test_relationship_pairing.py::TestParserSpellings.MIXIN": (
-        "relationship() on a plain mixin needs @declared_attr (#298)"
-    ),
-    "test_model_references.py::TestRedeclaration"
-    ".test_unresolvable_redeclaration_shadows_the_inherited_relationship.src": (
-        "relationship() on a plain mixin needs @declared_attr (#298)"
     ),
 }
 
@@ -257,8 +254,8 @@ SNIPPETS = sqlalchemy_snippets(SNIPPET_HEADERS)
 def _param(name: str, value: object) -> object:
     marks = []
     reason = KNOWN_DIFFERENCES.get(name) or LIMITATIONS.get(name)
-    since, sqlmodel_reason = SQLMODEL_DIFFERENCES.get(name, ((), ""))
-    if not reason and since and SQLMODEL_VERSION >= since:
+    until, sqlmodel_reason = SQLMODEL_DIFFERENCES.get(name, ((), ""))
+    if not reason and until and SQLMODEL_VERSION < until:
         reason = sqlmodel_reason
     if reason:
         marks.append(pytest.mark.xfail(reason=reason, raises=AssertionError, strict=True))

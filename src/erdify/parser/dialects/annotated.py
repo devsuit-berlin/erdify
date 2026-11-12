@@ -38,8 +38,8 @@ class AnnotatedDialect(Dialect):
         fields: Dict[str, FieldInfo] = {}
         relationships: Dict[str, _Rel] = {}
 
-        for node in class_node.body:
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        for node in self.member_nodes(class_node):
+            if isinstance(node.target, ast.Name):
                 field_name = node.target.id
                 if self.reads_annotated_columns:
                     node = self._with_aliases_expanded(node, class_node)
@@ -144,7 +144,8 @@ class AnnotatedDialect(Dialect):
         # (#241) is merged with the assigned Field() (SQLModel) / mapped_column()
         # (SQLAlchemy), bare or qualified (e.g. orm.mapped_column): what the
         # assigned call sets wins, except that primary_key=True from either
-        # sticks. SQLModel ignores Field() keys in Annotated metadata.
+        # sticks. A SQLModel Field() in the metadata is applied before this
+        # (SQLModelDialect.member_nodes, #295).
         metadata_calls = (
             [
                 call

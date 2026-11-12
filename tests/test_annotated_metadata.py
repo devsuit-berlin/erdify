@@ -317,19 +317,50 @@ class Account(Base):
         assert _field(entities, "status").default_value == "'new'"
         assert _field(entities, "other").default_value == "'x'"
 
-    def test_sqlmodel_field_in_metadata_is_ignored(self, tmp_path: Path):
-        """SQLModel does not apply Field() keys from Annotated metadata."""
+    def test_sqlmodel_field_in_metadata_applies(self, tmp_path: Path):
+        """SQLModel 0.0.32+ applies the first Field() of Annotated metadata (#295).
+
+        An assigned plain value becomes its default; an assigned Field()
+        replaces it. Only a top-level Annotated counts.
+        """
         (tmp_path / "models.py").write_text(
-            "from typing import Annotated\n"
-            "from sqlmodel import Field, SQLModel\n\n\n"
-            "class Account(SQLModel, table=True):\n"
-            "    id: int = Field(primary_key=True)\n"
-            "    code: Annotated[str, Field(primary_key=True, unique=True)]\n",
+            """
+from typing import Annotated, Optional
+
+from sqlmodel import Field, SQLModel
+
+
+class Team(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+
+class Account(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    # Old SQLModel releases ignore the metadata: they still map a primary key.
+    number: Annotated[int | None, Field(primary_key=True)] = None
+    code: Annotated[str, Field(unique=True)] = "a"
+    team_id: Annotated[int | None, Field(foreign_key="team.id")] = None
+    first: Annotated[str, Field(index=True), Field(unique=True)]
+    replaced: Annotated[str, Field(unique=True)] = Field(index=True)
+    wrapped: Optional[Annotated[str, Field(unique=True)]] = None
+""",
             encoding="utf-8",
         )
         entities, _ = parse_models_directory(tmp_path)
-        code = _field(entities, "code")
-        assert (code.is_primary_key, code.is_unique) == (False, False)
+        flags = {
+            f.name: (f.is_primary_key, f.is_unique, f.index, f.is_nullable, f.foreign_table)
+            for f in entities["Account"].fields
+        }
+        assert flags == {
+            "id": (True, False, False, False, None),
+            "number": (True, False, False, False, None),
+            "code": (False, True, False, False, None),
+            "team_id": (False, False, False, True, "team.id"),
+            "first": (False, False, True, False, None),
+            "replaced": (False, False, True, False, None),
+            "wrapped": (False, False, False, True, None),
+        }
+        assert _field(entities, "code").default_value == "'a'"
 
 
 class TestCopilotRound1:

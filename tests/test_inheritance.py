@@ -265,7 +265,7 @@ class Item(X, Y, SQLModel, table=True):
         assert {f.name for f in entities["Item"].fields} == {"id", "a", "b"}
 
     def test_self_named_base(self, tmp_path: Path):
-        """``class User(User)`` (extending a namesake) resolves to itself; no loop."""
+        """``class Item(Item)`` extends the earlier ``Item`` and inherits its fields (#300)."""
         src = """
 from sqlmodel import Field, SQLModel
 
@@ -278,7 +278,60 @@ class Item(Item, SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
 """
         entities = _parse(tmp_path, src)
-        assert [f.name for f in entities["Item"].fields] == ["id"]
+        assert list(entities) == ["Item"]
+        assert [f.name for f in entities["Item"].fields] == ["name", "id"]
+
+    def test_chain_of_namesakes(self, tmp_path: Path):
+        """Each redefinition extends the one before it."""
+        src = """
+from pydantic import BaseModel
+
+
+class Item(BaseModel):
+    a: str
+
+
+class Item(Item):
+    b: str
+
+
+class Item(Item):
+    c: str
+"""
+        entities = _parse(tmp_path, src)
+        assert list(entities) == ["Item"]
+        assert [f.name for f in entities["Item"].fields] == ["a", "b", "c"]
+
+    def test_namesake_from_another_file(self, tmp_path: Path):
+        """``from .base import Item`` then ``class Item(Item)`` in the next file."""
+        (tmp_path / "a").mkdir()
+        (tmp_path / "a" / "models.py").write_text(
+            "from pydantic import BaseModel\n\n\nclass Item(BaseModel):\n    name: str\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "b").mkdir()
+        (tmp_path / "b" / "models.py").write_text(
+            "from a.models import Item\n\n\nclass Item(Item):\n    id: int\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Item"].fields] == ["name", "id"]
+
+    def test_namesake_from_a_later_file(self, tmp_path: Path):
+        """The extending class is discovered before the file that defines its base."""
+        (tmp_path / "app").mkdir()
+        (tmp_path / "app" / "models.py").write_text(
+            "from core.models import Item\n\n\nclass Item(Item):\n    id: int\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "core").mkdir()
+        (tmp_path / "core" / "models.py").write_text(
+            "from pydantic import BaseModel\n\n\nclass Item(BaseModel):\n    name: str\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert list(entities) == ["Item"]
+        assert [f.name for f in entities["Item"].fields] == ["name", "id"]
 
 
 class TestOrderWhenKindChanges:
@@ -793,3 +846,110 @@ class Plain(Base):
         assert _field(entities, "Unique", "account_id").is_unique
         assert not _field(entities, "Plain", "account_id").is_unique
         assert not _field(entities, "Base", "account_id").is_unique
+
+
+class TestNamesakeGuards:
+    """Where ``class Item(Item)`` is not linked to a namesake base (#300)."""
+
+    @staticmethod
+    def _write(tmp_path: Path, files: dict[str, str]) -> dict:
+        for rel, text in files.items():
+            path = tmp_path / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path)
+        return entities
+
+    def test_base_classes_keep_the_written_name(self, tmp_path: Path):
+        entities = self._write(
+            tmp_path,
+            {
+                "models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    name: str\n\n\n"
+                "class Item(Item):\n    id: int\n"
+            },
+        )
+        assert entities["Item"].base_classes == ["Item"]
+
+    def test_unrelated_namesake_in_another_file_is_not_the_base(self, tmp_path: Path):
+        """The base is imported from an unscanned module: the other file's Item is unrelated."""
+        entities = self._write(
+            tmp_path,
+            {
+                "a/models.py": "from vendor_lib import Item\n\n\nclass Item(Item):\n    x: int\n",
+                "b/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    name: str\n",
+            },
+        )
+        assert [f.name for f in entities["Item"].fields] == ["name"]
+
+    def test_django_concrete_base_is_left_as_before(self, tmp_path: Path):
+        """Multi-table inheritance needs the parent's own table: no ``Item@<line>`` names."""
+        entities = self._write(
+            tmp_path,
+            {
+                "core/models.py": "from django.db import models\n\n\n"
+                "class Item(models.Model):\n    name = models.CharField(max_length=10)\n",
+                "shop/models.py": "from django.db import models\n\n"
+                "from core.models import Item\n\n\n"
+                "class Item(Item):\n    extra = models.CharField(max_length=10)\n",
+            },
+        )
+        names = [f.name for e in entities.values() for f in e.fields] + [
+            e.table_name for e in entities.values()
+        ]
+        assert not any("@" in name for name in names)
+
+    def test_chain_across_files_extends_the_module_binding(self, tmp_path: Path):
+        """``from a.models import Item`` binds a's last ``Item``, itself a namesake extension."""
+        entities = self._write(
+            tmp_path,
+            {
+                "a/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    name: str\n\n\n"
+                "class Item(Item):\n    extra: str\n",
+                "b/models.py": "from a.models import Item\n\n\nclass Item(Item):\n    id: int\n",
+            },
+        )
+        assert [f.name for f in entities["Item"].fields] == ["name", "extra", "id"]
+
+    def test_ambiguous_module_is_not_linked(self, tmp_path: Path):
+        """Two scanned files match ``from models import Item``: no base is guessed."""
+        entities = self._write(
+            tmp_path,
+            {
+                "a/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    a: str\n",
+                "b/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Item(BaseModel):\n    b: str\n",
+                "shop/models.py": "from models import Item\n\n\nclass Item(Item):\n    id: int\n",
+            },
+        )
+        fields = [{f.name for f in e.fields} for e in entities.values()]
+        assert not any("id" in names and names & {"a", "b"} for names in fields)
+
+    def test_django_abstract_base_with_a_self_reference(self, tmp_path: Path):
+        entities = self._write(
+            tmp_path,
+            {
+                "shop/models.py": """
+from django.db import models
+
+
+class Item(models.Model):
+    parent = models.ForeignKey("self", null=True, on_delete=models.CASCADE)
+
+    class Meta:
+        abstract = True
+
+
+class Item(Item):
+    name = models.CharField(max_length=10)
+"""
+            },
+        )
+        item = entities["Item"]
+        texts = [item.table_name, *(f.name for f in item.fields)]
+        texts += [str(f.foreign_table) for f in item.fields]
+        texts += [t for t, _, _ in item.relationships]
+        assert not any("@" in text for text in texts), texts
