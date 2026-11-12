@@ -162,6 +162,21 @@ class TestColumnIdentity:
         assert (seats.name, seats.type_str, seats.index) == ("n_seats", "int", False)
         assert not seats.is_nullable
 
+    def test_reuse_takes_the_annotation_nullability_only(self, tmp_path: Path) -> None:
+        """An explicit ``nullable=`` on the reusing declaration is not applied."""
+        entities = _parse(
+            tmp_path,
+            "class Vehicle(Base):\n    __tablename__ = 'vehicle'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
+            "class A(Vehicle):\n    x: Mapped[int]\n    y: Mapped[int | None]\n\n\n"
+            "class B(Vehicle):\n"
+            "    x: Mapped[int] = mapped_column(use_existing_column=True, nullable=True)\n"
+            "    y: Mapped[int | None] = mapped_column(use_existing_column=True, nullable=False)\n",
+        )
+        fields = {f.name: f for f in entities["Vehicle"].fields}
+        assert not fields["x"].is_nullable
+        assert fields["y"].is_nullable
+
     def test_key_of_an_added_column_resolves_foreign_keys(self, tmp_path: Path) -> None:
         entities = _parse(
             tmp_path,

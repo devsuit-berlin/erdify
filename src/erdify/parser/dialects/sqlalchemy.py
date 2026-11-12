@@ -4,7 +4,7 @@ import ast
 from typing import Callable, Dict, Iterable, List, Mapping, NamedTuple, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
-from ..annotations import expr_name, is_call_to, is_mapped_annotation
+from ..annotations import column_type, expr_name, is_call_to, is_mapped_annotation
 from ..common import _Rel
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
 from .base import ParseContext, explicit_column_name, single_column_uniques
@@ -135,6 +135,9 @@ class SQLAlchemyDialect(TableDialect):
         self._untyped: List[Tuple[FieldInfo, str]] = []
         #: Table-owning class -> its single-table subclasses (#302).
         self._single: Dict[str, List[str]] | None = None
+        #: id() of each parsed column -> (the column, its annotation's
+        #: nullability, before an explicit ``nullable=``).
+        self._annotation_nullable: Dict[int, Tuple[FieldInfo, bool]] = {}
 
     @property
     def _mapped_tables(self) -> Dict[str, "_MappedTable"]:
@@ -158,6 +161,13 @@ class SQLAlchemyDialect(TableDialect):
             if name is not None:
                 return name
         return super().table_name(class_node)
+
+    def _parse_field(self, node: ast.AnnAssign) -> FieldInfo | None:
+        """Parse a column, remembering the nullability its annotation alone gives."""
+        field = super()._parse_field(node)
+        if field is not None:
+            self._annotation_nullable[id(field)] = (field, column_type(node.annotation)[1])
+        return field
 
     # -- mapped-class inheritance (#293, #302) ----------------------------------
 
@@ -332,7 +342,7 @@ class SQLAlchemyDialect(TableDialect):
         Each subclass's columns get their own explicit names first, so a column
         is identified by its database name: one declared again
         (``use_existing_column=True``) keeps its first declaration
-        (:func:`_merge_redeclared`). An explicit ``key=`` is recorded for
+        (only the later annotation's nullability is applied). An explicit ``key=`` is recorded for
         :meth:`finalize`. Relationships belong to the subclass's mapper, which
         has no entity, so they are not drawn (#317).
         """
@@ -349,7 +359,15 @@ class SQLAlchemyDialect(TableDialect):
                 key = keys.get(attr, attr)
                 if key != field.name:
                     self._renamed_keys.setdefault(entity.table_name, {})[key] = field.name
-                _merge_redeclared(columns, {field.name: field})
+                existing = columns.get(field.name)
+                if existing is None:
+                    columns[field.name] = field
+                else:
+                    # SQLAlchemy reuses the column and only applies the later
+                    # annotation's nullability, not an explicit nullable=.
+                    existing.is_nullable = self._annotation_nullable.get(
+                        id(field), (field, field.is_nullable)
+                    )[1]
         entity.fields = list(columns.values())
 
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
@@ -722,20 +740,6 @@ def has_tablename(class_node: ast.ClassDef) -> bool:
 
 def _is_none(value: ast.expr | None) -> bool:
     return isinstance(value, ast.Constant) and value.value is None
-
-
-def _merge_redeclared(fields: Dict[str, FieldInfo], added: Mapping[str, FieldInfo]) -> None:
-    """Add a single-table subclass's columns to ``fields``.
-
-    A column declared again (``use_existing_column=True``, which SQLAlchemy
-    requires) keeps its first declaration; SQLAlchemy only applies the later
-    annotation's nullability to it.
-    """
-    for key, field in added.items():
-        if key in fields:
-            fields[key].is_nullable = field.is_nullable
-        else:
-            fields[key] = field
 
 
 def _defines_function(class_node: ast.ClassDef, name: str) -> bool:
