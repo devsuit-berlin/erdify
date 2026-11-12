@@ -360,3 +360,14 @@ class TestEnumBases:
         entities, enums = parse_models_directory(tmp_path)
         assert sorted(entities) == ["Flag", "UserFlag"]
         assert enums == {}
+
+    def test_qualified_model_named_like_an_enum_base(self, tmp_path: Path):
+        """`class UserFlag(models.Flag)` follows the scanned `Flag`, not enum.Flag."""
+        (tmp_path / "models.py").write_text("class Flag:\n    LIMIT = 5\n")
+        (tmp_path / "flags.py").write_text(
+            "import enum\n\nimport models\n\n"
+            "class UserFlag(models.Flag):\n    LIMIT = 10\n\n"
+            "class Perm(enum.Flag):\n    READ = 1\n"
+        )
+        entities, enums = parse_models_directory(tmp_path, include_patterns=["*.py"])
+        assert {name: e.values for name, e in enums.items()} == {"Perm": ["READ"]}

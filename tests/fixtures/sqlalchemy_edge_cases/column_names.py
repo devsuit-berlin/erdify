@@ -74,3 +74,11 @@ member_team = Table(
     Column("member_id", ForeignKey("member.id"), primary_key=True),
     Column("team_id", ForeignKey("team.id"), primary_key=True),
 )
+
+
+swap_member = Table(
+    "swap_member",
+    Base.metadata,
+    Column("swap_id", ForeignKey("swap.pk", link_to_name=True), primary_key=True),
+    Column("member_id", ForeignKey("member.id"), primary_key=True),
+)

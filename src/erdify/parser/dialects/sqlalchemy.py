@@ -1,7 +1,7 @@
 """SQLModel and SQLAlchemy 2.0 (ORM classes and Core association tables)."""
 
 import ast
-from typing import Dict, Iterable, List, Mapping, Set
+from typing import Callable, Dict, Iterable, List, Mapping, Set
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
 from ..annotations import is_call_to, is_mapped_annotation
@@ -25,6 +25,9 @@ class TableDialect(AnnotatedDialect):
         #: id() of foreign-key fields declared with ``link_to_name=True``: their
         #: target already names the column, not its key.
         self._name_targets: Set[int] = set()
+        #: id() of Core tables declared on ``SQLModel.metadata``: they belong
+        #: to SQLModel's tables, although they are read as SQLAlchemy.
+        self._sqlmodel_core: Set[int] = set()
 
     def _parse_field(self, node: ast.AnnAssign) -> FieldInfo | None:
         """Parse a column, remembering a ``ForeignKey(..., link_to_name=True)``."""
@@ -55,15 +58,23 @@ class TableDialect(AnnotatedDialect):
         ``account_id``.
         """
         # Only this dialect's tables: SQLModel and SQLAlchemy keep separate
-        # metadata, so a table name may exist in both.
+        # metadata, so a table name may exist in both. A Core table belongs to
+        # the metadata it is declared on.
         renamed = self._renamed_keys
         if not renamed:
             return
+        sqlmodel_core: Set[int] = set()
+        name_targets: Set[int] = set()
+        for dialect in self.ctx.all_dialects():
+            if isinstance(dialect, TableDialect):
+                sqlmodel_core |= dialect._sqlmodel_core
+                name_targets |= dialect._name_targets
         for entity in entities.values():
-            if entity.source != self.kind:
+            kind = "sqlmodel" if id(entity) in sqlmodel_core else entity.source
+            if kind != self.kind:
                 continue
             for f in entity.fields:
-                if f.foreign_table is None or id(f) in self._name_targets:
+                if f.foreign_table is None or id(f) in name_targets:
                     continue
                 table, _, column = f.foreign_table.rpartition(".")
                 name = renamed.get(table, {}).get(column)
@@ -109,10 +120,25 @@ class SQLAlchemyDialect(TableDialect):
 
     def extra_entities(self, trees: Iterable[ast.Module]) -> List[EntityInfo]:
         """Core association tables (:func:`core_association_tables`, #34)."""
-        return core_association_tables(trees)
+        entities = core_association_tables(trees, self._note_core_table)
+        return entities
+
+    def _note_core_table(self, entity: EntityInfo, call: ast.Call) -> None:
+        """Record what the key rewrite needs: the metadata, ``link_to_name`` columns."""
+        if len(call.args) > 1 and ast.unparse(call.args[1]).endswith("SQLModel.metadata"):
+            self._sqlmodel_core.add(id(entity))
+        columns = {f.name: f for f in entity.fields}
+        for arg in call.args:
+            if is_call_to(arg, "Column") and arg.args and isinstance(arg.args[0], ast.Constant):
+                field = columns.get(str(arg.args[0].value))
+                if field is not None and _links_to_name(arg):
+                    self._name_targets.add(id(field))
 
 
-def core_association_tables(trees: Iterable[ast.Module]) -> List[EntityInfo]:
+def core_association_tables(
+    trees: Iterable[ast.Module],
+    on_table: Callable[[EntityInfo, ast.Call], None] | None = None,
+) -> List[EntityInfo]:
     """Link entities from module-level Core ``Table(...)`` assignments.
 
     ``relationship(secondary=Table(...))`` points at a SQLAlchemy Core table
@@ -121,6 +147,7 @@ def core_association_tables(trees: Iterable[ast.Module]) -> List[EntityInfo]:
     Parse module-level ``name = Table("t", metadata, Column(...), ...)``
     assignments that are structurally association tables (a composite PK
     made up entirely of FK columns) and return them as link entities (#34).
+    ``on_table`` is called with each entity and its ``Table(...)`` call.
     """
     entities: List[EntityInfo] = []
     for tree in trees:
@@ -134,6 +161,8 @@ def core_association_tables(trees: Iterable[ast.Module]) -> List[EntityInfo]:
 
             entity = build_core_table_entity(node.targets[0].id, node.value)
             if entity is not None:
+                if on_table is not None:
+                    on_table(entity, node.value)
                 entities.append(entity)
     return entities
 
@@ -220,7 +249,7 @@ def parse_core_column(call: ast.Call) -> FieldInfo | None:
     )
 
 
-def _links_to_name(node: ast.AnnAssign) -> bool:
+def _links_to_name(node: ast.AST) -> bool:
     """Whether a ``ForeignKey(..., link_to_name=True)`` appears in the declaration."""
     return any(
         isinstance(sub, ast.expr)

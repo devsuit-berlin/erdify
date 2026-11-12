@@ -48,16 +48,22 @@ def is_enum_class(
             continue
         seen.add(id(node))
         for base in node.bases:
-            if isinstance(base, ast.Attribute) and base.attr in ENUM_BASES:
+            if isinstance(base, ast.Attribute):
+                if isinstance(base.value, ast.Name) and base.value.id == "enum":
+                    if base.attr in ENUM_BASES:
+                        return True
+                name = base.attr  # models.Flag: a scanned model, or Django's choices
+            elif isinstance(base, ast.Name):
+                name = base.id
+            else:
+                continue
+            # A scanned class of that name (a model called `Flag`) is
+            # followed, not taken for the enum base it shares a name with.
+            scanned = classes.get(name) if classes is not None else None
+            if scanned is not None and scanned is not node:
+                pending.append(scanned)
+            elif name in ENUM_BASES:
                 return True
-            if isinstance(base, ast.Name):
-                # A scanned class of that name (a model called `Flag`) is
-                # followed, not taken for the enum base it shares a name with.
-                scanned = classes.get(base.id) if classes is not None else None
-                if scanned is not None and scanned is not node:
-                    pending.append(scanned)
-                elif base.id in ENUM_BASES:
-                    return True
     return False
 
 
