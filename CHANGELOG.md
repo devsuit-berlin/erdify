@@ -35,8 +35,9 @@ SQLAlchemy projects with Core tables other than association tables, with
 Columns of Core association tables declared with only a `ForeignKey` now show
 the referenced column's type, and typed Core columns show the Python type
 (`int` instead of `Integer`). A dataclass mapped with `map_imperatively()` is
-now a `sqlalchemy` entity (`--sources dataclass` no longer selects it) and
-shows its table's columns. Regenerate the diagram once if you gate CI on
+now a `sqlalchemy` entity and shows its table's columns; `--sources dataclass`
+no longer selects it, so add `sqlalchemy` to `--sources` (or `sources` in
+`[tool.erdify]`) to keep it. Regenerate the diagram once if you gate CI on
 `--check`.
 
 ## [1.4.3] - 2026-11-12
