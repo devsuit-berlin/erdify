@@ -198,8 +198,15 @@ The public Python API is whatever `src/erdify/__init__.py` re-exports.
 - **Conventional Commits**: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`,
   `style:`, `chore:`.
 - Google-style docstrings on public modules, classes, and functions.
-- Releases are tag-driven: pushing a `vX.Y.Z` tag publishes to PyPI; the version
+- Releases: a release PR (title `chore: release X.Y.Z`, label `release`, body
+  from `.github/release-pr-template.md`) bumps the version, moves the CHANGELOG entries
+  and runs `uv lock`; after merge, publishing a GitHub Release
+  (`gh release create vX.Y.Z --target <full SHA>`) runs `publish.yml`, gated
+  by the `pypi` environment. A pushed tag alone publishes nothing. The version
   is single-sourced from package metadata via `importlib.metadata`.
+- Every PR fills in its template (`.github/PULL_REQUEST_TEMPLATE.md`; release
+  PRs `.github/release-pr-template.md`); the `PR description` check
+  (`scripts/check_pr_description.py`) enforces it.
 - New framework parsing → add a `Dialect` subclass under `parser/dialects/` and
   register it in `DIALECTS` (its position is its classification order), add a
   fixture dir under `tests/fixtures/` and wire it into the integration tests.

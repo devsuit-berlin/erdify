@@ -1,0 +1,41 @@
+name: PR description
+
+# Checks that the PR description fills in the PR template
+# (.github/PULL_REQUEST_TEMPLATE.md, or .github/release-pr-template.md for
+# release PRs). Re-runs when the description is edited.
+#
+# pull_request_target runs the workflow and script from main, so a PR cannot
+# switch off its own check. It is safe here: no PR code is checked out or run,
+# the title and body only reach the script through the environment, and the
+# token stays read-only.
+
+concurrency:
+  group: pr-description-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: PR description
+    runs-on: ubuntu-latest
+    # Bots (Dependabot, ...) write their own descriptions.
+    if: github.event.pull_request.user.type != 'Bot'
+    steps:
+      - name: Checkout main (not the PR)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the description against the template
+        # Title and body go through the environment, never into the script text.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 scripts/check_pr_description.py

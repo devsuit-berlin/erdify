@@ -1,7 +1,30 @@
 name: ✨ Feature Request
-description: Suggest an idea or enhancement for erdify
+description: Suggest a new capability, framework construct, flag or output option
 labels: ["enhancement"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! erdify parses source code without importing it and
+        has no runtime dependencies; proposals that need to run project code
+        or add a dependency are unlikely to fit.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - SQLModel
+        - SQLAlchemy
+        - Django
+        - Pydantic / dataclass
+        - SQL DDL
+        - Output (PlantUML / Mermaid / JSON / HTML)
+        - CLI / configuration
+        - CI integration (--check, --inject, pre-commit)
+        - Documentation
+    validations:
+      required: true
   - type: textarea
     id: problem
     attributes:
@@ -13,11 +36,18 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: How would you like it to work? Example input/output is very helpful.
+      description: How would you like it to work? An example model and the diagram you'd expect help a lot.
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: Any workarounds or other approaches you have thought about.
+      description: Workarounds you use today, or other approaches you thought about.
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to work on it?
+      options:
+        - "No"
+        - "Yes, I'd like to open a PR"
