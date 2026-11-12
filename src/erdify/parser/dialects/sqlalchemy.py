@@ -1,7 +1,7 @@
 """SQLModel and SQLAlchemy 2.0 (ORM classes and Core association tables)."""
 
 import ast
-from typing import Dict, Iterable, List, Mapping
+from typing import Dict, Iterable, List, Mapping, Set
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
 from ..annotations import is_call_to, is_mapped_annotation
@@ -22,6 +22,16 @@ class TableDialect(AnnotatedDialect):
         #: Table name -> {column key: column name} where an explicit ``key=``
         #: differs from the name (``mapped_column("account_id", key="id")``).
         self._renamed_keys: Dict[str, Dict[str, str]] = {}
+        #: id() of foreign-key fields declared with ``link_to_name=True``: their
+        #: target already names the column, not its key.
+        self._name_targets: Set[int] = set()
+
+    def _parse_field(self, node: ast.AnnAssign) -> FieldInfo | None:
+        """Parse a column, remembering a ``ForeignKey(..., link_to_name=True)``."""
+        field = super()._parse_field(node)
+        if field is not None and field.is_foreign_key and _links_to_name(node):
+            self._name_targets.add(id(field))
+        return field
 
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
         """Mark ``__table_args__`` uniques, then rename columns to their explicit names."""
@@ -53,7 +63,7 @@ class TableDialect(AnnotatedDialect):
             if entity.source != self.kind:
                 continue
             for f in entity.fields:
-                if f.foreign_table is None:
+                if f.foreign_table is None or id(f) in self._name_targets:
                     continue
                 table, _, column = f.foreign_table.rpartition(".")
                 name = renamed.get(table, {}).get(column)
@@ -207,4 +217,19 @@ def parse_core_column(call: ast.Call) -> FieldInfo | None:
         is_primary_key=is_primary_key,
         is_foreign_key=fk_target is not None,
         foreign_table=fk_target,
+    )
+
+
+def _links_to_name(node: ast.AnnAssign) -> bool:
+    """Whether a ``ForeignKey(..., link_to_name=True)`` appears in the declaration."""
+    return any(
+        isinstance(sub, ast.expr)
+        and is_call_to(sub, "ForeignKey")
+        and any(
+            kw.arg == "link_to_name"
+            and isinstance(kw.value, ast.Constant)
+            and kw.value.value is True
+            for kw in sub.keywords
+        )
+        for sub in ast.walk(node)
     )

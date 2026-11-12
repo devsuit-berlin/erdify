@@ -12,6 +12,9 @@ class shared:  # noqa: N801 - stands in for a module of shared columns
     owner_fk = mapped_column()
 
 
+SHARED = {"note": mapped_column(nullable=True)}
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -45,6 +48,24 @@ class Member(Base):
     team: Mapped[int] = mapped_column("team_no", ForeignKey("team.id"))
     owner_id: Mapped[int] = shared.owner_fk
     team_code: Mapped[str] = mapped_column(ForeignKey("team.ref"))
+    note: Mapped[str | None] = SHARED["note"]
+
+
+class Swap(Base):
+    """Keys that equal another column's name."""
+
+    __tablename__ = "swap"
+
+    id: Mapped[int] = mapped_column(key="pk", primary_key=True)
+    pk: Mapped[int] = mapped_column(key="other", unique=True)
+
+
+class SwapRef(Base):
+    __tablename__ = "swap_ref"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    by_key: Mapped[int] = mapped_column(ForeignKey("swap.pk"))
+    by_name: Mapped[int] = mapped_column(ForeignKey("swap.pk", link_to_name=True))
 
 
 member_team = Table(

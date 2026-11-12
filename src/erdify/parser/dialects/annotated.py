@@ -84,16 +84,17 @@ class AnnotatedDialect(Dialect):
     def _may_map_column(self, node: ast.AnnAssign) -> bool:
         """Whether SQLAlchemy may map a column for this ``Mapped`` attribute.
 
-        Nothing, ``None``, a call or a name may: a project helper may return
-        ``mapped_column()``, and a module-level ``fk = mapped_column(...)`` may
-        be assigned (also qualified, ``columns.fk``). A constant (``= "a"``,
+        Nothing, ``None``, a call, a name or a subscript may: a project helper
+        may return ``mapped_column()``, and a module-level
+        ``fk = mapped_column(...)`` may be assigned (also qualified,
+        ``columns.fk``, or looked up, ``COLUMNS["fk"]``). A constant (``= "a"``,
         ``= 3``) is a plain class attribute, and so is a member of the
         column's own type (``Mapped[Status] = Status.NEW``, scanned or not) or
         of a scanned enum. A plain-value call such as
         ``= datetime(2020, 1, 1)`` is therefore still drawn as a column.
         """
         value = node.value
-        if value is None or isinstance(value, (ast.Call, ast.Name)):
+        if value is None or isinstance(value, (ast.Call, ast.Name, ast.Subscript)):
             return True
         if isinstance(value, ast.Constant):
             return value.value is None
