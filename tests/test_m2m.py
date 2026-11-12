@@ -102,13 +102,12 @@ class TestSQLAlchemySecondaryCoreTable:
 
         assert frozenset(("Post", "Tag")) not in _edges(output)
 
-    def test_untyped_columns_have_no_dangling_colon(self, m2m_secondary_table_dir: Path):
+    def test_foreign_key_only_columns_take_the_referenced_type(self, m2m_secondary_table_dir: Path):
         entities, enums = parse_models_directory(m2m_secondary_table_dir)
         output = PlantUMLGenerator(entities, enums).generate()
 
-        # Core Column(...) without an explicit type must not render "name : ".
-        assert "primary_key(post_id)" in output
-        assert "primary_key(post_id) :" not in output
+        # Column("post_id", ForeignKey("post.id")) has post.id's type (#305).
+        assert "primary_key(post_id) : int" in output
 
     def test_ternary_core_table_synthesized_as_link_entity(self, tmp_path: Path):
         """A Core Table(...) with a three-FK composite PK is a link table (#118)."""

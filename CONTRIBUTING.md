@@ -110,7 +110,7 @@ erdify/
 │   │       ├── __init__.py      # DIALECTS registry (classification order) + MODEL_SOURCES
 │   │       ├── base.py          # Dialect interface, its hooks, ParseContext
 │   │       ├── annotated.py     # Shared reader for annotated class bodies
-│   │       ├── sqlalchemy.py    # SQLModel, SQLAlchemy ORM, Core association tables
+│   │       ├── sqlalchemy.py    # SQLModel, SQLAlchemy ORM, Core tables
 │   │       ├── keyless.py       # Pydantic, dataclass
 │   │       └── django.py        # Django ORM
 │   └── sql_parser.py    # SQL DDL frontend (optional, erdify[sql] / sqlglot)

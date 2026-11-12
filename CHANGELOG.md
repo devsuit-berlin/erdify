@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Every module-level SQLAlchemy Core `Table(...)` is drawn, not only
+  association tables: a lookup or log table with payload columns, and the
+  foreign-key edges that point at it, used to be missing. Columns are nullable
+  unless they are a primary key or say `nullable=False` (as in SQLAlchemy);
+  `unique=`, `index=`, `default=`, `name=`, `key=`, `type_=` and
+  single-column `PrimaryKeyConstraint` / `ForeignKeyConstraint` /
+  `UniqueConstraint` / unique `Index` arguments are read. Core column types are
+  shown as their Python type (`Integer` → `int`), and a column declared with
+  only a `ForeignKey` gets the referenced column's type
+  ([#305](https://github.com/devsuit-berlin/erdify/issues/305)).
+- A declarative class mapped with `__table__ = Table(...)` (inline or a
+  module-level table variable) is drawn under its class name with the table's
+  columns ([#297](https://github.com/devsuit-berlin/erdify/issues/297)).
+- Classes mapped with `registry.map_imperatively(Cls, table, properties=...)`
+  are drawn, also when mapped inside a function and when `Cls` is a dataclass.
+  Their `relationship()` properties are drawn with the cardinality SQLAlchemy
+  infers from the foreign keys
+  ([#306](https://github.com/devsuit-berlin/erdify/issues/306)).
+
+### Output changes
+
+SQLAlchemy projects with Core tables other than association tables, with
+`__table__` classes or with imperative mapping get new entities and edges.
+Columns of Core association tables declared with only a `ForeignKey` now show
+the referenced column's type, and typed Core columns show the Python type
+(`int` instead of `Integer`). A dataclass mapped with `map_imperatively()` is
+now a `sqlalchemy` entity and shows its table's columns; `--sources dataclass`
+no longer selects it, so add `sqlalchemy` to `--sources` (or `sources` in
+`[tool.erdify]`) to keep it. Regenerate the diagram once if you gate CI on
+`--check`.
+
 ## [1.4.3] - 2026-11-12
 
 ### Added

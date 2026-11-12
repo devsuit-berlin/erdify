@@ -64,9 +64,6 @@ SNIPPET_HEADERS = {"test_annotated_metadata.py": "HEADER"}
 KNOWN_DIFFERENCES = {
     "joined_inheritance": "#293: a joined-table subclass has only its own table's columns",
     "single_table_inheritance": "#302: single-table subclass columns belong to the parent table",
-    "imperative_table": "#297: a class mapped with __table__ = Table(...) is not drawn",
-    "map_imperatively": "#306: classes mapped with registry.map_imperatively() are not drawn",
-    "core_tables": "#305: Core tables other than association tables are not drawn",
     "mixins": "#298: a relationship from a @declared_attr on a mixin is not read",
     "one_to_one_required_reverse": (
         "#299: a to-one reference from the referenced side is always optional"
@@ -215,6 +212,12 @@ EXPECTED_UNLOADABLE = {
     ".py::test_self_referencing_definition_that_differs_conflicts": OTHER_FILE,
     "test_annotated_metadata.py::TestModuleScope.test_mutually_recursive_aliases_do_not_loop"
     ".entities": "aliases defined in terms of each other; erdify must not loop",
+    "test_core_tables.py::ORM_FOR_DOMAIN_MODULE": "imports the domain module of the test",
+    "test_core_tables.py::AMBIGUOUS_TABLE_IMPORT": "imports a table module of the test",
+    "test_core_tables.py::TestCoreTables"
+    ".test_same_table_in_two_metadata_collections_gives_no_type": (
+        "references a table another file of the test defines"
+    ),
     "test_cardinality.py::TestTableArgsForms.BASE": TEMPLATE,
     "test_cardinality.py::TestExplicitColumnName.SRC": TEMPLATE,
     "test_column_annotations.py::SQLALCHEMY": TEMPLATE,
