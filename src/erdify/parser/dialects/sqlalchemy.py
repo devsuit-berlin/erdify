@@ -206,7 +206,7 @@ class SQLAlchemyDialect(TableDialect):
         """
         for ancestor in self._ancestors(name):
             node = self.classes.all[ancestor]
-            if _defines_function(node, "__tablename__") and any(
+            if self._tablename_is_function(ancestor) and any(
                 self.detect(self.classes.all[a]) for a in self._ancestors(ancestor)
             ):
                 return None  # a mapped subclass with a computed table, not a mixin
@@ -221,10 +221,10 @@ class SQLAlchemyDialect(TableDialect):
 
     @property
     def _single_table_subclasses(self) -> Dict[str, List[str]]:
-        """Table-owning class name -> its single-table subclasses, ancestors first.
+        """Table-owning class name -> its single-table subclasses, in mapping order.
 
-        A subclass declared before its single-table parent (in another file)
-        still comes after it, so declarations merge in inheritance order.
+        Source order, except that a subclass declared before its single-table
+        parent (in another file) comes after it, as SQLAlchemy maps them.
         """
         if self._single is None:
             self._single = {}
@@ -232,9 +232,26 @@ class SQLAlchemyDialect(TableDialect):
                 owner = self._table_owner(name) if self._is_single_table(node) else None
                 if owner is not None:
                     self._single.setdefault(owner, []).append(name)
-            for subs in self._single.values():
-                subs.sort(key=lambda sub: len(self._ancestors(sub)))
+            for owner, subs in self._single.items():
+                self._single[owner] = self._parents_first(subs)
         return self._single
+
+    def _parents_first(self, subs: List[str]) -> List[str]:
+        """``subs`` in source order, each moved after the ones it inherits from."""
+        members = set(subs)
+        ordered: List[str] = []
+
+        def visit(name: str) -> None:
+            if name in ordered:
+                return
+            for ancestor in reversed(self._ancestors(name)):
+                if ancestor in members:
+                    visit(ancestor)
+            ordered.append(name)
+
+        for sub in subs:
+            visit(sub)
+        return ordered
 
     def table_classes(self, class_node: ast.ClassDef, names: List[str]) -> Set[str]:
         """Leave out each mapped ancestor and its bases: they have a table of their own (#293).
@@ -264,21 +281,33 @@ class SQLAlchemyDialect(TableDialect):
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         """The members a class stores in its own table, or adds to its parent's.
 
-        A mixin attribute that a mapped ancestor already declares is left
-        out: SQLAlchemy keeps the ancestor's (only a redeclaration in the
-        class body itself counts).
+        A mixin attribute that a mapped ancestor already maps is left out when
+        the ancestor's comes first, as SQLAlchemy's ``attribute_is_overridden``
+        decides: walking the MRO, a mapped ancestor that maps the attribute
+        wins, a mixin that assigns it a value (``= mapped_column()``) keeps
+        it, and an annotation alone is passed over.
         """
         fields, rels = super().collect(class_node)
-        names = self.classes.dfs_order(class_node, set())
-        inherited = {
-            attr
-            for name in self._mapped_ancestry(class_node, names)
-            for attr in self.declared_names(self.classes.all[name])
-        } - set(self.declared_names(class_node))
-        for attr in inherited:
-            fields.pop(attr, None)
-            rels.pop(attr, None)
+        mapped = self._mapped_ancestry(class_node, self.classes.dfs_order(class_node, set()))
+        mapped_attrs = {name: self._mapped_attrs(name) for name in mapped}
+        candidates = set().union(*mapped_attrs.values()) - set(self.declared_names(class_node))
+        for attr in candidates:
+            for ancestor in self._ancestors(class_node.name):
+                if ancestor in mapped_attrs:
+                    if attr in mapped_attrs[ancestor]:
+                        fields.pop(attr, None)
+                        rels.pop(attr, None)
+                        break
+                elif _assigns_value(self.classes.all[ancestor], attr):
+                    break
         return fields, rels
+
+    def _mapped_attrs(self, name: str) -> Set[str]:
+        """Attributes class ``name`` maps itself: its body's, or its Core table's columns."""
+        mapped = self._mapped_tables.get(name)
+        if mapped is not None:
+            return {f.name for f in core_table_fields(mapped.table)}
+        return set(self.declared_names(self.classes.all[name]))
 
     def _add_single_table_columns(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
         """Add the columns of single-table subclasses to the entity's table (#302).
@@ -698,6 +727,20 @@ def _defines_function(class_node: ast.ClassDef, name: str) -> bool:
         isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == name
         for item in class_node.body
     )
+
+
+def _assigns_value(class_node: ast.ClassDef, name: str) -> bool:
+    """Whether the class body assigns ``name`` a value, not just an annotation."""
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            return True
+    return False
 
 
 def _assigns(class_node: ast.ClassDef, name: str) -> bool:

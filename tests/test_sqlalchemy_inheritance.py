@@ -194,6 +194,49 @@ class TestColumnIdentity:
         assert (seats.type_str, seats.is_nullable) == ("int", False)
 
 
+class TestMixinPrecedence:
+    """Which of a mixin's and a mapped parent's declarations wins, as in SQLAlchemy."""
+
+    def test_mixin_with_a_value_first_in_the_mro_is_copied(self, tmp_path: Path) -> None:
+        """SQLAlchemy copies it (and warns that it combines it with the parent's)."""
+        entities = _parse(
+            tmp_path,
+            "class Audited:\n    name: Mapped[str | None] = mapped_column()\n\n\n"
+            "class Employee(Base):\n    __tablename__ = 'employee'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+            "    name: Mapped[str]\n\n\n"
+            "class Engineer(Audited, Employee):\n    __tablename__ = 'engineer'\n"
+            "    id: Mapped[int] = mapped_column(ForeignKey('employee.id'), primary_key=True)\n",
+        )
+        assert sorted(_columns(entities, "Engineer")) == ["id", "name"]
+
+    def test_core_table_parent_column_wins(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "vehicle = Table('vehicle', Base.metadata, Column('id', Integer, primary_key=True),"
+            " Column('kind', String, nullable=False))\n\n\n"
+            "class Vehicle(Base):\n    __table__ = vehicle\n\n\n"
+            "class Kinded:\n    kind: Mapped[str | None]\n\n\n"
+            "class Car(Kinded, Vehicle):\n    wheels: Mapped[int | None]\n",
+        )
+        assert _columns(entities, "Vehicle") == ["id", "kind", "wheels"]
+        assert not entities["Vehicle"].fields[1].is_nullable
+
+    def test_siblings_merge_in_source_order(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "class Towing:\n    hitch: Mapped[str | None]\n\n\n"
+            "class Vehicle(Base):\n    __tablename__ = 'vehicle'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
+            "class Truck(Towing, Vehicle):\n"
+            "    seats: Mapped[int] = mapped_column(use_existing_column=True)\n\n\n"
+            "class Car(Vehicle):\n"
+            "    seats: Mapped[int | None] = mapped_column(use_existing_column=True)\n",
+        )
+        seats = next(f for f in entities["Vehicle"].fields if f.name == "seats")
+        assert seats.is_nullable  # Car, mapped after Truck
+
+
 class TestNotReadable:
     """Subclasses whose table erdify can't see are left out, not merged into the parent."""
 
@@ -243,6 +286,20 @@ class TestNotReadable:
             "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
             "class Engineer(Employee):\n    @declared_attr.directive\n"
             "    def __tablename__(cls) -> str:\n        return 'engineer'\n\n"
+            "    id: Mapped[int] = mapped_column(ForeignKey('employee.id'), primary_key=True)\n\n\n"
+            "class Lead(Engineer):\n    __tablename__ = None\n"
+            "    level: Mapped[int | None]\n",
+        )
+        assert _columns(entities, "Employee") == ["id"]
+
+    def test_single_table_under_a_mixin_computed_table(self, tmp_path: Path) -> None:
+        entities = _parse(
+            tmp_path,
+            "class Named:\n    @declared_attr.directive\n"
+            "    def __tablename__(cls) -> str:\n        return cls.__name__.lower()\n\n\n"
+            "class Employee(Base):\n    __tablename__ = 'employee'\n"
+            "    id: Mapped[int] = mapped_column(primary_key=True)\n\n\n"
+            "class Engineer(Named, Employee):\n"
             "    id: Mapped[int] = mapped_column(ForeignKey('employee.id'), primary_key=True)\n\n\n"
             "class Lead(Engineer):\n    __tablename__ = None\n"
             "    level: Mapped[int | None]\n",

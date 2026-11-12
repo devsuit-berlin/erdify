@@ -189,7 +189,8 @@ class Order(models.Model):
     and its columns are added to the parent's table. An attribute declared in
     more than one base resolves like Python's MRO: the class body wins, then the
     first base that declares it. In SQLAlchemy, a mapped parent's column also
-    wins over a subclass's mixin.
+    wins over an annotation-only mixin attribute (`x: Mapped[str]`, no value)
+    of its subclass, as in SQLAlchemy.
 
 SQL DDL (`.sql` files parsed via sqlglot) uses a separate file-based detection
 mechanism and is not listed in the AST-detection table above. See [SQL DDL](sql.md).

@@ -121,6 +121,10 @@ LIMITATIONS = {
     ".entities": "limitations.md: a declared_attr __tablename__ is not read",
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_single_table_under_a_computed_table"
     ".entities": "limitations.md: a declared_attr __tablename__ is not read",
+    "test_sqlalchemy_inheritance.py::TestNotReadable"
+    ".test_single_table_under_a_mixin_computed_table.entities": (
+        "limitations.md: a declared_attr __tablename__ is not read"
+    ),
     "test_sqlalchemy_inheritance.py::TestNotReadable.test_unresolved_table.entities": (
         "limitations.md: a __table__ that is no Table(...) or table variable is not read"
     ),

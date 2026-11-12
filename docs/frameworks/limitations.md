@@ -301,7 +301,7 @@ names, so it can be wrong in both directions.
 |------|--------|
 | Runtime-constructed models (`type()`, registries) | Not supported by design (no imports) |
 | Fields added via `setattr` / loops / `if TYPE_CHECKING` | Not supported |
-| Non-literal `__tablename__` / `declared_attr` | Falls back to the class name, silently |
+| Non-literal `__tablename__` / `declared_attr` | Falls back to the class name, silently; a SQLAlchemy class with a `declared_attr` table name is not drawn ([details](#non-literal-__tablename__)) |
 | Non-literal Django `db_column` / `Meta.db_table` | Falls back to the attribute name / Django's default table name, silently |
 | `__table_args__` (composite FKs, composite `UniqueConstraint`, partial or non-unique `Index`, `schema=`) | Not read; single-column `UniqueConstraint` / unique `Index` is read |
 | Django `Meta.unique_together` / `Meta.indexes` | Not read |
