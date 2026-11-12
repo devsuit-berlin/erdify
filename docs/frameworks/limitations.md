@@ -61,7 +61,10 @@ class Computed(SQLModel, table=True):
     __tablename__ = "prefix_" + "computed"   # erdify reports: computed
 ```
 
-The same applies to a `declared_attr`-computed `__tablename__`. Django's
+The same applies to a `declared_attr`-computed `__tablename__`. A SQLAlchemy
+subclass of a mapped class that gets its table name from a `declared_attr`
+(e.g. on a mixin) is not drawn, and its columns are not added to the parent's
+table either. Django's
 `Meta.db_table` *is* read when it is a literal.
 
 ## `__table_args__` is mostly not read
@@ -128,7 +131,8 @@ Only SQLAlchemy 2.0's annotated style (`id: Mapped[int] = mapped_column(...)`)
 is read. Classic declarative attributes (`id = Column(Integer, ...)`) have no
 annotation, so they are not drawn as columns. A class needs at least one
 `Mapped[...]` (or `WriteOnlyMapped` / `DynamicMapped`) member of its own to be
-detected; one mixing both styles shows only its `Mapped` columns.
+detected; one mixing both styles shows only its `Mapped` columns. A
+single-table subclass of an undetected class is not drawn either.
 
 ## Tables declared outside a class body
 
@@ -308,6 +312,7 @@ names, so it can be wrong in both directions.
 | Composite foreign keys | Not supported |
 | Settings inside `sa_column=Column(...)` (foreign key, `unique=`, `nullable=`, …) | Not read; only the column name is ([#309](https://github.com/devsuit-berlin/erdify/issues/309)) |
 | Unannotated `x = relationship("Target")` | Not detected |
+| Relationships declared on a SQLAlchemy single-table inheritance subclass, or pointing at one | Not drawn; the subclass's columns and foreign-key edges are, on the parent's table ([#317](https://github.com/devsuit-berlin/erdify/issues/317)) |
 | ninja-style `ModelSchema` (fields from an inner `Meta`/`Config`) | Detected and skipped with a warning, rather than drawn empty ([#171](https://github.com/devsuit-berlin/erdify/issues/171)) |
 | `attrs` / `msgspec` models | Not supported ([erdantic](../comparison.md) covers these) |
 | Live database introspection | Not supported by design |

@@ -58,19 +58,16 @@ EDGE_CASES_DIR = FIXTURES / "sqlalchemy_edge_cases"
 EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
 
 # Test helpers that prepend a module-level header to the bodies they get.
-SNIPPET_HEADERS = {"test_annotated_metadata.py": "HEADER"}
+SNIPPET_HEADERS = {
+    "test_annotated_metadata.py": "HEADER",
+    "test_sqlalchemy_inheritance.py": "HEADER",
+}
 
 # erdify output that differs from SQLAlchemy's schema, pending a fix.
 KNOWN_DIFFERENCES = {
-    "joined_inheritance": "#293: a joined-table subclass has only its own table's columns",
-    "single_table_inheritance": "#302: single-table subclass columns belong to the parent table",
     "mixins": "#298: a relationship from a @declared_attr on a mixin is not read",
     "one_to_one_required_reverse": (
         "#299: a to-one reference from the referenced side is always optional"
-    ),
-    "test_ground_truth_sqlalchemy.py"
-    "::test_reference_leaves_out_created_and_inherited_relationships.schema": (
-        "#293: a joined-table subclass has only its own table's columns"
     ),
     "test_inheritance.py::TestInconsistentHierarchy.test_self_named_base.src": (
         "#300: a model extending an earlier class of the same name inherits its fields"
@@ -118,6 +115,10 @@ LIMITATIONS = {
     "sqlmodel_sa_column_foreign_key": (
         "limitations.md: settings inside sa_column are not read (#309)"
     ),
+    "test_sqlalchemy_inheritance.py::TestNotReadable.test_declared_attr_tablename_from_a_mixin"
+    ".entities": "limitations.md: a declared_attr __tablename__ is not read",
+    "test_sqlalchemy_inheritance.py::TestNotReadable.test_subclass_of_an_undetected_table"
+    ".entities": "limitations.md: classic Column() attributes are not read",
     "test_column_annotations.py::TestSqlAlchemyDetection"
     ".test_classic_column_only_class_not_detected.source": (
         "limitations.md: classic Column() attributes are not read"

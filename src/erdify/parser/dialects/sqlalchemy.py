@@ -1,10 +1,11 @@
 """SQLModel and SQLAlchemy 2.0 (ORM classes, classes mapped to Core tables, Core tables)."""
 
 import ast
-from typing import Callable, Dict, Iterable, List, Mapping, NamedTuple, Tuple
+from typing import Callable, Dict, Iterable, List, Mapping, NamedTuple, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
 from ..annotations import expr_name, is_call_to, is_mapped_annotation
+from ..common import _Rel
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
 from .base import ParseContext, explicit_column_name, single_column_uniques
 
@@ -110,7 +111,11 @@ class SQLAlchemyDialect(TableDialect):
 
     Mixins / abstract bases (``Mapped`` fields but no ``__tablename__``) are not
     detected, so they are not emitted as entities, but their fields are still
-    inherited. A class mapped to a Core table, through ``__table__ = Table(...)``
+    inherited. A mapped parent's columns stay in its own table: a joined-table
+    subclass (``__tablename__`` of its own) gets only its own columns, and a
+    single-table subclass (none, or ``__tablename__ = None``) is not drawn and
+    adds its columns to the parent's table (#293, #302). A class mapped to a
+    Core table, through ``__table__ = Table(...)``
     (#297) or ``registry.map_imperatively(Class, table)`` (#306), is drawn with
     that table's name and columns. Every other module-level Core ``Table(...)``
     is drawn as a table of its own (#34, #305).
@@ -128,6 +133,8 @@ class SQLAlchemyDialect(TableDialect):
         #: Core columns declared with only a ``ForeignKey``: SQLAlchemy gives
         #: them the referenced column's type.
         self._untyped: List[Tuple[FieldInfo, str]] = []
+        #: Table-owning class -> its single-table subclasses (#302).
+        self._single: Dict[str, List[str]] | None = None
 
     @property
     def _mapped_tables(self) -> Dict[str, "_MappedTable"]:
@@ -150,6 +157,135 @@ class SQLAlchemyDialect(TableDialect):
                 return name
         return super().table_name(class_node)
 
+    # -- mapped-class inheritance (#293, #302) ----------------------------------
+
+    def _is_single_table(self, class_node: ast.ClassDef) -> bool:
+        """A subclass of a mapped class without a table of its own (#302).
+
+        SQLAlchemy maps every subclass of a mapped class; without
+        ``__tablename__`` / ``__table__`` (and not ``__abstract__``) it is
+        stored in its parent's table.
+        """
+        if (
+            self.detect(class_node)
+            or has_tablename(class_node)
+            or _sets_true(class_node, "__abstract__")
+            or self._inherits_tablename_function(class_node.name)
+        ):
+            return False
+        return self._table_owner(class_node.name) is not None
+
+    def _ancestors(self, name: str) -> List[str]:
+        """The ancestors of class ``name``, nearest first (its MRO without itself)."""
+        node = self.classes.all[name]
+        order = self.classes.mro(name) or self.classes.dfs_order(node, set())[::-1]
+        return [a for a in order if a != name]
+
+    def _inherits_tablename_function(self, name: str) -> bool:
+        """Whether the ``__tablename__`` class ``name`` inherits is a ``@declared_attr``.
+
+        It names a table of the class's own, which erdify can't read.
+        """
+        for ancestor in self._ancestors(name):
+            node = self.classes.all[ancestor]
+            if any(
+                isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and item.name == "__tablename__"
+                for item in node.body
+            ):
+                return True
+            if _assigns(node, "__tablename__"):
+                return False
+        return False
+
+    def _table_owner(self, name: str) -> str | None:
+        """The nearest ancestor of class ``name`` with a table, if erdify draws it."""
+        for ancestor in self._ancestors(name):
+            node = self.classes.all[ancestor]
+            if has_tablename(node) or ancestor in self._mapped_tables:
+                return ancestor if self.detect(node) else None
+        return None
+
+    @property
+    def _single_table_subclasses(self) -> Dict[str, List[str]]:
+        """Table-owning class name -> its single-table subclasses, in source order."""
+        if self._single is None:
+            self._single = {}
+            for name, node in self.classes.all.items():
+                owner = self._table_owner(name) if self._is_single_table(node) else None
+                if owner is not None:
+                    self._single.setdefault(owner, []).append(name)
+        return self._single
+
+    def table_classes(self, class_node: ast.ClassDef, names: List[str]) -> Set[str]:
+        """Leave out each mapped ancestor and its bases: they have a table of their own (#293).
+
+        A joined-table subclass gets only the columns of its own body and of
+        the mixins that only it inherits; a single-table subclass, read for
+        its parent's table, likewise only adds its own.
+        """
+        excluded = self._mapped_ancestry(class_node, names)
+        return {name for name in names if name not in excluded}
+
+    def _mapped_ancestry(self, class_node: ast.ClassDef, names: List[str]) -> Set[str]:
+        """The mapped ancestors among ``names`` and their bases: stored in another table."""
+        excluded: Set[str] = set()
+        for name in names:
+            node = self.classes.all[name]
+            if name != class_node.name and (self.detect(node) or self._is_single_table(node)):
+                excluded.update(self.classes.mro(name) or self.classes.dfs_order(node, set()))
+        return excluded
+
+    def collect(self, class_node: ast.ClassDef) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """Add the columns of single-table subclasses to their parent's table (#302).
+
+        Their relationships belong to the subclass's mapper, which has no
+        entity, so they are not drawn (#317).
+        """
+        fields, rels = self._collect_own(class_node)
+        _merge_redeclared(fields, self._single_table_fields(class_node.name))
+        return fields, rels
+
+    def _collect_own(
+        self, class_node: ast.ClassDef
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """The members a class stores in its own table, or adds to its parent's.
+
+        A mixin attribute that a mapped ancestor already declares is left
+        out: SQLAlchemy keeps the ancestor's (only a redeclaration in the
+        class body itself counts).
+        """
+        fields, rels = super().collect(class_node)
+        names = self.classes.dfs_order(class_node, set())
+        inherited = {
+            attr
+            for name in self._mapped_ancestry(class_node, names)
+            for attr in self.declared_names(self.classes.all[name])
+        } - set(self.declared_names(class_node))
+        for attr in inherited:
+            fields.pop(attr, None)
+            rels.pop(attr, None)
+        return fields, rels
+
+    def _single_table_fields(self, owner: str) -> Dict[str, FieldInfo]:
+        """The columns the single-table subclasses of class ``owner`` add, by attribute."""
+        fields: Dict[str, FieldInfo] = {}
+        for sub in self._single_table_subclasses.get(owner, []):
+            _merge_redeclared(fields, self._collect_own(self.classes.all[sub])[0])
+        return fields
+
+    def _db_column_names(self, class_node: ast.ClassDef, use_key: bool = True) -> Dict[str, str]:
+        """Also the explicit names of columns that single-table subclasses add.
+
+        A redeclared column keeps its first declaration's name, like its other
+        settings (:func:`_merge_redeclared`).
+        """
+        names = super()._db_column_names(class_node, use_key)
+        for sub in self._single_table_subclasses.get(class_node.name, []):
+            for attr, name in super()._db_column_names(self.classes.all[sub], use_key).items():
+                names.setdefault(attr, name)
+        return names
+
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
         """A class mapped to a Core table has exactly that table's columns."""
         mapped = self._mapped_tables.get(class_node.name)
@@ -157,6 +293,15 @@ class SQLAlchemyDialect(TableDialect):
             super().finish(entity, class_node)
             return
         entity.fields = core_table_fields(mapped.table)
+        # Single-table subclasses add their columns to the Core table too (#302).
+        added = self._single_table_fields(class_node.name)
+        if added:
+            names = self._db_column_names(class_node, use_key=False)
+            for f in added.values():
+                f.name = names.get(f.name, f.name)
+            columns = {f.name: f for f in entity.fields}
+            _merge_redeclared(columns, {f.name: f for f in added.values()})
+            entity.fields = list(columns.values())
         self._note_core_table(entity, mapped.table)
         if mapped.properties is not None:
             self._properties[entity.name] = mapped.properties
@@ -495,15 +640,67 @@ def _relationship_target(call: ast.Call) -> str | None:
 
 
 def has_tablename(class_node: ast.ClassDef) -> bool:
-    """Check if a class assigns __tablename__ (annotated or plain)."""
+    """Check if a class assigns __tablename__ (annotated or plain).
+
+    ``__tablename__ = None`` declares no table: a subclass of a mapped class
+    that sets it is stored in its parent's table (single-table inheritance).
+    """
     for node in class_node.body:
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             if node.target.id == "__tablename__":
-                return True
+                return not _is_none(node.value)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "__tablename__":
-                    return True
+                    return not _is_none(node.value)
+    return False
+
+
+def _is_none(value: ast.expr | None) -> bool:
+    return isinstance(value, ast.Constant) and value.value is None
+
+
+def _merge_redeclared(fields: Dict[str, FieldInfo], added: Mapping[str, FieldInfo]) -> None:
+    """Add a single-table subclass's columns to ``fields``.
+
+    A column declared again (``use_existing_column=True``, which SQLAlchemy
+    requires) keeps its first declaration; SQLAlchemy only applies the later
+    annotation's nullability to it.
+    """
+    for key, field in added.items():
+        if key in fields:
+            fields[key].is_nullable = field.is_nullable
+        else:
+            fields[key] = field
+
+
+def _assigns(class_node: ast.ClassDef, name: str) -> bool:
+    """Whether the class body assigns ``name`` (annotated or plain)."""
+    for node in class_node.body:
+        targets = (
+            node.targets
+            if isinstance(node, ast.Assign)
+            else [node.target]
+            if isinstance(node, ast.AnnAssign)
+            else []
+        )
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            return True
+    return False
+
+
+def _sets_true(class_node: ast.ClassDef, name: str) -> bool:
+    """Whether the class body sets ``name = True`` (annotated or plain)."""
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            if isinstance(node.value, ast.Constant) and node.value.value is True:
+                return True
     return False
 
 

@@ -18,7 +18,7 @@ framework is detected and a worked example, see the
 | Indexes | ✅ | `Field(index=True)` — detected and emitted in `--format json`; not drawn in the PlantUML/Mermaid diagram |
 | Enums | ✅ | Subclasses of `Enum`, `IntEnum`, `StrEnum`, `Flag` / `IntFlag`, also through a project's own enum base; Django `TextChoices` / `IntegerChoices` |
 | Relationships | ✅ | `Relationship()` / `relationship()`, model references, Django relation fields; a relationship declared on both models is one edge, paired exactly by `back_populates=` |
-| Inheritance | ✅ | Mixin classes supported; a redeclared attribute resolves like Python's MRO. Django multi-table inheritance is drawn as a `<parent>_ptr_id` 1:1 link; proxy models are not drawn |
+| Inheritance | ✅ | Mixin classes supported; a redeclared attribute resolves like Python's MRO. Django multi-table inheritance is drawn as a `<parent>_ptr_id` 1:1 link; proxy models are not drawn. SQLAlchemy joined-table subclasses get only their own table's columns; single-table subclasses add their columns to the parent's table (their relationships are not drawn yet, [#317](https://github.com/devsuit-berlin/erdify/issues/317)) |
 | Link Tables | ✅ | Many-to-many detection (structural) |
 | Custom Table Names | ✅ | `__tablename__` attribute; without one, SQLModel's default, the lower-cased class name (`HeroTeam` → `heroteam`) |
 | Exclude Patterns | ✅ | `--exclude` glob on class/table name |

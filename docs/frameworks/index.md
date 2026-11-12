@@ -182,7 +182,11 @@ class Order(models.Model):
     Django `class Meta: abstract = True` base) are not drawn as tables, but their
     columns are inherited into concrete entities. A Django model subclassing a
     *concrete* model is the exception: it gets its own table linked 1:1 to the
-    parent ([multi-table inheritance](django.md#inheritance)). An attribute declared in more
+    parent ([multi-table inheritance](django.md#inheritance)). SQLAlchemy works the
+    same way for a subclass of a mapped class: with a `__tablename__` of its own
+    (joined-table inheritance) it gets only its own columns, and without one
+    (or with `__tablename__ = None`: single-table inheritance) it is not drawn and its columns are added to the
+    parent's table. An attribute declared in more
     than one base resolves like Python's MRO: the class body wins, then the
     first base that declares it.
 

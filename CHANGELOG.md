@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A SQLAlchemy joined-table inheritance subclass (a subclass of a mapped class
+  with a `__tablename__` of its own) is drawn with only its own table's
+  columns: its own body and the mixins only it inherits. The mapped parent's
+  columns, and those of the parent's mixins, stay on the parent
+  ([#293](https://github.com/devsuit-berlin/erdify/issues/293)).
+- The columns of a SQLAlchemy single-table inheritance subclass (a subclass of
+  a mapped class without a table of its own) are drawn on the table it is
+  stored in: the nearest ancestor that has one, also when that is mapped to a
+  Core table or the subclass sets `__tablename__ = None`. A column declared
+  again with `use_existing_column=True` keeps its first declaration and only
+  takes the later annotation's nullability, as in SQLAlchemy
+  ([#302](https://github.com/devsuit-berlin/erdify/issues/302)). Relationships
+  declared on or pointing at such a subclass are not drawn yet
+  ([#317](https://github.com/devsuit-berlin/erdify/issues/317)).
+
+### Output changes
+
+SQLAlchemy projects with joined-table inheritance lose the parent's columns on
+each subclass entity; projects with single-table inheritance gain the
+subclasses' columns on the parent's entity. Regenerate the diagram once if you
+gate CI on `--check`.
+
 ## [1.4.4] - 2026-11-12
 
 ### Fixed
