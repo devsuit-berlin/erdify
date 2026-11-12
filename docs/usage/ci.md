@@ -180,7 +180,7 @@ instead:
         alias: erdify-sql
         args: [./schema, --include, '*.sql', --sql-dialect, postgres, -o, docs/erd.puml]
         files: ^schema/.*\.sql$
-        additional_dependencies: ['sqlglot>=25']
+        additional_dependencies: ['sqlglot>=30.8']
 ```
 
 Use `alias` when you want both a Python-model and a SQL hook in the same config,

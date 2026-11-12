@@ -17,7 +17,7 @@
 #         - id: erdify
 #           args: [./schema, --include, '*.sql', --sql-dialect, postgres, -o, docs/erd.puml]
 #           files: ^schema/.*\.sql$
-#           additional_dependencies: ['sqlglot>=25']
+#           additional_dependencies: ['sqlglot>=30.8']
 
 - id: erdify
   name: Generate ERD diagram

@@ -45,9 +45,8 @@ Pydantic, sqlglot and Django releases and the newest SQLAlchemy they accept,
 and a Django or SQLAlchemy series that is out but missing from the CI matrix is
 reported. Known gaps are listed under
 [Limitations](frameworks/limitations.md) and in the issue tracker, for example
-SQLModel 0.0.32+ applying `Field()` settings given in `Annotated[...]`
-metadata, which erdify doesn't read yet
-([#295](https://github.com/devsuit-berlin/erdify/issues/295)).
+settings inside SQLModel's `Field(sa_column=Column(...))`, which erdify doesn't
+read yet ([#309](https://github.com/devsuit-berlin/erdify/issues/309)).
 
 ## Using pip
 
