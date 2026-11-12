@@ -1,6 +1,7 @@
 <!--
 Thanks for contributing to erdify! Fill in every section; the "PR description"
-check fails while Summary, Related issues or How it was tested is empty.
+check fails while Summary, Related issues or How it was tested is empty,
+no Type of change is ticked, or Output impact doesn't have exactly one tick.
 Release PRs ("chore: release X.Y.Z") use .github/release-pr-template.md instead.
 -->
 
@@ -22,7 +23,7 @@ Release PRs ("chore: release X.Y.Z") use .github/release-pr-template.md instead.
 
 ## Output impact
 
-<!-- See docs/stability.md. Pick one and explain if it is not "none". -->
+<!-- See docs/stability.md. Tick exactly one, and explain if it is not "None". -->
 
 - [ ] None: the generated diagrams (PlantUML / Mermaid / JSON / HTML) don't change
 - [ ] Output changes: existing diagrams change, so `erdify --check` fails once after upgrading (CHANGELOG `### Output changes`)

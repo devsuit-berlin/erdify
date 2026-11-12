@@ -17,16 +17,21 @@ import sys
 
 #: Sections that must have content of their own.
 DEFAULT_REQUIRED = ("Summary", "Related issues", "How it was tested")
-#: Sections in which at least one box must be ticked.
-DEFAULT_TICKED = ("Type of change", "Output impact")
+#: How many boxes a section needs ticked: "any" (at least one), "one" or "all".
+DEFAULT_TICKED = {"Type of change": "any", "Output impact": "one"}
 
 RELEASE_REQUIRED = ("Release", "What ships", "Highlights", "Upgrade impact")
-RELEASE_TICKED = ("Release checklist",)
+RELEASE_TICKED = {"Release checklist": "all"}
 
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
-_FENCE = re.compile(r"^(```|~~~).*?^\1[^\n]*$", re.DOTALL | re.MULTILINE)
-_HEADING = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
-_TICKED = re.compile(r"^\s*[-*]\s+\[[xX]\]", re.MULTILINE)
+#: A fenced code block, also indented in a list item; an opening line with
+#: more backticks after the fence is inline code, not a fence.
+_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})[^`\n]*\n.*?^[ \t]*\1[ \t]*$", re.DOTALL | re.MULTILINE)
+_HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+_TICKED = re.compile(r"^[ \t]*[-*][ \t]+\[[xX]\]", re.MULTILINE)
+_UNTICKED = re.compile(r"^[ \t]*[-*][ \t]+\[ \]", re.MULTILINE)
+#: The release type's reason, which must not be left empty.
+_WHY = re.compile(r"\*\*Why this type:\*\*[ \t]*\S")
 #: Release template placeholders that mean "not filled in".
 _PLACEHOLDERS = ("X.Y.Z", "#PR — short description", "patch / minor / major")
 
@@ -65,12 +70,20 @@ def problems(title: str, body: str) -> list[str]:
             missing.append(f"section '## {name}' is empty")
         elif release and any(placeholder in text for placeholder in _PLACEHOLDERS):
             missing.append(f"section '## {name}' still has template placeholders")
-    for name in ticked:
+        elif release and name == "Release" and not _WHY.search(text):
+            missing.append("section '## Release' doesn't say why this release type")
+    for name, rule in ticked.items():
         text = found.get(name)
         if text is None:
             missing.append(f"section '## {name}' is missing")
-        elif not _TICKED.search(text):
+            continue
+        count = len(_TICKED.findall(text))
+        if count == 0:
             missing.append(f"section '## {name}' has no ticked box")
+        elif rule == "one" and count > 1:
+            missing.append(f"section '## {name}' must have exactly one ticked box")
+        elif rule == "all" and _UNTICKED.search(text):
+            missing.append(f"section '## {name}' has unticked boxes")
     if missing:
         missing.append(f"Fill in the template: {template}")
     return missing

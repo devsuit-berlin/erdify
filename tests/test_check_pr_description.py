@@ -87,7 +87,7 @@ def test_filled_release_template_passes() -> None:
     body = re.sub(
         r"## Release\n.*?\n## What ships\n.*?\n- #PR — short description \(closes #…\)\n",
         "## Release\n\n- **Version:** 1.4.5 (previous: 1.4.4)\n"
-        "- **Type:** patch\n- **Why:** fixes\n\n"
+        "- **Type:** patch\n- **Why this type:** fixes only\n\n"
         "## What ships\n\n- #320 — batch D (closes #298)\n",
         RELEASE,
         flags=re.DOTALL,
@@ -95,9 +95,18 @@ def test_filled_release_template_passes() -> None:
     body = _fill(
         body,
         {"Highlights": "- Inheritance drawn like SQLAlchemy", "Upgrade impact": "Output changes."},
-        ("`pyproject.toml` `version` bumped",),
+        (),
     )
+    body = body.replace("- [ ] ", "- [x] ")
     assert check.problems("chore: release 1.4.5", body) == []
+    partly = body.replace("- [x] CI green", "- [ ] CI green")
+    assert check.problems("chore: release 1.4.5", partly)[0] == (
+        "section '## Release checklist' has unticked boxes"
+    )
+    no_why = body.replace("- **Why this type:** fixes only", "- **Why this type:**")
+    assert "section '## Release' doesn't say why this release type" in check.problems(
+        "chore: release 1.4.5", no_why
+    )
 
 
 def test_main_reports_errors(monkeypatch, capsys) -> None:
@@ -130,3 +139,27 @@ def test_placeholders_only_count_in_release_prs() -> None:
         "Reads @declared_attr relationships.", "Documents `chore: release X.Y.Z` titles."
     )
     assert check.problems("docs: release flow", body) == []
+
+
+def test_output_impact_needs_exactly_one_box() -> None:
+    body = _filled_default().replace("- [ ] Breaking", "- [x] Breaking")
+    assert check.problems("fix: something", body)[0] == (
+        "section '## Output impact' must have exactly one ticked box"
+    )
+
+
+def test_inline_code_and_indented_fences() -> None:
+    body = _filled_default().replace(
+        "Reads @declared_attr relationships.",
+        "Reads @declared_attr relationships.\n```uv run pytest```",
+    )
+    body = body.replace(
+        "tests/test_declared_attr.py, ground truth.",
+        "- step\n  ```markdown\n  ## Summary\n  ```\n\n```text\nlog\n```",
+    )
+    assert check.problems("fix: something", body) == []
+
+
+def test_bare_heading_marker_does_not_take_the_next_line() -> None:
+    body = "##\nSummary\n" + _filled_default()
+    assert check.sections(body)["Summary"] == "Reads @declared_attr relationships."

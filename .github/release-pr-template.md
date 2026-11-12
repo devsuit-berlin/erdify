@@ -32,6 +32,8 @@ the `rev:` references only. Land anything else in its own PR first.
 
 ## Release checklist
 
+<!-- Every box must be ticked; tick an item that doesn't apply and say so ("n/a"). -->
+
 - [ ] `pyproject.toml` `version` bumped and `uv lock` run (the `erdify` entry in `uv.lock` matches)
 - [ ] `CHANGELOG.md`: `[Unreleased]` entries moved under `## [X.Y.Z] - YYYY-MM-DD`, an empty `[Unreleased]` kept, compare links updated (`[Unreleased]` and `[X.Y.Z]`)
 - [ ] `rev: vX.Y.Z` updated in `.pre-commit-hooks.yaml` and `docs/usage/ci.md`

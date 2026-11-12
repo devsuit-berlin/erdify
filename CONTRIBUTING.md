@@ -302,8 +302,8 @@ git push origin feature/your-feature-name
 Then open a Pull Request on GitHub. The description is pre-filled from
 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md); fill in
 every section. The **PR description** check fails while Summary, Related
-issues or How it was tested is empty, or no box is ticked under Type of change
-or under Output impact. It re-runs when you edit the description.
+issues or How it was tested is empty, no box is ticked under Type of change,
+or Output impact doesn't have exactly one ticked box. It re-runs when you edit the description.
 
 - Title in Conventional Commits form (`fix: ...`, `feat: ...`)
 - Link every issue the PR resolves ("Closes #123")
