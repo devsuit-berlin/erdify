@@ -692,13 +692,13 @@ def test_column_type_resolves_to_the_enum_as_the_dialect_folds_names(tmp_path: P
     entities, _ = _parse_sql(
         tmp_path,
         """
-        CREATE TABLE t (id INTEGER PRIMARY KEY, m mood, d MyDomain);
+        CREATE TABLE t (id INTEGER PRIMARY KEY, m mood, d MyDomain, x "MyDomain");
         CREATE TYPE Mood AS ENUM ('happy', 'sad');
         """,
         dialect="postgres",
     )
     types = {f.name: f.type_str for f in entities["t"].fields}
-    assert types == {"id": "int", "m": "Mood", "d": "mydomain"}
+    assert types == {"id": "int", "m": "Mood", "d": "mydomain", "x": "MyDomain"}
 
 
 def test_schema_qualified_column_type_keeps_its_schema(tmp_path: Path) -> None:

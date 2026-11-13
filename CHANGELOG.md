@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- SQL: a column typed with a quoted enum name (`"order state"`) or with an
-  unquoted name in another case (`mood` for `CREATE TYPE Mood`) is matched to
-  the enum, so the enum is drawn; the type is read without its quotes ([SQL](https://erdify.devsuit.io/frameworks/sql/), #328).
+- SQL (`--sql-dialect postgres`): a column typed with a quoted enum name
+  (`"order state"`) or with an unquoted name in another case (`mood` for
+  `CREATE TYPE Mood`) is matched to the enum, so the enum is drawn. Any quoted
+  user-defined column type (an enum or not) is read without its quotes and
+  keeps its case (`"MyDomain"` → `MyDomain`, was `"mydomain"`) ([SQL](https://erdify.devsuit.io/frameworks/sql/), #328).
 - Docs: the Frameworks overview said a field declared in several bases always
   resolves like Python's MRO, and that every mixin's columns are inherited;
   Django follows its `ModelBase` instead, and a plain (non-`Model`) mixin adds
