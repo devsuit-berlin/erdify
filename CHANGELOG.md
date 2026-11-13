@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Docs: the Frameworks overview said a field declared in several bases always
+  resolves like Python's MRO, and that every mixin's columns are inherited;
+  Django follows its `ModelBase` instead, and a plain (non-`Model`) mixin adds
+  no fields (#272, #280). The Django page said any class in the MRO could hide
+  an abstract base's field; only a class earlier in the MRO does.
+
 ## [1.5.2] - 2026-11-13
 
 ### Fixed

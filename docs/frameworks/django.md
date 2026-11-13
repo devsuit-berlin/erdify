@@ -163,7 +163,8 @@ As in Django:
 Which copy of a field a model gets follows Django, not Python's attribute
 lookup. Along the MRO, each direct abstract base adds the fields it has (its
 own and those it copied) unless the name is already taken: by the model's own
-body, an earlier base, or any name another class in the MRO binds. With two
+body, or by a class earlier in the MRO (an earlier base's field, or any name a
+plain mixin, an indirect ancestor or a concrete parent binds). With two
 abstract bases that both provide a field, the first copy wins:
 
 ```python

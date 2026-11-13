@@ -793,10 +793,11 @@ class DjangoDialect(Dialect):
 
         Django's ``ModelBase`` (#272, #280): the class body's fields, then,
         along the MRO, each *direct* base that is an abstract model adds the
-        fields it has itself (its own and those it copied) unless the name is
-        already taken. Every other class in the MRO only takes names: a
-        concrete parent its fields (they stay in its table, #233), a plain
-        mixin or an indirect ancestor every name its body binds. So a field on
+        fields it has itself (its own and those it copied) unless the body or
+        a class earlier in the MRO already took the name. Every other class in
+        the MRO only takes names: a concrete parent its fields (they stay in
+        its table, #233), a plain mixin or an indirect ancestor every name its
+        body binds. So a field on
         a plain mixin is no column, and a diamond keeps the first copy. A base
         that is not known to be plain (it extends a class outside the scanned
         files) is read like an abstract model.

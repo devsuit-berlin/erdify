@@ -11,10 +11,10 @@ Every source is loaded the way a Django project runs it, and Django's model
 checks (the ``models`` checks of ``manage.py check``) must pass (#287): test
 data that no project could run is caught.
 
-Nothing is skipped silently: known differences, sources Django rejects,
-sources that are not self-contained and deliberate check errors are each
-listed below with a reason. A
-strict ``xfail`` turns into a failure once its issue is fixed, an unlisted
+Nothing is skipped silently: known differences, documented limitations,
+sources Django rejects, sources that are not self-contained and deliberate
+check errors are each listed below with a reason. A strict ``xfail`` turns
+into a failure once its issue is fixed or the limitation is lifted, an unlisted
 rejection or skip fails, and a listed name that no longer exists fails.
 """
 
