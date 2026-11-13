@@ -38,11 +38,14 @@ MODULES = {
 EDGE_CASES_DIR = ROOT / "tests" / "fixtures" / "django_edge_cases"
 EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
 
-# erdify output that differs from Django's schema: pending a fix (an issue), or
-# a documented limitation (docs/frameworks/limitations.md).
-KNOWN_DIFFERENCES: dict[str, str] = {
+# erdify output that differs from Django's schema, pending a fix.
+KNOWN_DIFFERENCES: dict[str, str] = {}
+
+# Documented in docs/frameworks/limitations.md; strict xfails, so that the
+# page is updated once one is supported.
+LIMITATIONS = {
     "test_django.py::TestDjangoCompositePrimaryKey.test_non_literal_key_adds_no_id.src": (
-        "limitation: non-literal CompositePrimaryKey arguments mark no column as the key"
+        "limitations.md: non-literal CompositePrimaryKey arguments mark no column as the key"
     ),
 }
 
@@ -131,10 +134,9 @@ SNIPPETS = django_snippets()
 
 def _param(name: str, value: object) -> object:
     marks = []
-    if name in KNOWN_DIFFERENCES:
-        marks.append(
-            pytest.mark.xfail(reason=KNOWN_DIFFERENCES[name], raises=AssertionError, strict=True)
-        )
+    reason = KNOWN_DIFFERENCES.get(name) or LIMITATIONS.get(name)
+    if reason:
+        marks.append(pytest.mark.xfail(reason=reason, raises=AssertionError, strict=True))
     return pytest.param(value, id=name, marks=marks)
 
 
@@ -212,6 +214,7 @@ def test_known_lists_name_existing_snippets() -> None:
     names = {s.id for s in SNIPPETS} | {p.stem for p in EDGE_CASES}
     listed = (
         set(KNOWN_DIFFERENCES)
+        | set(LIMITATIONS)
         | set(DEGENERATE)
         | set(EXPECTED_CHECK_ERRORS)
         | set(EXPECTED_REJECTED)

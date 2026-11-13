@@ -19,8 +19,8 @@ with an ``__init__.py``) from the model file: the nearest directory with an
 file. The walk never leaves the package chain, so an unrelated ``models``
 directory above the project can't be picked up.
 
-``Meta.app_label`` inherited from an abstract base's ``Meta`` is not read yet
-(the same gap as an inherited ``db_table``, #279).
+A ``Meta.app_label``, also one inherited from an abstract base's ``Meta``
+(#279), takes precedence; the dialect reads it before asking this module.
 
 An ``AppConfig`` chosen explicitly in ``INSTALLED_APPS`` (``"shop.apps.Custom"``)
 is not known to erdify; the app's default config is used instead.
