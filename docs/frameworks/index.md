@@ -202,7 +202,8 @@ class Order(models.Model):
     are, unless a model base declares the field, even one later in the MRO
     (but where the mixin also gives it a default, the first annotation along
     the MRO is the field, as in Pydantic).
-    `ClassVar` and `InitVar` members are not fields. In a dataclass, a
+    `ClassVar` and `InitVar` members are not fields, nor is a dataclass's
+    `KW_ONLY` sentinel (which hides no inherited field). In a dataclass, a
     `ClassVar` / `InitVar` redeclaring a field hides it in every subclass; in
     Pydantic, the annotation found first along the MRO decides whether a name
     is a class variable. In SQLAlchemy, a mapped parent's column also

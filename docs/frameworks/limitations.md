@@ -323,6 +323,11 @@ it deprecated in 2.11, announcing that it becomes a field in Pydantic 3, as in
 a dataclass.
 Annotate a class variable with `ClassVar` to leave it out.
 
+A member whose name starts with an underscore (`_balance: int`) is never
+drawn. That is right for Pydantic, where it is a private attribute, but a
+dataclass field with such a name is a real field
+([#341](https://github.com/devsuit-berlin/erdify/issues/341)).
+
 ## Deferred / Not supported
 
 | Item | Status |
