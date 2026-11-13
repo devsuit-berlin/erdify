@@ -238,7 +238,7 @@ every source (`tests/fixtures/pydantic`, `tests/fixtures/dataclasses`,
 `tests/fixtures/keyless_edge_cases/`, every inline snippet, and every
 annotation a template in `TEMPLATES` is filled with) is executed, and
 `Model.model_fields` / `dataclasses.fields()` are compared with erdify's
-parse: field names, whether a field admits `None`, and which fields name
+parse: field names, whether a field admits `None`, enums, and which fields name
 another model (target, one / many, optional). Keys, table names and type
 display strings are not compared; they are erdify's own. Test models must be
 importable: give a template every import its annotations use. A source the

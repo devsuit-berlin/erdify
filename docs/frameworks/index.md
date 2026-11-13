@@ -199,8 +199,11 @@ class Order(models.Model):
     inherits from a shared base still wins over `Right`'s redeclaration, as
     `Model.model_fields` and `dataclasses.fields()` report it. A plain
     (undecorated) mixin's annotations are not dataclass fields; in Pydantic they
-    are, unless a model base declares the field. `ClassVar` and `InitVar`
-    members are not fields. In SQLAlchemy, a mapped parent's column also
+    are, unless a model base declares the field, even one later in the MRO.
+    `ClassVar` and `InitVar` members are not fields. In a dataclass, a
+    `ClassVar` / `InitVar` redeclaring a field hides it in every subclass; in
+    Pydantic, the annotation found first along the MRO decides whether a name
+    is a class variable. In SQLAlchemy, a mapped parent's column also
     wins over an annotation-only mixin attribute (`x: Mapped[str]`, no value)
     of its subclass, as in SQLAlchemy.
 

@@ -6,7 +6,7 @@ inline snippets of the regression tests, and every annotation the
 parametrized templates in ``TEMPLATES`` are filled with) is loaded twice:
 parsed by erdify from text, and executed as a module. Pydantic's
 ``model_fields`` and ``dataclasses.fields()`` give the fields, inherited ones
-included. Both sides are reduced to field names, whether each admits ``None``,
+included. Both sides are reduced to field names, enums, whether each admits ``None``,
 and which fields name another model of the source (erdify's relationship
 edges: target, one / many, optional). Keys are not compared beyond being
 absent (they exist only with ``--infer-keys``, a guess on names), nor are

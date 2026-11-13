@@ -132,7 +132,7 @@ catalog** `tests/fixtures/sql_edge_cases/` and every inline string with a
 (`tests/ground_truth/keyless_ref.py`): each source runs as a fresh module,
 and the fields come from `Model.model_fields` (after `model_rebuild()`) and
 `dataclasses.fields()` (types resolved in the class that declared the field),
-inherited ones included. Compared: field names, nullability (the type admits
+inherited ones included. Compared: field names, enums, nullability (the type admits
 `None`; a default doesn't count) and nested-model references (target, one /
 many, optional). Keys (`--infer-keys` only), table names and type display
 strings are not. Sources: the Pydantic, dataclass and `scan_filter` fixtures,

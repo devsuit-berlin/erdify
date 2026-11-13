@@ -29,6 +29,10 @@ class _FieldMergeDialect(AnnotatedDialect):
     exposes those of the first model class in its MRO. ``mixin_fields``: the
     annotations of plain classes in the hierarchy also become fields, where no
     model class declares the attribute (the first such class in the MRO wins).
+
+    A ``ClassVar`` / ``InitVar`` redeclaring a field hides it: in a dataclass
+    in every subclass (a pseudo-field passed down), with ``mixin_fields``
+    (Pydantic) only where it is the first annotation of the name in the MRO.
     """
 
     #: Whether a plain (non-model) base's annotations become fields.
@@ -164,9 +168,10 @@ class DataclassDialect(_FieldMergeDialect):
 class PydanticDialect(_FieldMergeDialect):
     """A ``BaseModel`` subclass (directly or transitively), or of ``ctx.base_classes``.
 
-    Pydantic builds ``model_fields`` from the bases' ``model_fields`` like
-    ``dataclasses.fields()`` merges, and a plain mixin's annotations become
-    fields too.
+    Pydantic copies inherited fields from the bases' ``model_fields`` (the
+    first base wins), which matches the ``dataclasses.fields()`` merge; a plain
+    mixin's annotations become fields too, and the first annotation of a name
+    in the MRO decides whether it is a class variable.
     """
 
     kind = "pydantic"

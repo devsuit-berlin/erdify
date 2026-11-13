@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pydantic: with diamond inheritance, a field one base merely inherits wins
   over a later base's redeclaration (`Post(Left, Right)` gets `Left`'s copy),
   as Pydantic merges its bases' `model_fields`; erdify followed Python's
-  attribute lookup instead.
+  attribute lookup instead. Likewise a model base's field now wins over a
+  plain mixin's annotation of the same name, even when the mixin comes first
+  in the MRO.
 - Dataclasses: an annotation on a plain (undecorated) mixin is no longer drawn
   as a field; `dataclasses.fields()` ignores it. A Pydantic model still gets a
   plain mixin's annotations as fields, as Pydantic does.
@@ -34,8 +36,9 @@ Pydantic models and dataclasses against `Model.model_fields` and
 
 - Pydantic / dataclass / SQLModel diagrams lose `ClassVar` (and dataclass
   `InitVar`) members, a dataclass loses the columns of undecorated mixins, and
-  a Pydantic model with diamond inheritance may get another base's field (its
-  type, nullability, or a relationship instead of a column). Regenerate the
+  a Pydantic model with diamond inheritance, or with a plain mixin that
+  redeclares a model base's field, may get another base's field (its type,
+  nullability, or a relationship instead of a column). Regenerate the
   diagram once if you gate CI on `--check`.
 
 ## [1.5.3] - 2026-11-13
