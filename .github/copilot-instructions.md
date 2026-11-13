@@ -59,6 +59,8 @@ without extra work.
 
 - A mismatch is a bug in erdify (or in the source), not in the harness. Fix it,
   or file an issue and add the source to `KNOWN_DIFFERENCES` (a strict xfail).
+  A limitation documented in `docs/frameworks/limitations.md` is listed in
+  `LIMITATIONS` instead (also a strict xfail).
 - Nothing is skipped silently: a source Django rejects or can't load fails the
   test unless it is listed, with a reason, in `EXPECTED_REJECTED` /
   `EXPECTED_UNLOADABLE`.

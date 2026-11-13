@@ -171,7 +171,8 @@ catalog in `tests/fixtures/django_edge_cases/`, and every inline snippet in
 `tests/test_*.py`) with Django itself and compares the schema Django builds with
 erdify's parse. A Django snippet you add to a test is picked up automatically.
 If it shows a real erdify bug you aren't fixing in the same change, open an
-issue and list the source in `KNOWN_DIFFERENCES`. A source Django can't load or
+issue and list the source in `KNOWN_DIFFERENCES`; a documented limitation goes in
+`LIMITATIONS`. A source Django can't load or
 rejects must be listed in `EXPECTED_UNLOADABLE` / `EXPECTED_REJECTED`; nothing is
 skipped silently.
 

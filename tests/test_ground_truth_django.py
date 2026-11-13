@@ -11,10 +11,10 @@ Every source is loaded the way a Django project runs it, and Django's model
 checks (the ``models`` checks of ``manage.py check``) must pass (#287): test
 data that no project could run is caught.
 
-Nothing is skipped silently: known differences, sources Django rejects,
-sources that are not self-contained and deliberate check errors are each
-listed below with a reason. A
-strict ``xfail`` turns into a failure once its issue is fixed, an unlisted
+Nothing is skipped silently: known differences, documented limitations,
+sources Django rejects, sources that are not self-contained and deliberate
+check errors are each listed below with a reason. A strict ``xfail`` turns
+into a failure once its issue is fixed or the limitation is lifted, an unlisted
 rejection or skip fails, and a listed name that no longer exists fails.
 """
 
@@ -38,11 +38,14 @@ MODULES = {
 EDGE_CASES_DIR = ROOT / "tests" / "fixtures" / "django_edge_cases"
 EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
 
-# erdify output that differs from Django's schema: pending a fix (an issue), or
-# a documented limitation (docs/frameworks/limitations.md).
-KNOWN_DIFFERENCES: dict[str, str] = {
+# erdify output that differs from Django's schema, pending a fix.
+KNOWN_DIFFERENCES: dict[str, str] = {}
+
+# Documented in docs/frameworks/limitations.md; strict xfails, so that the
+# page is updated once one is supported.
+LIMITATIONS = {
     "test_django.py::TestDjangoCompositePrimaryKey.test_non_literal_key_adds_no_id.src": (
-        "limitation: non-literal CompositePrimaryKey arguments mark no column as the key"
+        "limitations.md: non-literal CompositePrimaryKey arguments mark no column as the key"
     ),
 }
 
@@ -131,10 +134,9 @@ SNIPPETS = django_snippets()
 
 def _param(name: str, value: object) -> object:
     marks = []
-    if name in KNOWN_DIFFERENCES:
-        marks.append(
-            pytest.mark.xfail(reason=KNOWN_DIFFERENCES[name], raises=AssertionError, strict=True)
-        )
+    reason = KNOWN_DIFFERENCES.get(name) or LIMITATIONS.get(name)
+    if reason:
+        marks.append(pytest.mark.xfail(reason=reason, raises=AssertionError, strict=True))
     return pytest.param(value, id=name, marks=marks)
 
 
@@ -212,6 +214,7 @@ def test_known_lists_name_existing_snippets() -> None:
     names = {s.id for s in SNIPPETS} | {p.stem for p in EDGE_CASES}
     listed = (
         set(KNOWN_DIFFERENCES)
+        | set(LIMITATIONS)
         | set(DEGENERATE)
         | set(EXPECTED_CHECK_ERRORS)
         | set(EXPECTED_REJECTED)

@@ -180,7 +180,8 @@ class Order(models.Model):
 
     Mixins / abstract bases (e.g. a SQLAlchemy mixin without `__tablename__`, or a
     Django `class Meta: abstract = True` base) are not drawn as tables, but their
-    columns are inherited into concrete entities. A Django model subclassing a
+    columns are inherited into concrete entities. In Django only abstract models
+    pass fields on: a plain mixin that isn't a `models.Model` adds none. A Django model subclassing a
     *concrete* model is the exception: it gets its own table linked 1:1 to the
     parent ([multi-table inheritance](django.md#inheritance)). SQLAlchemy works the
     same way for a subclass of a mapped class: with a `__tablename__` of its own
@@ -188,7 +189,10 @@ class Order(models.Model):
     (or with `__tablename__ = None`: single-table inheritance) it is not drawn
     and its columns are added to the parent's table. An attribute declared in
     more than one base resolves like Python's MRO: the class body wins, then the
-    first base that declares it. In SQLAlchemy, a mapped parent's column also
+    first base that declares it. Django resolves it as its `ModelBase` builds
+    the model: the class body wins, then, along the MRO, the first copy a
+    direct abstract base passes on, unless a class earlier in the MRO already
+    binds the name ([Django inheritance](django.md#inheritance)). In SQLAlchemy, a mapped parent's column also
     wins over an annotation-only mixin attribute (`x: Mapped[str]`, no value)
     of its subclass, as in SQLAlchemy.
 

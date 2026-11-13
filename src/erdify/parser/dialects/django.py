@@ -616,9 +616,10 @@ class DjangoDialect(Dialect):
         """The model a Django ``"self"`` relation declared in class ``name`` points at.
 
         A concrete model's own fields point at that model (a multi-table child
-        does not copy them, #233). An abstract base's or a plain
-        mixin's fields are copied into the first concrete model that inherits
-        it, so ``"self"`` points there (#226).
+        does not copy them, #233). An abstract base's fields (or those of a
+        base not known to be plain, see :meth:`_own_declarations`) are copied
+        into the first concrete model that inherits it, so ``"self"`` points
+        there (#226).
         """
         if self._is_concrete_django_model(name):
             return name
@@ -634,8 +635,8 @@ class DjangoDialect(Dialect):
     def _is_concrete_django_model(self, name: str) -> bool:
         """A Django model with its own table: a ``models.Model`` subclass, not abstract.
 
-        A plain mixin or an abstract base has no table, so a ``"self"``
-        relation declared there belongs to the concrete model that copies it.
+        An abstract base has no table, so a ``"self"`` relation declared there
+        belongs to the concrete model that copies it.
         """
         node = self.classes.all[name]
         return self._inherits_django_model(node) and not self._meta_flag(node, "abstract")
@@ -792,10 +793,11 @@ class DjangoDialect(Dialect):
 
         Django's ``ModelBase`` (#272, #280): the class body's fields, then,
         along the MRO, each *direct* base that is an abstract model adds the
-        fields it has itself (its own and those it copied) unless the name is
-        already taken. Every other class in the MRO only takes names: a
-        concrete parent its fields (they stay in its table, #233), a plain
-        mixin or an indirect ancestor every name its body binds. So a field on
+        fields it has itself (its own and those it copied) unless the body or
+        a class earlier in the MRO already took the name. Every other class in
+        the MRO only takes names: a concrete parent its fields (they stay in
+        its table, #233), a plain mixin or an indirect ancestor every name its
+        body binds. So a field on
         a plain mixin is no column, and a diamond keeps the first copy. A base
         that is not known to be plain (it extends a class outside the scanned
         files) is read like an abstract model.

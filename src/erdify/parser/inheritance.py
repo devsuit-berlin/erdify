@@ -1,8 +1,9 @@
 """Class hierarchy of the parsed files: MRO, merge order and member merging.
 
 Shared by every dialect. A model's fields come from its own body and its
-bases; which declaration wins follows Python's MRO (#228), and the order they
-are listed in follows the pre-MRO recursive merge.
+bases; which declaration wins follows Python's MRO (#228) unless a dialect
+resolves it its own way (Django follows ``ModelBase``, #272), and the order
+they are listed in follows the pre-MRO recursive merge.
 """
 
 import ast
