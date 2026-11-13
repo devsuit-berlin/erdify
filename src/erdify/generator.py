@@ -71,11 +71,17 @@ class _ERGenerator:
 
         A name the format accepts as it is keeps it; an encoded name that
         collides with another one gets a ``_2``, ``_3``, ... suffix. Entities
-        are numbered before enums, each in diagram order.
+        are numbered before enums, each in diagram order. Both an entity's
+        ``name`` and its key in ``entities`` (a relationship target) are
+        mapped, in case a caller's keys differ from the names. Built once per
+        :meth:`generate` call.
         """
         if self._ids is None:
-            keys = [("entity", name) for name in self.entities]
-            keys += [("enum", name) for name in sorted(self._get_used_enums())]
+            entity_names = [e.name for e in self.entities.values()] + list(self.entities)
+            used = sorted(self._get_used_enums())
+            enum_names = [self.enums[n].name for n in used] + used
+            keys = [("entity", name) for name in dict.fromkeys(entity_names)]
+            keys += [("enum", name) for name in dict.fromkeys(enum_names)]
             encoded = {key: self._identifier(key[1]) for key in keys}
             ids: Dict[Tuple[str, str], str] = {}
             taken: set[str] = set()
@@ -514,7 +520,11 @@ class PlantUMLGenerator(_ERGenerator):
 
     @staticmethod
     def _text(text: str) -> str:
-        """Text for a label: ``"`` and ``<`` (markup) as the entities ``&#34;``, ``&#60;``."""
+        """Text on one line: ``"`` and ``<`` (markup) as ``&#34;`` / ``&#60;``.
+
+        A control character (line break) becomes a space.
+        """
+        text = re.sub(r"[\x00-\x1f\x7f]", " ", text)
         return text.replace('"', "&#34;").replace("<", "&#60;")
 
     def _label(self, text: str) -> str:
@@ -527,6 +537,7 @@ class PlantUMLGenerator(_ERGenerator):
         Returns:
             PlantUML source, from ``@startuml`` to ``@enduml``.
         """
+        self._ids = None  # the entities may have changed since the last call
         lines = [
             f"@startuml {self.title}",
             '!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>',
@@ -593,7 +604,7 @@ class PlantUMLGenerator(_ERGenerator):
         head = alias if alias == enum_info.name else f'"{self._text(enum_info.name)}" as {alias}'
         lines = [f"enum {head} << (E,#FFCC00) >> {{"]
         for value in enum_info.values:
-            lines.append(f"  {value}")
+            lines.append(f"  {self._text(value)}")
         lines.append("}")
         return lines
 
@@ -617,10 +628,10 @@ class PlantUMLGenerator(_ERGenerator):
             default = f" = {self._text(default_val)}"
 
         unique = " UK" if field.is_unique and not field.is_primary_key else ""
-        name = field.name
-        if any(c in name for c in ',()"<'):
+        name = self._text(field.name)
+        if name != field.name or any(c in name for c in ",()"):
             # A macro argument: quoted, it may hold a comma or parenthesis.
-            name = f'"{self._text(name)}"'
+            name = f'"{name}"'
 
         # Omit the type suffix entirely when the type is unknown (e.g. an
         # untyped Core Column on a synthesized link table) to avoid a dangling ":".
@@ -719,6 +730,7 @@ class MermaidGenerator(_ERGenerator):
         Returns:
             Mermaid ``erDiagram`` source.
         """
+        self._ids = None  # the entities may have changed since the last call
         lines = ["erDiagram"]
 
         for entity in self.entities.values():

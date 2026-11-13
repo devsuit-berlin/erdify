@@ -226,3 +226,26 @@ def test_link_table_edges_use_references():
     out = generate_mermaid(entities)
     assert '"a b" ||--o{ "order item" : "a b"' in out
     assert '"order item" }o--|| c : "c"' in out
+
+
+class TestReviewFollowUps:
+    def test_plantuml_line_break_becomes_space(self):
+        field = FieldInfo(name="a\nb", type_str="str", default_value="'c\nd'")
+        out = generate_plantuml({"T": _entity("T", field, table="x\ny")})
+        assert 'entity "x y" as T {' in out
+        assert "column(\"a b\") : str = 'c d'" in out
+
+    def test_keys_that_differ_from_names(self):
+        orders = _entity("Order", _pk(), _fk("user_id", "user"), table="orders")
+        user = _entity("User", _pk(), table="user")
+        entities = {"orders": orders, "users": user}
+        for generate in (generate_plantuml, generate_mermaid):
+            out = generate(entities)
+            assert "Order }o--|| User" in out
+
+    def test_generator_reused_after_adding_an_entity(self):
+        entities = {"A": _entity("A", _pk())}
+        gen = MermaidGenerator(entities)
+        gen.generate()
+        entities["B c"] = _entity("B c", _pk())
+        assert '"B c" {' in gen.generate()

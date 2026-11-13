@@ -116,6 +116,8 @@ real names.
 | Enum value | Same as a column: `enum in_progress "in progress"` | Real value |
 | Relationship label, comment, default | Real text; `"`, `#`, `%`, `\`, `&`, `<`, `>` and `~` are written as Mermaid entity codes (`#quot;`, `#lt;`, ...), which Mermaid draws as the character | Real text; `"` and `<` as `&#34;` / `&#60;` |
 
+In both formats a line break (any control character) in a name or text becomes a space.
+
 - An encoded name that collides with another one (`"a b"` and `a_b` both
   become the PlantUML alias `a_b`, or an entity and an enum share a name) gets
   a `_2`, `_3`, ... suffix. A name that is valid as it is keeps it.

@@ -21,14 +21,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Output changes
 
-- Only diagrams with such names change. Mermaid: an entity name that isn't one
+- Diagrams with such names change. Mermaid: an entity name that isn't one
   plain word or starts with a keyword is quoted, an invalid column name or enum
   value is replaced by a valid word with the real name leading its comment
   (`int Item_Key PK "Item Key"`), and `"`, `#`, `%`, `\`, `&`, `<`, `>`, `~`
   in quoted text are written as Mermaid entity codes (`#quot;`, ...).
   PlantUML: an entity or enum alias is one word (`as Order_Items`), a column
   name with `,`, `(`, `)`, `"` or `<` is quoted in its macro, and `"` / `<` in
-  text are written `&#34;` / `&#60;`.
+  text are written `&#34;` / `&#60;`; a line break in a name or default
+  becomes a space.
+- An entity and a used enum of the same name (`Status`) no longer share one
+  block: the enum is `Status_2` in Mermaid and `enum "Status" as Status_2` in
+  PlantUML.
+- A Mermaid type token that starts with a digit or is `pk` / `fk` / `uk` gets
+  a leading `_` (`3D` -> `_3D`).
+- Regenerate the diagram once if you gate CI on `--check` and your schema has
+  such names.
 
 ## [1.5.0] - 2026-11-12
 
