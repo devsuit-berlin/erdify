@@ -231,6 +231,23 @@ DDL SQLite can't run (`ALTER TABLE ... ADD CONSTRAINT`) in `EXPECTED_REJECTED`.
 uv run pytest tests/test_ground_truth_sql.py -rsx
 ```
 
+`tests/test_ground_truth_keyless.py` checks Pydantic models and dataclasses:
+every source (`tests/fixtures/pydantic`, `tests/fixtures/dataclasses`,
+`tests/fixtures/scan_filter`, `docs/examples/pydantic` and
+`docs/examples/dataclass`, the edge-case catalog in
+`tests/fixtures/keyless_edge_cases/`, every inline snippet, and every
+annotation a template in `TEMPLATES` is filled with) is executed, and
+`Model.model_fields` / `dataclasses.fields()` are compared with erdify's
+parse: field names, whether a field admits `None`, and which fields name
+another model (target, one / many, optional). Keys, table names and type
+display strings are not compared; they are erdify's own. Test models must be
+importable: give a template every import its annotations use. A source the
+library refuses on purpose is listed in `EXPECTED_REJECTED`.
+
+```bash
+uv run pytest tests/test_ground_truth_keyless.py -rsx
+```
+
 The supported framework versions are listed in `docs/installation.md`
 ("Supported framework versions"). When you add or drop one, update that table,
 the CI matrix in `.github/workflows/test.yml`, and the changelog together.

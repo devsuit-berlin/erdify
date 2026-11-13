@@ -192,7 +192,14 @@ class Order(models.Model):
     first base that declares it. Django resolves it as its `ModelBase` builds
     the model: the class body wins, then, along the MRO, the first copy a
     direct abstract base passes on, unless a class earlier in the MRO already
-    binds the name ([Django inheritance](django.md#inheritance)). In SQLAlchemy, a mapped parent's column also
+    binds the name ([Django inheritance](django.md#inheritance)). Pydantic and
+    dataclasses merge their bases' fields, each base's own merged set, from the
+    last base to the first: in `Post(Left, Right)` a field that `Left` merely
+    inherits from a shared base still wins over `Right`'s redeclaration, as
+    `Model.model_fields` and `dataclasses.fields()` report it. A plain
+    (undecorated) mixin's annotations are not dataclass fields; in Pydantic they
+    are, unless a model base declares the field. `ClassVar` and `InitVar`
+    members are not fields. In SQLAlchemy, a mapped parent's column also
     wins over an annotation-only mixin attribute (`x: Mapped[str]`, no value)
     of its subclass, as in SQLAlchemy.
 

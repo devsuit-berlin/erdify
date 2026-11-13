@@ -128,6 +128,28 @@ catalog** `tests/fixtures/sql_edge_cases/` and every inline string with a
   always must pass.
 - New SQL parsing support → add an edge-case file for it.
 
+`tests/test_ground_truth_keyless.py` is the Pydantic / dataclass counterpart
+(`tests/ground_truth/keyless_ref.py`): each source runs as a fresh module,
+and the fields come from `Model.model_fields` (after `model_rebuild()`) and
+`dataclasses.fields()` (types resolved in the class that declared the field),
+inherited ones included. Compared: field names, nullability (the type admits
+`None`; a default doesn't count) and nested-model references (target, one /
+many, optional). Keys (`--infer-keys` only), table names and type display
+strings are not. Sources: the Pydantic, dataclass and `scan_filter` fixtures,
+the two docs examples, the **edge-case catalog**
+`tests/fixtures/keyless_edge_cases/`, every inline snippet with a `class` and
+`BaseModel` / `dataclass` (a source with SQLAlchemy, SQLModel or Django words
+belongs to their harness), and every annotation a `str.format` template in
+`TEMPLATES` is filled with by its parametrized tests.
+
+- The same rules apply: a mismatch is an erdify bug (`KNOWN_DIFFERENCES` with
+  an issue), a documented limitation is listed in `LIMITATIONS`, a source the
+  library refuses on purpose in `EXPECTED_REJECTED` and one that is not
+  self-contained in `EXPECTED_UNLOADABLE`, each with a reason.
+- Test models must import what their annotations use; the fixtures, the docs
+  examples and the catalog always must load.
+- New Pydantic / dataclass parsing support → add an edge-case module for it.
+
 - `.github/workflows/upstream.yml` (weekly, not a required check) runs the
   whole suite on the newest releases (newest SQLModel / Pydantic / sqlglot /
   Django from PyPI on top of `uv lock --upgrade`) and

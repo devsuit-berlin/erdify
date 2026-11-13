@@ -47,9 +47,10 @@ class Account(Base):
 
 PYDANTIC = """
 import typing
-from typing import Annotated, Literal, Optional, Union
+from types import NoneType
+from typing import Annotated, Final, Literal, NotRequired, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class OptionalSettings(dict):
@@ -57,6 +58,8 @@ class OptionalSettings(dict):
 
 
 class Account(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)  # col: OptionalSettings
+
     col: {annotation}
 """
 

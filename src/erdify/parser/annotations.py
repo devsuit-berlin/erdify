@@ -30,7 +30,10 @@ MANY_WRAPPERS = frozenset({"WriteOnlyMapped", "DynamicMapped"})
 MAPPED_WRAPPERS = frozenset({"Mapped"}) | MANY_WRAPPERS
 #: Type qualifiers: they say how a field is declared, not what it holds, so a
 #: column's type and nullability are those of the qualified type.
-QUALIFIERS = frozenset({"Final", "InitVar", "Required", "NotRequired", "ReadOnly"})
+QUALIFIERS = frozenset({"Final", "Required", "NotRequired", "ReadOnly"})
+#: Annotations that declare no field at all: a class variable, or a dataclass
+#: ``__init__``-only parameter (``dataclasses.fields()`` leaves both out).
+NON_FIELDS = frozenset({"ClassVar", "InitVar"})
 #: Single-argument collections of a model: a "many" reference.
 MANY_CONTAINERS = frozenset(
     {
@@ -61,6 +64,21 @@ def expr_name(node: ast.expr) -> str | None:
     if isinstance(node, ast.Attribute):
         return node.attr
     return None
+
+
+def is_non_field(node: ast.expr) -> bool:
+    """``ClassVar`` / ``InitVar``, bare, subscripted, qualified or quoted.
+
+    No framework read with annotated members makes a field of either:
+    dataclasses, Pydantic and SQLModel skip them, and SQLAlchemy maps no
+    column for them.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        parsed = parse_quoted(node)
+        return parsed is not None and is_non_field(parsed)
+    if isinstance(node, ast.Subscript):
+        node = node.value
+    return expr_name(node) in NON_FIELDS
 
 
 def is_call_to(value: ast.expr, func_name: str) -> TypeGuard[ast.Call]:

@@ -78,3 +78,29 @@ class TestPydanticParsing:
         _, enums = parse_models_directory(pydantic_models_dir)
         assert "Priority" in enums
         assert "LOW" in enums["Priority"].values
+
+
+class TestPydanticFields:
+    """Fields as ``Model.model_fields`` reports them (#267)."""
+
+    def test_class_var_is_not_a_column(self, tmp_path: Path):
+        (tmp_path / "models.py").write_text(
+            "import typing\n\nfrom pydantic import BaseModel\n\n\n"
+            "class Order(BaseModel):\n"
+            "    registry: typing.ClassVar[dict[str, int]] = {}\n"
+            "    id: int\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Order"].fields] == ["id"]
+
+    def test_plain_mixin_annotation_is_a_field(self, tmp_path: Path):
+        """Unlike a dataclass, a Pydantic model turns a plain mixin's annotations into fields."""
+        (tmp_path / "models.py").write_text(
+            "from pydantic import BaseModel\n\n\n"
+            "class AuditMixin:\n    created_by: str\n\n\n"
+            "class Invoice(BaseModel, AuditMixin):\n    id: int\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert {f.name for f in entities["Invoice"].fields} == {"created_by", "id"}

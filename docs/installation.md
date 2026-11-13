@@ -19,8 +19,8 @@ framework doesn't need to be installed alongside erdify. The version still
 matters: it decides which syntax exists and what schema the framework builds
 from it (default table names, which settings a column takes, and so on). erdify
 follows these versions; CI runs the ones in the "Checked in CI" column. For
-SQLModel, SQLAlchemy, Django and SQL DDL, it checks erdify's output against the schema
-the real framework (for SQL DDL: SQLite) builds (the ground-truth tests). "Current release" is the version in erdify's
+SQLModel, SQLAlchemy, Django, Pydantic, dataclasses and SQL DDL, it checks erdify's output against the schema
+the real framework (for SQL DDL: SQLite; for Pydantic and dataclasses: the classes' own fields) builds (the ground-truth tests). "Current release" is the version in erdify's
 lockfile, which Dependabot keeps up to date.
 
 | Framework | Supported | Checked in CI |
@@ -28,7 +28,7 @@ lockfile, which Dependabot keeps up to date.
 | SQLModel | 0.0.22 and later | 0.0.22 (the oldest), 0.0.32 (see below) and the current release |
 | SQLAlchemy | 2.0, 2.1 (the annotated `Mapped[...]` style) | newest patch release of 2.0 and of 2.1 |
 | Django | 5.2, 6.0, 6.1 | newest patch release of each series |
-| Pydantic | 2 | the current release (fixtures import; ground-truth tests are planned, [#267](https://github.com/devsuit-berlin/erdify/issues/267)) |
+| Pydantic | 2 | the current release |
 | dataclasses | the standard library of each supported Python | every supported Python |
 | SQL DDL (`erdify[sql]`) | sqlglot 30.8 and later | 30.8 (the oldest), 30.17 (see below) and the current release |
 

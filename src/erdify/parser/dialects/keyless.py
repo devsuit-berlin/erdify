@@ -15,21 +15,28 @@ from .annotated import AnnotatedDialect
 from .base import ParseContext
 
 
-class DataclassDialect(AnnotatedDialect):
-    """A class decorated with ``@dataclass`` (bare or called).
+class _FieldMergeDialect(AnnotatedDialect):
+    """A keyless dialect whose classes merge inherited fields like ``dataclasses.fields()``.
 
-    Its members merge like ``dataclasses.fields()`` (:meth:`_dataclass_fields`).
+    A model class (:meth:`owns_fields`) merges each base's fields in reversed
+    MRO, then its own annotations. So in ``Child(Left, Middle)`` an attribute
+    ``Left`` merely inherits still overrides one ``Middle`` redeclares, unlike
+    Python's attribute lookup. A plain class has no fields of its own: it
+    exposes those of the first model class in its MRO. ``mixin_fields``: the
+    annotations of plain classes in the hierarchy also become fields, where no
+    model class declares the attribute (the first such class in the MRO wins).
     """
 
-    kind = "dataclass"
-    keyless = True
+    #: Whether a plain (non-model) base's annotations become fields.
+    mixin_fields: bool = False
 
     def __init__(self, ctx: ParseContext):
         super().__init__(ctx)
-        self._dataclass_cache: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]] = {}
+        self._fields_cache: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]] = {}
 
-    def detect(self, class_node: ast.ClassDef) -> bool:
-        return self._is_dataclass(class_node)
+    def owns_fields(self, class_node: ast.ClassDef) -> bool:
+        """Whether the class is a model class with fields of its own."""
+        return self.detect(class_node)
 
     def merge(
         self,
@@ -37,9 +44,63 @@ class DataclassDialect(AnnotatedDialect):
         merge_order: List[str],
         members: Dict[str, _ClassMembers],
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
-        if self.classes.mro(class_node.name) is not None:
-            return self._dataclass_fields(class_node.name, members)
-        return super().merge(class_node, merge_order, members)
+        if self.classes.mro(class_node.name) is None:
+            return super().merge(class_node, merge_order, members)
+        fields, rels = self._effective_fields(class_node.name, members)
+        # The cache is shared across entities, and building an entity mutates
+        # fields (e.g. is_unique), so each entity gets its own copies.
+        return {attr: replace(f) for attr, f in fields.items()}, dict(rels)
+
+    def _effective_fields(
+        self, name: str, members: Dict[str, _ClassMembers]
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """A class's fields as the framework computes them; cached per parse.
+
+        A class's own members do not depend on the entity being built.
+        """
+        memo = self._fields_cache
+        if name in memo:
+            return memo[name]
+        mro = self.classes.mro(name) or [name]
+        if not self.owns_fields(self.classes.all[name]):
+            owner = next((c for c in mro if self.owns_fields(self.classes.all[c])), None)
+            result = self._effective_fields(owner, members) if owner is not None else ({}, {})
+            memo[name] = result
+            return result
+        synthetic: Dict[str, _ClassMembers] = {}
+        for base in mro[:0:-1]:
+            base_fields, base_rels = self._effective_fields(base, members)
+            synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels])
+        synthetic[name] = members[name]
+        fields, rels = merge_members([*mro[:0:-1], name], synthetic, self)
+        if self.mixin_fields:
+            fields, rels = dict(fields), dict(rels)
+            for base in mro:
+                if self.owns_fields(self.classes.all[base]):
+                    continue
+                base_fields, base_rels, _ = members[base]
+                for attr, field in base_fields.items():
+                    if attr not in fields and attr not in rels:
+                        fields[attr] = field
+                for attr, rel in base_rels.items():
+                    if attr not in fields and attr not in rels:
+                        rels[attr] = rel
+        memo[name] = (fields, rels)
+        return fields, rels
+
+
+class DataclassDialect(_FieldMergeDialect):
+    """A class decorated with ``@dataclass`` (bare or called).
+
+    Its members merge like ``dataclasses.fields()``: an undecorated base adds
+    no fields, not even annotations of its own.
+    """
+
+    kind = "dataclass"
+    keyless = True
+
+    def detect(self, class_node: ast.ClassDef) -> bool:
+        return self._is_dataclass(class_node)
 
     @staticmethod
     def _is_dataclass(class_node: ast.ClassDef) -> bool:
@@ -57,70 +118,18 @@ class DataclassDialect(AnnotatedDialect):
                     return True
         return False
 
-    def _dataclass_fields(
-        self, name: str, members: Dict[str, _ClassMembers]
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
-        """The members of a dataclass entity: ``dataclasses.fields()`` plus mixins.
 
-        First the stdlib result (:meth:`_effective_dataclass_fields`). Then
-        annotations of undecorated mixins in the hierarchy, which the stdlib
-        ignores but erdify has always shown, fill in only attributes no
-        dataclass declares (the first such mixin in the MRO wins).
-        """
-        fields, rels = self._effective_dataclass_fields(name, members)
-        # The cache is shared across entities, and building an entity mutates
-        # fields (e.g. is_unique), so each entity gets its own copies.
-        fields, rels = {attr: replace(f) for attr, f in fields.items()}, dict(rels)
-        for base in self.classes.mro(name) or [name]:
-            if self._is_dataclass(self.classes.all[base]):
-                continue
-            base_fields, base_rels, _ = members[base]
-            for attr, field in base_fields.items():
-                if attr not in fields and attr not in rels:
-                    fields[attr] = replace(field)
-            for attr, rel in base_rels.items():
-                if attr not in fields and attr not in rels:
-                    rels[attr] = rel
-        return fields, rels
+class PydanticDialect(_FieldMergeDialect):
+    """A ``BaseModel`` subclass (directly or transitively), or of ``ctx.base_classes``.
 
-    def _effective_dataclass_fields(
-        self, name: str, members: Dict[str, _ClassMembers]
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
-        """A class's ``__dataclass_fields__``, as the stdlib computes it.
-
-        A decorated class merges each base's ``__dataclass_fields__`` in
-        reversed MRO, then its own annotations. So in ``Child(Left, Middle)``
-        an attribute ``Left`` merely inherits still overrides one ``Middle``
-        redeclares. An undecorated class has no fields of its own: it exposes
-        those of the first decorated class in its MRO. Cached per parse; a
-        class's own members do not depend on the entity being built.
-        """
-        memo = self._dataclass_cache
-        if name in memo:
-            return memo[name]
-        mro = self.classes.mro(name) or [name]
-        if not self._is_dataclass(self.classes.all[name]):
-            owner = next((c for c in mro if self._is_dataclass(self.classes.all[c])), None)
-            result = (
-                self._effective_dataclass_fields(owner, members) if owner is not None else ({}, {})
-            )
-            memo[name] = result
-            return result
-        synthetic: Dict[str, _ClassMembers] = {}
-        for base in mro[:0:-1]:
-            base_fields, base_rels = self._effective_dataclass_fields(base, members)
-            synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels])
-        synthetic[name] = members[name]
-        result = merge_members([*mro[:0:-1], name], synthetic, self)
-        memo[name] = result
-        return result
-
-
-class PydanticDialect(AnnotatedDialect):
-    """A ``BaseModel`` subclass (directly or transitively), or of ``ctx.base_classes``."""
+    Pydantic builds ``model_fields`` from the bases' ``model_fields`` like
+    ``dataclasses.fields()`` merges, and a plain mixin's annotations become
+    fields too.
+    """
 
     kind = "pydantic"
     keyless = True
+    mixin_fields = True
 
     def detect(self, class_node: ast.ClassDef) -> bool:
         return self._inherits_basemodel(class_node)

@@ -114,6 +114,34 @@ def sqlalchemy_snippets(headers: dict[str, str]) -> list[Snippet]:
     return found
 
 
+#: Words that mark a literal as a Pydantic / dataclass model source.
+KEYLESS_WORDS = ("BaseModel", "dataclass")
+
+
+def keyless_snippets() -> list[Snippet]:
+    """Sources in ``tests/test_*.py`` that define Pydantic models or dataclasses.
+
+    A source (a literal, or a folded ``+`` concatenation as in
+    :func:`sqlalchemy_snippets`) counts when it contains a ``class`` and one
+    of :data:`KEYLESS_WORDS`, and no SQLAlchemy / SQLModel or Django word: a
+    source mixing frameworks belongs to their harnesses (a dataclass mapped
+    with ``map_imperatively`` is a SQLAlchemy entity).
+    """
+    found: list[Snippet] = []
+    for path in sorted(TESTS_DIR.glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        seen: Counter[str] = Counter()
+        for scope, line, text in _sources(tree, (), _string_constants(tree)):
+            if "class " not in text or not any(word in text for word in KEYLESS_WORDS):
+                continue
+            if any(word in text for word in SQLALCHEMY_WORDS) or "django" in text:
+                continue
+            name = f"{path.name}::{'.'.join(scope) or '<module>'}"
+            seen[name] += 1
+            found.append(Snippet(name if seen[name] == 1 else f"{name}[{seen[name]}]", line, text))
+    return found
+
+
 def _string_constants(tree: ast.Module) -> dict[str, str]:
     """Module-level names bound to a string (also a folded concatenation), last binding wins."""
     constants: dict[str, str] = {}

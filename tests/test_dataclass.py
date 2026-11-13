@@ -64,3 +64,32 @@ class TestDataclassParsing:
         item_fields = {f.name: f for f in entities["Item"].fields}
         assert warehouse_fields["location"].is_nullable is True
         assert item_fields["note"].is_nullable is True
+
+
+class TestNonFields:
+    """Members ``dataclasses.fields()`` leaves out are not columns (#267)."""
+
+    def test_class_var_and_init_var_are_not_columns(self, tmp_path: Path):
+        (tmp_path / "models.py").write_text(
+            "from dataclasses import InitVar, dataclass\n"
+            "from typing import ClassVar\n\n\n"
+            "@dataclass\nclass Order:\n"
+            "    registry: ClassVar[dict[str, int]] = {}\n"
+            "    label: 'ClassVar[str]' = 'order'\n"
+            "    id: int = 0\n"
+            "    seed: InitVar[int] = 0\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Order"].fields] == ["id"]
+
+    def test_class_var_removes_an_inherited_field(self, tmp_path: Path):
+        (tmp_path / "models.py").write_text(
+            "from dataclasses import dataclass\n"
+            "from typing import ClassVar\n\n\n"
+            "@dataclass\nclass Base:\n    id: int\n    amount: float\n\n\n"
+            "@dataclass\nclass Child(Base):\n    amount: ClassVar[float] = 1.0\n",
+            encoding="utf-8",
+        )
+        entities, _ = parse_models_directory(tmp_path)
+        assert [f.name for f in entities["Child"].fields] == ["id"]
