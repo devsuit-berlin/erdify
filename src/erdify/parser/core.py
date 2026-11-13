@@ -8,7 +8,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Tuple
 
-from ..config import EntityInfo, EnumInfo, is_structural_link_table
+from ..config import EntityInfo, EnumInfo, is_structural_link_table, normalize_key_uniqueness
 from .aliases import AliasResolver
 from .common import is_enum_class
 from .dialects import DIALECTS, ParseContext
@@ -188,6 +188,8 @@ class ASTDatabaseParser:
         # #275, #292).
         for dialect in self._ctx.all_dialects():
             dialect.finalize(self._entities)
+        for entity in self._entities.values():
+            normalize_key_uniqueness(entity.fields)
 
         # Third pass: apply exclude patterns
         self._apply_exclude_patterns()

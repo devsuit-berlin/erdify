@@ -54,7 +54,9 @@ outside the parsed files is assumed to reference its implicit `id` (or the
 A `pk = models.CompositePrimaryKey("order", "product")` (Django 5.2) makes
 the named fields (field names or attnames such as `order_id`) the table's
 primary key; no implicit `id` is added. A composite key made only of foreign
-keys, with no other column, is drawn as a link table, like any other.
+keys, with no other column, is drawn as a link table, like any other. A member
+that is unique on its own (`unique=True`, a `OneToOneField`) keeps its `UK`
+and is drawn 1:1 to its target, also through a link table.
 
 A literal `db_column="..."` names the column, on any field including a foreign
 key, a primary key and an explicit `parent_link` (`author = ForeignKey(Author,

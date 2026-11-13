@@ -1046,7 +1046,7 @@ def core_table_fields(call: ast.Call) -> List[FieldInfo]:
     for f in fields:
         if f.is_primary_key:
             f.is_nullable = False  # a primary key is never NULL
-            f.is_unique = False
+    # is_unique stays: the parser clears it on a sole primary key (#331).
     return fields
 
 
@@ -1105,7 +1105,7 @@ def parse_core_column(call: ast.Call) -> FieldInfo | None:
         foreign_table=fk_target,
         index=bool(flag("index")),
         default_value=default_value,
-        is_unique=bool(flag("unique")) and not is_primary_key,
+        is_unique=bool(flag("unique")),  # cleared on a sole primary key (#331)
     )
 
 

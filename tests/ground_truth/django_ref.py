@@ -392,7 +392,9 @@ def _table(model: type[models.Model]) -> Table:
             # A primary key is NOT NULL in the database even with null=True
             # (Django flags that as fields.E007 but still builds the column).
             nullable=f.null and f not in pk_fields,
-            unique=f in unique_fields and f not in pk_fields,
+            # Only a sole primary key is unique by the key; a composite member
+            # keeps its own UNIQUE (#331).
+            unique=f in unique_fields and not (f in pk_fields and len(pk_fields) == 1),
             fk=fk,
         )
     m2m = frozenset(

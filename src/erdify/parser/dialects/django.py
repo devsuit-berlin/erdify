@@ -752,8 +752,8 @@ class DjangoDialect(Dialect):
                 is_primary_key = bool(keyword.value.value)
 
         # ForeignKey(primary_key=True) makes `<name>_id` the table's primary key,
-        # so Django adds no implicit `id` (#224). A PK is never NULL, and its
-        # uniqueness is tracked by is_primary_key, not is_unique.
+        # so Django adds no implicit `id` (#224). A PK is never NULL; is_unique
+        # stays as declared and is cleared later on a sole primary key (#331).
         to_field = self._django_to_field(call)
         # A to_field column of a multi-table parent lives in the parent's table.
         if to_field is not None:
@@ -765,7 +765,7 @@ class DjangoDialect(Dialect):
             is_primary_key=is_primary_key,
             is_foreign_key=True,
             is_nullable=is_nullable and not is_primary_key,
-            is_unique=is_unique and not is_primary_key,
+            is_unique=is_unique,  # cleared on a sole primary key (#331)
             foreign_table=f"{self._django_target_table(target)}.{column}",
         )
         self._fk_targets[id(fk)] = target
@@ -1060,7 +1060,7 @@ class DjangoDialect(Dialect):
             is_primary_key=is_primary_key,
             is_nullable=is_nullable and not is_primary_key,
             default_value=default_value,
-            is_unique=is_unique and not is_primary_key,
+            is_unique=is_unique,  # cleared on a sole primary key (#331)
         )
 
     def _django_choices_enum(self, call: ast.Call) -> str | None:

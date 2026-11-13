@@ -5,7 +5,7 @@ import json
 import re
 from typing import Dict, Iterable, List, Tuple
 
-from .config import EntityInfo, EnumInfo, FieldInfo
+from .config import EntityInfo, EnumInfo, FieldInfo, is_sole_primary_key
 
 #: Pinned Mermaid CDN major version used by the HTML preview format.
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
@@ -165,7 +165,7 @@ class _ERGenerator:
         ``sole_pk`` marks an FK that is the entity's *only* primary-key column
         (the shared-primary-key 1:1): the key makes it unique by definition, so
         it is drawn 1:1 too (#222). In a composite PK the FK alone is not
-        unique and stays N:1.
+        unique and stays N:1, unless it is unique on its own (#331).
         """
         child = "|o" if field.is_unique or sole_pk else "}o"
         parent = "o|" if field.is_nullable else "||"
@@ -212,9 +212,11 @@ class _ERGenerator:
         """Generate relationships through a link table.
 
         A binary association table (two FKs) is drawn as the classic M:N
-        pass-through path. A ternary or higher-order one (three or more FKs)
-        has no single binary cardinality, so it is drawn as a star: one edge
-        from each parent to the link entity (#118).
+        pass-through path; a member that is unique on its own (#331) caps its
+        side at one link row (``||--o|`` / ``|o--||``). A ternary or
+        higher-order one (three or more FKs) has no single binary cardinality,
+        so it is drawn as a star: one edge from each parent to the link
+        entity (#118).
         """
         lines: List[str] = []
         fk_fields = [f for f in link_entity.fields if f.is_foreign_key]
@@ -233,15 +235,21 @@ class _ERGenerator:
         # Arity is decided by the number of FK columns, not by how many targets
         # resolved: a ternary table with one unresolved FK must still be drawn
         # as a (partial) star, never mistaken for a binary M:N (#118).
+        # A member that is unique on its own (#331) gives each parent at most
+        # one link row.
+        unique = {f.name for f in fk_fields if f.is_unique}
         if len(fk_fields) == 2:
             if len(entities_to_link) == 2:
                 entity1, fk1_name = entities_to_link[0]
                 entity2, fk2_name = entities_to_link[1]
-                lines.append(self._edge(entity1.name, "||--o{", link_entity.name, fk1_name))
-                lines.append(self._edge(link_entity.name, "}o--||", entity2.name, fk2_name))
+                many1 = "o|" if fk1_name in unique else "o{"
+                many2 = "|o" if fk2_name in unique else "}o"
+                lines.append(self._edge(entity1.name, f"||--{many1}", link_entity.name, fk1_name))
+                lines.append(self._edge(link_entity.name, f"{many2}--||", entity2.name, fk2_name))
         else:  # three or more FK columns -> star of edges from each parent
             for parent, fk_name in entities_to_link:
-                lines.append(self._edge(parent.name, "||--o{", link_entity.name, fk_name))
+                many = "o|" if fk_name in unique else "o{"
+                lines.append(self._edge(parent.name, f"||--{many}", link_entity.name, fk_name))
 
         return lines
 
@@ -596,7 +604,7 @@ class PlantUMLGenerator(_ERGenerator):
 
         if entity.fields:
             for field in entity.fields:
-                lines.append(f"  {self._format_field(field)}")
+                lines.append(f"  {self._format_field(field, entity.fields)}")
         else:
             lines.append("  ' (no fields)")
 
@@ -613,8 +621,8 @@ class PlantUMLGenerator(_ERGenerator):
         lines.append("}")
         return lines
 
-    def _format_field(self, field: FieldInfo) -> str:
-        """Format a field for PlantUML."""
+    def _format_field(self, field: FieldInfo, fields: List[FieldInfo]) -> str:
+        """Format a field for PlantUML; ``fields`` are the entity's columns."""
         if field.is_primary_key:
             prefix = "primary_key"
         elif field.is_foreign_key:
@@ -632,7 +640,9 @@ class PlantUMLGenerator(_ERGenerator):
                 default_val = default_val.split(".")[-1]
             default = f" = {self._text(default_val)}"
 
-        unique = " UK" if field.is_unique and not field.is_primary_key else ""
+        # A sole primary key is unique by being the key; a composite member
+        # that is unique on its own shows UK (#331).
+        unique = " UK" if field.is_unique and not is_sole_primary_key(field, fields) else ""
         name = self._text(field.name)
         if name != field.name or any(c in name for c in ",()"):
             # A macro argument: quoted, it may hold a comma or parenthesis.
@@ -757,7 +767,7 @@ class MermaidGenerator(_ERGenerator):
         """Generate a Mermaid entity block."""
         lines = [f"    {self._ref(entity.name)} {{"]
         for field in entity.fields:
-            lines.append(f"        {self._format_attr(field)}")
+            lines.append(f"        {self._format_attr(field, entity.fields)}")
         lines.append("    }")
         return lines
 
@@ -771,8 +781,11 @@ class MermaidGenerator(_ERGenerator):
         lines.append("    }")
         return lines
 
-    def _format_attr(self, field: FieldInfo) -> str:
-        """Format a Mermaid attribute line: ``<type> <name> [keys] ["comment"]``."""
+    def _format_attr(self, field: FieldInfo, fields: List[FieldInfo]) -> str:
+        """Format a Mermaid attribute line: ``<type> <name> [keys] ["comment"]``.
+
+        ``fields`` are the entity's columns.
+        """
         type_token = self._mermaid_type(field.type_str)
 
         keys = []
@@ -780,7 +793,7 @@ class MermaidGenerator(_ERGenerator):
             keys.append("PK")
         if field.is_foreign_key:
             keys.append("FK")
-        if field.is_unique and not field.is_primary_key:
+        if field.is_unique and not is_sole_primary_key(field, fields):  # #331
             keys.append("UK")
         key_str = ",".join(keys)
 

@@ -266,11 +266,14 @@ def _fk(column: Any) -> str | None:
 
 def _table(table: Table, mapper: Mapper[Any] | None) -> SchemaTable:
     unique = _unique_columns(table)
+    # Only a sole primary key is unique by the key; a composite member keeps
+    # its own unique (#331).
+    sole_pk = len(table.primary_key.columns) == 1
     columns = {
         c.name: Column(
             pk=c.primary_key,
             nullable=bool(c.nullable) and not c.primary_key,
-            unique=c.name in unique and not c.primary_key,
+            unique=c.name in unique and not (c.primary_key and sole_pk),
             fk=_fk(c),
         )
         for c in table.columns

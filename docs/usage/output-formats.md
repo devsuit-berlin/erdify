@@ -93,8 +93,10 @@ Notes:
   (`user: User | None`, `None | User`, `Optional[User]`, `Union[User, None]`,
   or any of these inside `Annotated[...]`) is drawn `}o--o|`, a required one
   (`user: User`) `}o--||`.
-- A unique non-primary-key column is marked `UK` in the entity block,
-  alongside `PK`/`FK`.
+- A unique column is marked `UK` in the entity block, alongside `PK`/`FK`.
+  A table's only primary-key column is unique by being the key and never
+  gets `UK`; a member of a composite primary key that is unique on its own
+  does (and, as a foreign key, is drawn 1:1, also in a link table).
 - Mermaid has no enum construct, so each used enum is rendered as an entity block
   listing its values; the referencing column keeps the enum name as its type.
 - Attribute types are reduced to a single Mermaid-safe token (e.g. `list[str]`
@@ -191,7 +193,7 @@ Field:
 | `nullable` | boolean | Column accepts `NULL`. |
 | `foreign_table` | string or null | Referenced `table.column` when `foreign_key` is `true`. |
 | `index` | boolean | Column is indexed. |
-| `unique` | boolean | Column has a unique constraint. |
+| `unique` | boolean | Column is unique on its own. Always `false` on a table's only primary-key column, which the key makes unique; `true` on a member of a composite primary key that is unique by itself. |
 | `default` | string or null | Default value as source text, if any. |
 
 Relationship:

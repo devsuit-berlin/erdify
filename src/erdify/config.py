@@ -18,8 +18,11 @@ class FieldInfo:
         foreign_table: Referenced ``"table.column"`` when ``is_foreign_key``.
         index: Column is indexed.
         default_value: Default value as source text, if any.
-        is_unique: Non-primary-key unique constraint (implies a 1:1 relationship
-            when the column is also a foreign key).
+        is_unique: Unique on its own (implies a 1:1 relationship when the
+            column is also a foreign key). Never set on a table's *sole*
+            primary-key column, which the key already makes unique; a member
+            of a composite primary key keeps its own uniqueness (#331), see
+            :func:`normalize_key_uniqueness`.
     """
 
     name: str
@@ -84,6 +87,23 @@ class EntityInfo:
     source: str = "sqlmodel"
     nullable_relationships: List[str] = field(default_factory=list)
     inverse_relationships: Dict[str, str] = field(default_factory=dict)
+
+
+def normalize_key_uniqueness(fields: List[FieldInfo]) -> None:
+    """Clear ``is_unique`` on a sole primary-key column, where it is redundant.
+
+    A member of a composite primary key is not unique by the key, so its own
+    ``unique`` / single-column unique constraint stays (#331). Shared by every
+    parser backend, which keep ``is_unique`` as declared until this runs.
+    """
+    pks = [f for f in fields if f.is_primary_key]
+    if len(pks) == 1:
+        pks[0].is_unique = False
+
+
+def is_sole_primary_key(field: FieldInfo, fields: List[FieldInfo]) -> bool:
+    """Whether ``field`` is the only primary-key column among ``fields``."""
+    return field.is_primary_key and sum(f.is_primary_key for f in fields) == 1
 
 
 def is_structural_link_table(fields: List[FieldInfo]) -> bool:
