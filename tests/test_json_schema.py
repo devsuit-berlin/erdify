@@ -110,3 +110,16 @@ def test_schema_rejects_a_wrong_document() -> None:
     """The schema really constrains the shape (a broken one would accept anything)."""
     document = {"schema_version": 1, "title": "t", "entities": [{"name": "A"}], "enums": []}
     assert list(Draft202012Validator(SCHEMA).iter_errors(document))
+
+
+def test_sql_dialects_match_the_ground_truth_tests() -> None:
+    """A catalog / fixture SQL source is rendered with the dialect its ground truth uses."""
+    from tests.test_ground_truth_sql import DIALECTS
+
+    sources = {
+        name: dialect
+        for name, dialect in DIALECTS.items()
+        # Inline snippets and the docs page's SQL block aren't rendered.
+        if "::" not in name and not name.endswith(".md")
+    }
+    assert sources == render_outputs.SQL_DIALECTS

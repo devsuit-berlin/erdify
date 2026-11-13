@@ -77,6 +77,11 @@ updates:
       cronjob: "0 2 * * 3"
     cooldown:
       default-days: 7
+    ignore:
+      # A Mermaid major lands together with the CDN URL in generator.py
+      # (check.mjs fails when the two differ), by hand.
+      - dependency-name: "mermaid"
+        update-types: ["version-update:semver-major"]
     groups:
       version-updates:
         applies-to: version-updates

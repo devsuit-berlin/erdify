@@ -275,7 +275,12 @@ is blocked). `tests/test_json_schema.py` validates the JSON of the same
 sources against `docs/schema/output-v1.json`, and checks that the keys erdify
 emits, the schema and the tables in `docs/usage/output-formats.md` agree: a
 new JSON key goes into all three. A new fixture directory or catalog module is
-picked up automatically.
+picked up automatically; one that needs a SQL dialect (as in the SQL
+ground-truth `DIALECTS`, a test checks they agree) or `--base-classes` is
+listed in `render_outputs.py`, and one with nothing to draw in its
+`NO_DIAGRAM`. Chromium comes from the build the pinned Puppeteer selects (no
+checksum of our own); it only renders erdify's output, with the network
+blocked. PlantUML is pinned and checksum-verified in the workflow.
 
 Run the renderer check locally (needs Java and Node):
 

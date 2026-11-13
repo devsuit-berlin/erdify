@@ -20,6 +20,8 @@ const require = createRequire(import.meta.url);
 const MERMAID_JS = require.resolve("mermaid/dist/mermaid.min.js");
 // The CDN script erdify's HTML output loads (generator.MERMAID_CDN).
 const CDN_PREFIX = "https://cdn.jsdelivr.net/npm/mermaid@";
+const MERMAID_VERSION = require("mermaid/package.json").version;
+const MERMAID_MAJOR = MERMAID_VERSION.split(".")[0];
 
 const outDir = process.argv[2];
 if (!outDir) {
@@ -83,7 +85,7 @@ if (failures.length) {
 }
 console.log(
   `Rendered ${mermaidFiles.length} Mermaid diagrams and ${htmlFiles.length} HTML pages ` +
-    `with Mermaid ${require("mermaid/package.json").version}`,
+    `with Mermaid ${MERMAID_VERSION}`,
 );
 
 async function checkHtml(browser, file) {
@@ -99,6 +101,11 @@ async function checkHtml(browser, file) {
     const url = request.url();
     if (url.startsWith("file:")) return request.continue();
     if (url.startsWith(CDN_PREFIX)) {
+      // The page must ask for the major this check renders with.
+      const major = url.slice(CDN_PREFIX.length).split(/[./]/)[0];
+      if (major !== MERMAID_MAJOR) {
+        problems.push(`the page loads mermaid@${major}, the check has Mermaid ${MERMAID_VERSION}`);
+      }
       servedMermaid = true;
       return request.respond({
         status: 200,
@@ -111,23 +118,23 @@ async function checkHtml(browser, file) {
   });
   try {
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
-    await page.waitForFunction(
-      () => {
-        const pre = document.querySelector("pre.mermaid");
-        return pre && pre.getAttribute("data-processed") === "true";
-      },
-      { timeout: 15000 },
-    );
-    const state = await page.evaluate(() => {
-      const pre = document.querySelector("pre.mermaid");
-      return {
-        svg: Boolean(pre.querySelector("svg")),
-        error: /Syntax error|Parse error/i.test(pre.textContent || ""),
-      };
-    });
+    // Wait for the end state, the SVG: Mermaid marks the block processed
+    // before its async render finishes, and a failed render logs nothing at
+    // the default log level. No SVG within the timeout is the failure.
+    const rendered = await page
+      .waitForSelector("pre.mermaid svg", { timeout: 15000 })
+      .then(() => true)
+      .catch(() => false);
     if (!servedMermaid) problems.push(`the page does not load Mermaid from ${CDN_PREFIX}…`);
-    if (!state.svg) problems.push("no SVG rendered");
-    if (state.error) problems.push("Mermaid shows an error");
+    if (!rendered) {
+      problems.push("no SVG rendered");
+    } else {
+      // A syntax error is rendered too: as an SVG that shows the error.
+      const error = await page.evaluate(() =>
+        /Syntax error|Parse error/i.test(document.querySelector("pre.mermaid").textContent || ""),
+      );
+      if (error) problems.push("Mermaid shows an error");
+    }
   } catch (e) {
     problems.push(String(e && e.message ? e.message : e));
   } finally {

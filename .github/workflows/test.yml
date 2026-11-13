@@ -260,27 +260,16 @@ jobs:
           [[ "$SQLGLOT" != locked ]] && extra+=(--with "sqlglot==$SQLGLOT")
           uv run "${extra[@]}" pytest tests/test_ground_truth_sql.py tests/test_sql.py -rsx
 
-  # README coverage badge. Datadog exposes no public badge endpoint, so the
-  # percentage is published as a shields.io endpoint payload at
-  # https://raw.githubusercontent.com/devsuit-berlin/erdify/badges/coverage.json
-  #
-  # The payload lives on the orphan `badges` branch of this repository rather
-  # than in a Gist or a third-party badge service: the repository then owns the
-  # badge data, so nothing breaks when a contributor's account or token goes
-  # away, and the built-in GITHUB_TOKEN is the only credential involved.
-  #
-  # A separate job because it needs `contents: write`, which the test matrix
-  # must not have. It recomputes coverage instead of taking an artifact from the
-  # matrix — a 20-second test run is cheaper than pinning two more actions in a
-  # repository whose Actions allowlist is deliberately narrow.
   # Real renderers (#268): every fixture, edge-case catalog module and docs
   # example is written in every format (scripts/render_outputs.py). PlantUML
   # checks the .puml files; the real Mermaid renders the .mmd files and every
   # HTML page in headless Chromium (scripts/renderers/check.mjs), with the
   # page's CDN request answered by the pinned local Mermaid and all other
   # network blocked. The JSON is validated against docs/schema/output-v1.json
-  # by tests/test_json_schema.py in the test job. No third-party actions: the
-  # Actions allowlist only takes GitHub-owned ones (plus setup-uv).
+  # by tests/test_json_schema.py in the test job. Only GitHub-owned actions
+  # (plus setup-uv): the Actions allowlist is narrow (GitHub-owned, verified
+  # creators, setup-uv). Chromium comes from the build Puppeteer pins, without
+  # a checksum of our own; it only renders erdify's output, network blocked.
   renderers:
     name: Real renderers (PlantUML, Mermaid, HTML)
     runs-on: ubuntu-latest
@@ -326,6 +315,19 @@ jobs:
           npx --no-install puppeteer browsers install chrome-headless-shell
           node check.mjs "$RUNNER_TEMP/out"
 
+  # README coverage badge. Datadog exposes no public badge endpoint, so the
+  # percentage is published as a shields.io endpoint payload at
+  # https://raw.githubusercontent.com/devsuit-berlin/erdify/badges/coverage.json
+  #
+  # The payload lives on the orphan `badges` branch of this repository rather
+  # than in a Gist or a third-party badge service: the repository then owns the
+  # badge data, so nothing breaks when a contributor's account or token goes
+  # away, and the built-in GITHUB_TOKEN is the only credential involved.
+  #
+  # A separate job because it needs `contents: write`, which the test matrix
+  # must not have. It recomputes coverage instead of taking an artifact from the
+  # matrix — a 20-second test run is cheaper than pinning two more actions in a
+  # repository whose Actions allowlist is deliberately narrow.
   badge:
     name: Coverage badge
     # Pushes to `main` only: a pull request must not move what the default
