@@ -12,7 +12,8 @@ class Invoice(BaseModel, AuditMixin):
 
 
 class Base(BaseModel):
-    created_by: int
+    # Nullable, unlike the mixin's: the harness sees which one wins.
+    created_by: int | None = None
 
 
 class Overridden(AuditMixin, Base):

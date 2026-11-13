@@ -18,7 +18,8 @@ class Plain:
 
 @dataclass
 class Base:
-    value: int
+    # Nullable, unlike Plain's: the harness sees which one wins.
+    value: int | None = None
 
 
 @dataclass

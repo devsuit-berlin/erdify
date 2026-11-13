@@ -86,7 +86,10 @@ class _FieldMergeDialect(AnnotatedDialect):
         hidden = self._non_fields(name)
         for base in mro[:0:-1]:
             base_fields, base_rels, base_hidden = self._effective_fields(base, members)
-            synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels, *base_hidden])
+            # Dataclasses carry ClassVar / InitVar pseudo-fields down to every
+            # subclass; Pydantic has none (its first annotation decides, below).
+            passed_down = [] if self.mixin_fields else [*base_hidden]
+            synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels, *passed_down])
             hidden |= base_hidden
         synthetic[name] = members[name]
         fields, rels = merge_members([*mro[:0:-1], name], synthetic, self)

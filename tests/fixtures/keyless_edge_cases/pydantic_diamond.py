@@ -48,3 +48,21 @@ class Hiding(Base):
 class Tagged(Plain, Hiding):
     # Hiding's class variable is the first annotation of tag in the MRO.
     pass
+
+
+class Counted(BaseModel):
+    count: ClassVar[int] = 0
+
+
+class Counting(Counted):
+    # A field again: the first annotation along the MRO decides.
+    count: int | None = None
+
+
+class Inheriting(Counted):
+    pass
+
+
+class Report(Inheriting, Counting):
+    # Counting's field: Pydantic has no ClassVar pseudo-fields to inherit.
+    pass
