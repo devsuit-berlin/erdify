@@ -6,7 +6,7 @@ from typing import Dict, Iterable, List, Mapping, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import expr_name
-from ..common import _Rel, is_enum_class
+from ..common import _ClassMembers, _Rel, is_enum_class
 from .base import Dialect, ParseContext
 from .django_apps import app_label, app_package
 from .django_contrib import (
@@ -20,6 +20,15 @@ from .django_contrib import (
 
 #: Django relationship field constructs (everything else ending in "Field" is a column).
 DJANGO_RELATIONSHIP_FIELDS = frozenset({"ForeignKey", "OneToOneField", "ManyToManyField"})
+
+#: Django 5.2's composite primary key: a model field that makes no column (#276).
+COMPOSITE_PRIMARY_KEY = "CompositePrimaryKey"
+
+#: Bases that never make a class a Django model (plain mixins may use them).
+_NON_MODEL_BASES = frozenset({"object", "Generic", "Protocol", "ABC"})
+
+#: (field type, call, declaring class) of a model field.
+_Declaration = Tuple[str, ast.Call, str]
 
 #: Conservative Django field -> Python type map for readable, source-consistent
 #: output. Ambiguous/lossy fields (JSONField, FileField, ImageField, custom or
@@ -84,6 +93,7 @@ class DjangoDialect(Dialect):
         self._user_model_name: str | None = None
         self._declaring: Dict[int, ast.ClassDef] | None = None
         self._bindings: Dict[Tuple[int, int], Dict[str, str]] = {}
+        self._declarations: Dict[str, Dict[str, _Declaration]] = {}
 
     @classmethod
     def builtin_classes(
@@ -99,10 +109,10 @@ class DjangoDialect(Dialect):
         return not (self._meta_flag(class_node, "abstract") or self._meta_flag(class_node, "proxy"))
 
     def table_name(self, class_node: ast.ClassDef) -> str | None:
-        """``__tablename__`` if set, else ``class Meta: db_table = "..."``."""
+        """``__tablename__`` if set, else ``Meta.db_table``, also an inherited one (#279)."""
         table_name = super().table_name(class_node)
         if not table_name:
-            db_table = self._meta_value(class_node, "db_table")
+            db_table = self._meta_constant(class_node, "db_table")
             if isinstance(db_table, str):
                 table_name = db_table
         return table_name
@@ -177,8 +187,8 @@ class DjangoDialect(Dialect):
         return f"{label}_{model_name}" if label else model_name
 
     def _app_label(self, class_node: ast.ClassDef) -> str | None:
-        """``Meta.app_label``, else the label of the app the model's file is in."""
-        label = self._meta_value(class_node, "app_label")
+        """``Meta.app_label`` (also inherited, #279), else the label of the model's app."""
+        label = self._meta_constant(class_node, "app_label")
         if isinstance(label, str) and label:
             return label
         model_file = self.ctx.file_of(class_node)
@@ -208,15 +218,36 @@ class DjangoDialect(Dialect):
             excluded.update(self.classes.mro(parent) or self.classes.dfs_order(parent_node, set()))
         return {name for name in names if name not in excluded}
 
-    def drop_on_merge(
+    def merge(
         self,
-        fields: Dict[str, FieldInfo],
-        rels: Dict[str, _Rel],
-        attr: str,
-        class_fields: Dict[str, FieldInfo],
-        class_rels: Dict[str, _Rel],
+        class_node: ast.ClassDef,
+        merge_order: List[str],
+        members: Dict[str, _ClassMembers],
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """Take each field from the class whose declaration Django keeps.
+
+        Which one that is follows Django, not Python attribute lookup
+        (:meth:`_own_declarations`, #272, #280).
+        """
+        fields: Dict[str, FieldInfo] = {}
+        rels: Dict[str, _Rel] = {}
+        for attr, (field_type, _call, owner) in self._own_declarations(class_node).items():
+            owner_fields, owner_rels, _ = members.get(owner, ({}, {}, []))
+            if field_type in ("ForeignKey", "OneToOneField"):
+                key = f"{attr}_id"
+                if key in owner_fields:
+                    fields[key] = owner_fields[key]
+            elif field_type == "ManyToManyField":
+                if attr in owner_rels:
+                    rels[attr] = owner_rels[attr]
+            elif attr in owner_fields:
+                fields[attr] = owner_fields[attr]
+        return fields, rels
+
+    def drop_on_listing(
+        self, fields: Dict[str, FieldInfo], rels: Dict[str, _Rel], attr: str
     ) -> None:
-        """Drop whatever earlier classes stored for a redeclared Django attribute.
+        """A Django body's redeclaration moves the attribute to the body's position.
 
         A Django attribute is stored under a key that depends on its kind
         (relationship ``owner`` vs. FK column ``owner_id``, #224), so all of
@@ -228,19 +259,73 @@ class DjangoDialect(Dialect):
         if inherited_fk is not None and inherited_fk.is_foreign_key:
             del fields[f"{attr}_id"]
 
-    def drop_on_listing(
-        self, fields: Dict[str, FieldInfo], rels: Dict[str, _Rel], attr: str
-    ) -> None:
-        """A Django body's redeclaration moves the attribute to the body's position."""
-        self.drop_on_merge(fields, rels, attr, {}, {})
+    def unique_columns(self, class_node: ast.ClassDef) -> Tuple[Set[str], Set[str]]:
+        """Columns ``Meta`` makes unique on their own; Django ignores ``__table_args__`` (#274).
+
+        A single-field, unconditional ``UniqueConstraint(fields=[...])`` in
+        ``Meta.constraints``, or a one-field ``Meta.unique_together`` entry.
+        Composite, conditional (``condition=``) and expression constraints
+        don't make one column unique. ``Meta`` may be inherited (#279).
+        """
+        declared = self._own_declarations(class_node)
+        columns: Set[str] = set()
+        for group in self._meta_unique_groups(class_node):
+            if len(group) != 1:
+                continue
+            name = group[0]
+            # A field name or an attname (`owner_id`), as Meta.get_field() accepts.
+            if declared.get(name, ("",))[0] in ("ForeignKey", "OneToOneField"):
+                name = f"{name}_id"
+            columns.add(name)
+        return set(), columns
+
+    def _meta_unique_groups(self, class_node: ast.ClassDef) -> List[Tuple[str, ...]]:
+        """The field-name groups of ``Meta.constraints`` / ``Meta.unique_together``.
+
+        Only literal names count; a conditional or expression constraint, or
+        one whose fields aren't literal, is left out.
+        """
+        groups: List[Tuple[str, ...]] = []
+        constraints = self._meta_option(class_node, "constraints")
+        if isinstance(constraints, (ast.List, ast.Tuple)):
+            for item in constraints.elts:
+                if not (isinstance(item, ast.Call) and expr_name(item.func) == "UniqueConstraint"):
+                    continue
+                if item.args or any(
+                    kw.arg == "condition"
+                    and not (isinstance(kw.value, ast.Constant) and kw.value.value is None)
+                    for kw in item.keywords
+                ):
+                    continue  # expressions / a partial constraint
+                names = next(
+                    (_literal_names(kw.value) for kw in item.keywords if kw.arg == "fields"), None
+                )
+                if names:
+                    groups.append(names)
+        together = self._meta_option(class_node, "unique_together")
+        if isinstance(together, (ast.List, ast.Tuple)) and together.elts:
+            # Django's normalize_together(): a flat ("a", "b") is one group.
+            flat = _literal_names(together)
+            if flat is not None:
+                groups.append(flat)
+            else:
+                for item in together.elts:
+                    names = _literal_names(item)
+                    if names:
+                        groups.append(names)
+        return groups
 
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
-        """Add the parent links and Django's implicit ``id`` primary key."""
+        """Add the composite key, parent links and Django's implicit ``id`` primary key."""
+        self._mark_composite_primary_key(entity, class_node)
         super().finish(entity, class_node)
         self._add_parent_links(entity, class_node)
         # Django implicitly adds an `id` primary key (BigAutoField since Django 3.2)
-        # when no field declares primary_key=True and there is no parent link.
-        if not any(f.is_primary_key for f in entity.fields):
+        # when no field declares primary_key=True and there is no parent link,
+        # nor a composite key (even one whose fields erdify can't read).
+        if not any(f.is_primary_key for f in entity.fields) and (
+            self._composite_primary_key(class_node) is None
+        ):
             entity.fields.insert(
                 0,
                 FieldInfo(
@@ -249,6 +334,42 @@ class DjangoDialect(Dialect):
                     is_primary_key=True,
                 ),
             )
+
+    def _composite_primary_key(self, class_node: ast.ClassDef) -> List[str] | None:
+        """The column keys of a ``CompositePrimaryKey`` the model has, if any (#276).
+
+        Its arguments name fields or attnames (``order`` / ``order_id``); a
+        ``ForeignKey`` is the ``<name>_id`` column. Non-literal arguments are
+        left out, so the list may be empty.
+        """
+        declared = self._own_declarations(class_node)
+        call = next(
+            (c for t, c, _ in reversed(declared.values()) if t == COMPOSITE_PRIMARY_KEY), None
+        )
+        if call is None:
+            return None
+        keys: List[str] = []
+        for arg in call.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                name = arg.value
+                if declared.get(name, ("",))[0] in ("ForeignKey", "OneToOneField"):
+                    name = f"{name}_id"
+                keys.append(name)
+        return keys
+
+    def _mark_composite_primary_key(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
+        """Make the columns of a ``CompositePrimaryKey`` the primary key (#276).
+
+        Each column keeps its own ``unique``: it is not a key on its own, and
+        Django adds its UNIQUE constraint.
+        """
+        keys = self._composite_primary_key(class_node)
+        if not keys:
+            return
+        for f in entity.fields:
+            if f.name in keys:
+                f.is_primary_key = True
+                f.is_nullable = False
 
     def _concrete_parents(self, class_node: ast.ClassDef) -> List[str]:
         """The concrete models ``class_node`` inherits a table link to, in base order.
@@ -427,6 +548,70 @@ class DjangoDialect(Dialect):
                 value = assigned.value if isinstance(assigned, ast.Constant) else None
         return value
 
+    def _meta_constant(self, class_node: ast.ClassDef, attr: str) -> object | None:
+        """A ``Meta`` option's constant value, also an inherited one (#279); else None."""
+        value = self._meta_option(class_node, attr)
+        return value.value if isinstance(value, ast.Constant) else None
+
+    def _meta_option(self, class_node: ast.ClassDef, attr: str) -> ast.expr | None:
+        """The expression a model's ``Meta`` assigns to ``attr``, as Django reads it (#279).
+
+        Django pops ``class Meta`` off a model and puts it back on an abstract
+        one only, so a model without its own ``Meta`` gets the nearest one in
+        its MRO that is not a concrete model's: an abstract base's. Its own
+        ``Meta`` inherits options only by subclassing (``class
+        Meta(Base.Meta)``). Not for ``abstract``, which Django resets on an
+        abstract base's ``Meta`` (:meth:`_meta_flag` reads the model's own).
+        """
+        meta = self._get_meta_class(class_node)
+        if meta is None:
+            for name in (self.classes.mro(class_node.name) or [class_node.name])[1:]:
+                if self._is_concrete_django_model(name):
+                    continue
+                meta = self._get_meta_class(self.classes.all[name])
+                if meta is not None:
+                    break
+        return self._meta_class_option(meta, attr, ()) if meta is not None else None
+
+    def _meta_class_option(
+        self, meta: ast.ClassDef, attr: str, stack: Tuple[int, ...]
+    ) -> ast.expr | None:
+        """``attr`` as a ``Meta`` class body sets it (the last assignment), else its bases'.
+
+        A base is another model's ``Meta`` (``Base.Meta``) or a scanned class;
+        anything else is unknown.
+        """
+        if id(meta) in stack:
+            return None
+        value: ast.expr | None = None
+        for node in meta.body:
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                targets = [node.target]
+            else:
+                continue
+            if any(isinstance(t, ast.Name) and t.id == attr for t in targets):
+                value = node.value
+        if value is not None:
+            return value
+        for base in meta.bases:
+            base_meta: ast.ClassDef | None = None
+            if (
+                isinstance(base, ast.Attribute)
+                and base.attr == "Meta"
+                and isinstance(base.value, ast.Name)
+                and base.value.id in self.classes.all
+            ):
+                base_meta = self._get_meta_class(self.classes.all[base.value.id])
+            elif isinstance(base, ast.Name) and base.id in self.classes.all:
+                base_meta = self.classes.all[base.id]
+            if base_meta is not None:
+                found = self._meta_class_option(base_meta, attr, stack + (id(meta),))
+                if found is not None:
+                    return found
+        return None
+
     def _django_self_owner(self, name: str, merge_order: List[str]) -> str:
         """The model a Django ``"self"`` relation declared in class ``name`` points at.
 
@@ -511,6 +696,8 @@ class DjangoDialect(Dialect):
                 rel = self._parse_django_many_to_many(name, call, concrete)
                 if rel:
                     relationships[name] = rel
+            elif field_type == COMPOSITE_PRIMARY_KEY:
+                continue  # no column; finish() marks the key's columns (#276)
             else:
                 fields[name] = self._parse_django_column(name, field_type, call)
 
@@ -600,25 +787,89 @@ class DjangoDialect(Dialect):
                 return owner
         return None
 
-    def _own_declarations(self, node: ast.ClassDef) -> Dict[str, Tuple[str, ast.Call, str]]:
-        """The winning ``(field type, call, declaring class)`` of each attribute in the table.
+    def _own_declarations(self, node: ast.ClassDef) -> Dict[str, _Declaration]:
+        """The fields Django builds into the model's own table, by attribute.
 
-        Resolved like the fields (#228), after removals (``name = None``) and
-        overrides; a concrete parent's fields live in the parent's table (#233).
+        Django's ``ModelBase`` (#272, #280): the class body's fields, then,
+        along the MRO, each *direct* base that is an abstract model adds the
+        fields it has itself (its own and those it copied) unless the name is
+        already taken. Every other class in the MRO only takes names: a
+        concrete parent its fields (they stay in its table, #233), a plain
+        mixin or an indirect ancestor every name its body binds. So a field on
+        a plain mixin is no column, and a diamond keeps the first copy. A base
+        that is not known to be plain (it extends a class outside the scanned
+        files) is read like an abstract model.
         """
-        merge_order = self.classes.merge_order(node)
-        own = self.table_classes(node, merge_order)
-        declared: Dict[str, Tuple[str, ast.Call, str]] = {}
-        for class_name in merge_order:
-            if class_name not in own:
+        cached = self._declarations.get(node.name)
+        if cached is not None:
+            return cached
+        declared: Dict[str, _Declaration] = {}
+        self._declarations[node.name] = declared  # a cyclic hierarchy finds it empty
+        for attr, field_type, call in self._django_field_calls(node):
+            declared.pop(attr, None)
+            declared[attr] = (field_type, call, node.name)
+        taken = self._body_names(node)
+        direct = set(self.classes.local_bases(node))
+        mro = self.classes.mro(node.name) or self.classes.dfs_order(node, set())[::-1]
+        for base in mro:
+            if base == node.name:
                 continue
-            class_node = self.classes.all[class_name]
-            for attr in self._django_removed_names(class_node):
-                declared.pop(attr, None)
-            for attr, field_type, call in self._django_field_calls(class_node):
-                declared.pop(attr, None)
-                declared[attr] = (field_type, call, class_name)
+            base_node = self.classes.all[base]
+            inherited = self._own_declarations(base_node)
+            if self._is_concrete_django_model(base):
+                # Its local fields, including the implicit `id` / `<x>_ptr` links.
+                taken |= self._own_column_names(base_node)
+                if base not in direct:
+                    taken |= self._body_names(base_node)
+            elif base not in direct or self._is_plain_class(base, ()):
+                taken |= self._body_names(base_node) | set(inherited)
+            else:
+                for attr, declaration in inherited.items():
+                    if attr not in declared and attr not in taken:
+                        declared[attr] = declaration
         return declared
+
+    @staticmethod
+    def _body_names(node: ast.ClassDef) -> Set[str]:
+        """Every name a class body binds (its ``__dict__``), ``name = None`` included.
+
+        A bare annotation binds nothing, so it doesn't block an inherited field.
+        """
+        names: Set[str] = set()
+        for stmt in node.body:
+            if isinstance(stmt, ast.Assign):
+                names.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
+            elif (
+                isinstance(stmt, ast.AnnAssign)
+                and stmt.value is not None
+                and isinstance(stmt.target, ast.Name)
+            ):
+                # A bare annotation (`id: UUID`) only writes __annotations__.
+                names.add(stmt.target.id)
+            elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(stmt.name)
+        names.discard("Meta")  # Django pops it off the class
+        return names
+
+    def _is_plain_class(self, name: str, stack: Tuple[str, ...]) -> bool:
+        """Whether a class is known not to be a Django model.
+
+        Every base is ``object``, ``Generic[...]``, ``Protocol``, ``ABC`` or a
+        scanned plain class. Any other base outside the scanned files might be
+        a model, so such a class is not known to be plain.
+        """
+        node = self.classes.all.get(name)
+        if node is None or name in stack:
+            return False
+        for base in node.bases:
+            inner = base.value if isinstance(base, ast.Subscript) else base  # Typed[str]
+            if expr_name(inner) in _NON_MODEL_BASES:
+                continue
+            if not (
+                isinstance(inner, ast.Name) and self._is_plain_class(inner.id, stack + (name,))
+            ):
+                return False
+        return True
 
     def _own_column_names(self, node: ast.ClassDef) -> Set[str]:
         """Field names (and FK attnames) stored in the model's own table."""
@@ -633,7 +884,8 @@ class DjangoDialect(Dialect):
             names.update((link, f"{link}_id"))
         # Django's implicit `id`, when nothing else is the primary key.
         if not links and not any(
-            self._has_true_kw(call, "primary_key") for _, call, _ in declared.values()
+            field_type == COMPOSITE_PRIMARY_KEY or self._has_true_kw(call, "primary_key")
+            for field_type, call, _ in declared.values()
         ):
             names.add("id")
         return names
@@ -753,7 +1005,7 @@ class DjangoDialect(Dialect):
         node = self.classes.all.get(class_name)
         if node is None:
             return CONTRIB_TABLES.get(class_name, class_name.lower())
-        db_table = self._meta_value(node, "db_table")
+        db_table = self._meta_constant(node, "db_table")
         if isinstance(db_table, str):
             return db_table
         return self.default_table_name(node)
@@ -764,6 +1016,8 @@ class DjangoDialect(Dialect):
 
         Only constructs that are relationship fields or end in "Field" qualify,
         which filters out non-field assignments such as ``objects = Manager()``.
+        ``CompositePrimaryKey`` is returned too: a model field that makes no
+        column (#276).
         """
         func = call.func
         if isinstance(func, ast.Attribute):
@@ -773,6 +1027,8 @@ class DjangoDialect(Dialect):
         else:
             return None
         if name in DJANGO_RELATIONSHIP_FIELDS or name.endswith("Field"):
+            return name
+        if name == COMPOSITE_PRIMARY_KEY:
             return name
         return None
 
@@ -976,3 +1232,11 @@ class DjangoDialect(Dialect):
             if parent is not None and self._builds_on(parent, base_name, seen):
                 return True
         return False
+
+
+def _literal_names(node: ast.expr) -> Tuple[str, ...] | None:
+    """The strings of a list / tuple of string literals, else None."""
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return None
+    names = [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+    return tuple(names) if len(names) == len(node.elts) else None

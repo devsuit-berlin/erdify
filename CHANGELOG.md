@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Django: `pk = models.CompositePrimaryKey(...)` (Django 5.2) makes the named
+  columns the primary key; erdify no longer invents an `id` ([Django](https://erdify.devsuit.io/frameworks/django/), #276).
+- Django: `Meta.db_table` and `Meta.app_label` inherited from an abstract
+  base's `Meta` (a model without its own `Meta`, or `class Meta(Base.Meta)`)
+  name the table, as in Django (#279).
+- Django: a field on a plain mixin (not a `models.Model` subclass) is no longer
+  drawn as a column; Django ignores it (#280).
+- Django: SQLAlchemy `__table_args__` no longer makes a Django model's column
+  unique; a single-field `UniqueConstraint` in `Meta.constraints` or a
+  one-field `Meta.unique_together` entry does (#274).
+- Django: with diamond abstract inheritance, a model gets the first copy of a
+  field along the MRO, as Django builds it, not the one Python's attribute
+  lookup finds (#272).
+- Docs: a `to_field=` naming a field the target inherits from a multi-table
+  parent was described as supported; Django rejects it (#273).
+
+### Output changes
+
+- Django diagrams with any of the above change: a composite-key table loses
+  its `id` and marks the key columns `PK` (a key made only of foreign keys
+  becomes a link table), an inherited `db_table` / `app_label` renames the
+  table, plain-mixin columns disappear, `Meta` uniqueness adds `UK` (and draws
+  a unique foreign key 1:1), and a diamond-inherited field may change its
+  target or primary-key status. Regenerate the diagram once if you gate CI on
+  `--check`.
+
 ## [1.5.1] - 2026-11-13
 
 ### Fixed

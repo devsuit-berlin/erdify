@@ -272,13 +272,22 @@ class Dialect:
         entities' foreign keys reference.
         """
 
+    def unique_columns(self, class_node: ast.ClassDef) -> Tuple[Set[str], Set[str]]:
+        """Columns a class-level constraint makes unique on their own.
+
+        Returns ``(db_columns, attribute_refs)`` like
+        :meth:`_table_args_unique_columns`, which is the default: SQLAlchemy's
+        ``__table_args__`` (#218). Django reads its ``Meta`` instead (#274).
+        """
+        return self._table_args_unique_columns(class_node)
+
     def finish(self, entity: EntityInfo, class_node: ast.ClassDef) -> None:
-        """Adjust the built entity: mark columns made unique by ``__table_args__``."""
+        """Adjust the built entity: mark columns made unique by a class-level constraint."""
         # Single-column UniqueConstraint / unique Index in __table_args__ (#218).
         # Constraints name the *database* column, which mapped_column("col", ...)
         # may set apart from the attribute name (#221).
         # A string names the DB column; a bare reference names the attribute.
-        unique_cols, unique_refs = self._table_args_unique_columns(class_node)
+        unique_cols, unique_refs = self.unique_columns(class_node)
         db_names = self._db_column_names(class_node)
         for f in entity.fields:
             if f.is_primary_key:

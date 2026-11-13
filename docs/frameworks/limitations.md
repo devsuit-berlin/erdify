@@ -97,8 +97,9 @@ class Match(Base):
   `@declared_attr` method is not seen.
 - `schema=` is ignored; entities are not namespaced.
 
-Django's `Meta.unique_together` and `Meta.indexes` are ignored for the same
-reason.
+A Django model's `__table_args__` is ignored, as Django ignores it. Django's
+own single-field `Meta.constraints` / `Meta.unique_together` uniqueness is read
+([Django](django.md)); composite ones and `Meta.indexes` are not.
 
 ## Composite keys
 
@@ -324,10 +325,14 @@ names, so it can be wrong in both directions.
 | Fields added via `setattr` / loops / `if TYPE_CHECKING` | Not supported |
 | Non-literal `__tablename__` / `declared_attr` | Falls back to the class name, silently; a SQLAlchemy class with a `declared_attr` table name is not drawn ([details](#non-literal-__tablename__)) |
 | Non-literal Django `db_column` / `Meta.db_table` | Falls back to the attribute name / Django's default table name, silently |
+| Non-literal `CompositePrimaryKey(*names)` arguments | No implicit `id` is added, but no column is marked as the primary key |
 | `__table_args__` (composite FKs, composite `UniqueConstraint`, partial or non-unique `Index`, `schema=`) | Not read; single-column `UniqueConstraint` / unique `Index` is read |
-| Django `Meta.unique_together` / `Meta.indexes` | Not read |
+| Django composite `Meta.unique_together` / `Meta.constraints`, conditional or expression `UniqueConstraint`, `Meta.indexes` | Not read; a single-field, unconditional unique constraint is |
 | Django app label from an `AppConfig` named in `INSTALLED_APPS` (`"shop.apps.Custom"`), or a non-literal `label` | The app's default `AppConfig` or the package name is used |
-| Django `Meta.db_table` / `Meta.app_label` inherited from an abstract base | Not read yet ([#279](https://github.com/devsuit-berlin/erdify/issues/279)) |
+| Django base built on a class outside the scanned files (`class Stamped(LibBase)`) | Read like an abstract model: its fields are columns. A scanned plain class (not a `models.Model` subclass, also on `Generic[...]` / `Protocol` / `ABC`) adds none |
+| Django `to_field=` naming a field the target inherits from a multi-table parent | Drawn to the parent's column; Django rejects it (`FieldError`) |
+| A foreign key to a Django model with a `CompositePrimaryKey` | Drawn to `<table>.id`, which doesn't exist; Django doesn't support such a key and rejects it |
+| A unique column (or one-to-one) that is a member of a composite primary key | Not marked `UK` and drawn N:1, though it is unique on its own ([#331](https://github.com/devsuit-berlin/erdify/issues/331)) |
 | Django `AUTH_USER_MODEL` | Not read from `settings.py`; the one scanned model built on `AbstractBaseUser` is assumed, else `auth.User` |
 | Django contrib bases imported under another name (`import AbstractUser as Base`), or subclassing the concrete `auth.User` | Fields of the contrib base are not added |
 | A base class named `AbstractUser` / `AbstractBaseUser` / `PermissionsMixin` imported from a non-Django module, while another scanned file imports Django's | Gets Django's fields: base classes are resolved by name across the scan. Relation targets, by contrast, follow each module's own imports |

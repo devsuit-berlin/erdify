@@ -65,22 +65,25 @@ class Settings(Left, Right):
 
 
 class TestDiamond:
-    """A sibling base's redeclaration replaces what the shared root declared."""
+    """A sibling base's redeclaration replaces what the shared root declared.
 
-    def test_django_stale_relationship_is_dropped(self, tmp_path: Path):
+    Except in Django, which keeps the first copy it inherits (#272).
+    """
+
+    def test_django_keeps_the_first_copy(self, tmp_path: Path):
+        """``Left`` already copied ``Root.owner``, so ``Right.owner`` is never applied."""
         entities = _parse(tmp_path, DJANGO_DIAMOND)
         settings = entities["Settings"]
-        assert [f.name for f in settings.fields] == ["owner_id"]
+        assert [f.name for f in settings.fields] == ["id", "owner_id"]
         assert settings.relationships == []
         owner = _field(entities, "Settings", "owner_id")
-        assert owner.is_primary_key
-        assert owner.foreign_table is not None and owner.foreign_table.startswith("app_other.")
+        assert not owner.is_primary_key and owner.is_unique
+        assert owner.foreign_table == "app_account.id"
 
     def test_django_single_edge(self, tmp_path: Path):
         out = generate_mermaid(_parse(tmp_path, DJANGO_DIAMOND))
-        assert 'Settings |o--|| Other : "owner_id"' in out
-        assert "Settings ||--|| Account" not in out
-        assert "Settings |o--|| Account" not in out
+        assert 'Settings |o--|| Account : "owner_id"' in out
+        assert "Other :" not in out
 
     def test_pydantic_redeclared_in_sibling(self, tmp_path: Path):
         src = """
@@ -775,8 +778,8 @@ class Child(AuditMixin):
 
 
 class TestDjangoSelfOwnerEdgeCases:
-    def test_plain_mixin_self_binds_to_the_model(self, tmp_path: Path):
-        """A ``"self"`` FK in a non-Model mixin points at the model that uses it."""
+    def test_plain_mixin_field_is_not_a_column(self, tmp_path: Path):
+        """Django ignores a field on a non-Model mixin: it stays a class attribute (#280)."""
         src = """
 from django.db import models
 
@@ -789,7 +792,7 @@ class Node(TreeMixin, models.Model):
     pass
 """
         entities = _parse(tmp_path, src)
-        assert _field(entities, "Node", "parent_id").foreign_table == "app_node.id"
+        assert [f.name for f in entities["Node"].fields] == ["id"]
 
     def test_target_column_binds_self_like_the_entity(self, tmp_path: Path):
         """``to_field`` through an inherited ``"self"`` FK follows the same owner."""

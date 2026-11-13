@@ -8,7 +8,8 @@ erdify parses Django models from source — no Django runtime, settings, or app 
 
 A `models.Model` subclass becomes an entity; abstract bases
 (`class Meta: abstract = True`) are inherited but not drawn, and a `class Meta:
-db_table = "..."` overrides the table name.
+db_table = "..."` overrides the table name (also one inherited from an abstract
+base, see [Table names](#table-names)).
 
 ```python
 from django.db import models
@@ -34,7 +35,12 @@ class Book(models.Model):
 create in the database. A `ForeignKey(null=True)` is drawn optional on the
 referenced side (`}o--o|`). A `OneToOneField` is a unique foreign key, so it is
 marked `UK` and drawn 1:1 like `ForeignKey(unique=True)`: `|o--||`, or
-`|o--o|` with `null=True`. A `unique=True` column is marked `UK`. A
+`|o--o|` with `null=True`. A `unique=True` column is marked `UK`, and so is
+the field of a single-field `UniqueConstraint(fields=[...])` in
+`Meta.constraints` or a one-field `Meta.unique_together` entry (a field name or
+its attname, `owner_id`). A composite, conditional (`condition=`) or
+expression constraint makes no single column unique. SQLAlchemy's
+`__table_args__` is ignored on a Django model, as Django ignores it. A
 `ForeignKey(primary_key=True)` or `OneToOneField(primary_key=True)` (shared
 primary key) makes `<name>_id` the table's primary key (no implicit `id` is
 added) and is drawn 1:1 as well.
@@ -44,6 +50,11 @@ an abstract base, or the `to_field=` column, and takes that column's type
 (`foreign_table` in [JSON output](../usage/output-formats.md#json)). A target
 outside the parsed files is assumed to reference its implicit `id` (or the
 `to_field=` column), typed as Django's default auto field.
+
+A `pk = models.CompositePrimaryKey("order", "product")` (Django 5.2) makes
+the named fields (field names or attnames such as `order_id`) the table's
+primary key; no implicit `id` is added. A composite key made only of foreign
+keys, with no other column, is drawn as a link table, like any other.
 
 A literal `db_column="..."` names the column, on any field including a foreign
 key, a primary key and an explicit `parent_link` (`author = ForeignKey(Author,
@@ -57,7 +68,7 @@ Without `Meta.db_table`, the table gets Django's default name,
 lower-cased: `OrderItem` in the app `shop` is `shop_orderitem`. erdify reads the
 app label from source, in Django's order:
 
-1. `class Meta: app_label = "..."` on the model.
+1. `class Meta: app_label = "..."` on the model, also an inherited one (below).
 2. The app's `AppConfig` in `apps.py`: a literal `label`, else the last part of
    a literal `name` (`name = "project.shop"` → `shop`). With several configs,
    the one marked `default = True`.
@@ -66,6 +77,27 @@ app label from source, in Django's order:
 
 A model outside the scanned files (a relation target erdify can't see) shows
 the lower-cased class name, without a prefix.
+
+`Meta.db_table` and `Meta.app_label` are read as Django reads them: a model
+without a `Meta` of its own takes its abstract base's (the nearest one along
+the MRO), and its own `Meta` inherits options only by subclassing the base's,
+`class Meta(Base.Meta)`. A concrete parent's `Meta` is not inherited.
+
+```python
+class Audited(models.Model):
+    class Meta:
+        abstract = True
+        db_table = "audited_thing"
+
+
+class Document(Audited):             # table: audited_thing
+    pass
+
+
+class Report(Audited):               # table: <app>_report
+    class Meta:
+        ordering = ["id"]
+```
 
 ## The user model and other contrib models
 
@@ -97,6 +129,7 @@ Inheritance follows Django's three model inheritance styles:
 | Base | Result |
 |---|---|
 | Abstract base (`class Meta: abstract = True`) | Not drawn; its fields are copied into each subclass. |
+| Plain class (not a `models.Model` subclass) | Its fields are no columns: Django leaves them plain class attributes. Share fields through an abstract base instead. A plain class may build on `Generic[...]`, `Protocol` or `ABC`; a base built on any other class outside the scanned files may be a model, so it is read like an abstract base. A bare annotation (`id: UUID`) declares nothing and doesn't hide an inherited field. |
 | Concrete model (**multi-table inheritance**) | The subclass gets its own table with only its own fields (plus those of its abstract bases) and a `<parent>_ptr_id` column: a one-to-one link to the parent, drawn 1:1. The parent's fields stay on the parent. |
 | Proxy model (`class Meta: proxy = True`) | Not drawn: a proxy has no table. A relation to a proxy, or a subclass of one, points at the model the proxy stands for. |
 
@@ -120,8 +153,40 @@ As in Django:
   of its abstract bases, replaces the implicit link.
 - An abstract base that subclasses a concrete model passes its link on to the
   models built from it.
-- A foreign key to the subclass references its link column; a `to_field=`
-  naming one of the parent's fields references the parent's table.
+- A foreign key to the subclass references its link column. Django requires a
+  `to_field=` to name a field local to the target, not one the subclass
+  inherits from its parent (it raises `FieldError`); erdify doesn't validate
+  that and draws such a key to the parent's column.
+
+Which copy of a field a model gets follows Django, not Python's attribute
+lookup. Along the MRO, each direct abstract base adds the fields it has (its
+own and those it copied) unless the name is already taken: by the model's own
+body, an earlier base, or any name another class in the MRO binds. With two
+abstract bases that both provide a field, the first copy wins:
+
+```python
+class Root(models.Model):
+    owner = models.OneToOneField(Account, on_delete=models.CASCADE)
+
+    class Meta:
+        abstract = True
+
+
+class Left(Root):
+    class Meta:
+        abstract = True
+
+
+class Right(Root):
+    owner = models.OneToOneField(Other, on_delete=models.CASCADE, primary_key=True)
+
+    class Meta:
+        abstract = True
+
+
+class Settings(Left, Right):         # id PK, owner_id UK -> account (Left's copy)
+    pass
+```
 
 ## Relationship targets
 
