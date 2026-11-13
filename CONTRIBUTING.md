@@ -263,6 +263,39 @@ Check for new series locally with:
 uv run --no-project --with pyyaml --with packaging python scripts/check_upstream_series.py
 ```
 
+### Real Renderers and the JSON Schema
+
+String comparisons can't tell whether a renderer accepts the output. The CI job
+`renderers` writes every fixture, edge-case catalog module and docs example
+in every format (`scripts/render_outputs.py`), checks the `.puml` files with
+PlantUML (`-checkonly`), and renders the `.mmd` files and every HTML page with
+the real Mermaid in headless Chromium (`scripts/renderers/check.mjs`; the
+page's CDN request is answered by the pinned local Mermaid, any other request
+is blocked). `tests/test_json_schema.py` validates the JSON of the same
+sources against `docs/schema/output-v1.json`, and checks that the keys erdify
+emits, the schema and the tables in `docs/usage/output-formats.md` agree: a
+new JSON key goes into all three. A new fixture directory or catalog module is
+picked up automatically; one that needs a SQL dialect (as in the SQL
+ground-truth `DIALECTS`, a test checks they agree) or `--base-classes` is
+listed in `render_outputs.py`, and one with nothing to draw in its
+`NO_DIAGRAM` (a fixture directory by name, a catalog module as
+`<catalog>/<stem>`). Chromium comes from the build the pinned Puppeteer
+selects (no checksum of our own); it only renders erdify's output, with the
+network blocked. PlantUML is pinned and checksum-verified in the workflow.
+The check renders with the locked Mermaid, while a user's HTML page loads the
+newest release of the same major from the CDN: a green check means the locked
+version renders the output, not that today's CDN build does.
+
+Run the renderer check locally (needs Java and Node):
+
+```bash
+uv run python scripts/render_outputs.py /tmp/erdify-out
+plantuml -checkonly -failfast2 /tmp/erdify-out/*.puml   # or java -jar plantuml.jar ...
+cd scripts/renderers && npm ci --ignore-scripts \
+  && npx --no-install puppeteer browsers install chrome-headless-shell \
+  && node check.mjs /tmp/erdify-out
+```
+
 ### Adding New Test Fixtures
 
 1. Create a new directory under `tests/fixtures/`
@@ -276,8 +309,9 @@ uv run --no-project --with pyyaml --with packaging python scripts/check_upstream
 
 4. Add the fixture to `test_integration.py`
 
-SQL DDL test fixtures live in `tests/fixtures/sql/` — each subdirectory contains
-one or more `.sql` files and the corresponding expected output. Make sure you have
+SQL DDL test fixtures live in `tests/fixtures/sql/` (`.sql` files and their
+`expected.puml`, drawn as one diagram) and in the edge-case catalog
+`tests/fixtures/sql_edge_cases/` (one `.sql` file per feature). Make sure you have
 the `[sql]` extra installed (`uv sync --extra sql`) before running the SQL tests.
 
 ## Submitting Changes

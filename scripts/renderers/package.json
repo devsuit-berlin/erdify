@@ -1,0 +1,13 @@
+{
+  "name": "erdify-renderer-check",
+  "private": true,
+  "description": "Renders erdify's Mermaid and HTML output in headless Chromium (CI job `renderers`).",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "mermaid": "11.17.2",
+    "puppeteer": "25.16.0"
+  }
+}

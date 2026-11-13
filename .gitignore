@@ -14,3 +14,6 @@ site/
 .cache/
 # Local-only planning artifacts from the superpowers workflow (specs/plans)
 docs/superpowers/
+
+# Renderer check dependencies (scripts/renderers, CI job `renderers`)
+scripts/renderers/node_modules/

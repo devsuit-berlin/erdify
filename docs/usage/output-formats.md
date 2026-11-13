@@ -162,6 +162,12 @@ point for downstream tools that want erdify's model without re-parsing source.
 
 ### Schema
 
+The schema is also published as a [JSON Schema](https://json-schema.org/)
+(draft 2020-12): [`output-v1.json`](../schema/output-v1.json)
+(`https://erdify.devsuit.io/schema/output-v1.json`). It allows keys it doesn't
+list, so a document from a later erdify that adds keys still validates. CI
+validates erdify's output for every test fixture against it.
+
 Top level:
 
 | Key | Type | Description |
@@ -219,6 +225,11 @@ Enum:
   Consumers must ignore keys they do not know.
 - **Removing or renaming** a key, or changing a value's type or meaning, bumps
   `schema_version` and ships only in a major erdify release.
+- A new value of `source` (a framework added in a minor release) or of a
+  relationship's `type` is not a new shape either: `schema_version` stays,
+  and the published JSON Schema is updated in place with the release that
+  adds it. A consumer validating with a copy of the schema should refresh it,
+  or accept unknown values.
 - Check `schema_version` before reading the document if your tool must fail
   loudly on an incompatible shape.
 - These rules cover the document's *shape*. Its *content* follows what the

@@ -260,6 +260,61 @@ jobs:
           [[ "$SQLGLOT" != locked ]] && extra+=(--with "sqlglot==$SQLGLOT")
           uv run "${extra[@]}" pytest tests/test_ground_truth_sql.py tests/test_sql.py -rsx
 
+  # Real renderers (#268): every fixture, edge-case catalog module and docs
+  # example is written in every format (scripts/render_outputs.py). PlantUML
+  # checks the .puml files; the real Mermaid renders the .mmd files and every
+  # HTML page in headless Chromium (scripts/renderers/check.mjs), with the
+  # page's CDN request answered by the pinned local Mermaid and all other
+  # network blocked. The JSON is validated against docs/schema/output-v1.json
+  # by tests/test_json_schema.py in the test job. Only GitHub-owned actions
+  # (plus setup-uv): the Actions allowlist is narrow (GitHub-owned, verified
+  # creators, setup-uv). Chromium comes from the build Puppeteer pins, without
+  # a checksum of our own; it only renders erdify's output, network blocked.
+  renderers:
+    name: Real renderers (PlantUML, Mermaid, HTML)
+    runs-on: ubuntu-latest
+    env:
+      # Pinned and checksum-verified; bump with the digest GitHub shows for the
+      # release asset (gh api repos/plantuml/plantuml/releases/tags/<tag>).
+      PLANTUML_VERSION: "1.2026.9"
+      PLANTUML_SHA256: "aa4a1d06f8911c4b842beff4828dd955be431692b631a312d04c0e9fab9581de"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "latest-known"
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Write every output format for every source
+        run: uv run python scripts/render_outputs.py "$RUNNER_TEMP/out"
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Check the PlantUML output
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/plantuml.jar" \
+            "https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar"
+          echo "${PLANTUML_SHA256}  $RUNNER_TEMP/plantuml.jar" | sha256sum -c -
+          java -jar "$RUNNER_TEMP/plantuml.jar" -checkonly -failfast2 "$RUNNER_TEMP"/out/*.puml
+          echo "PlantUML $PLANTUML_VERSION: $(ls "$RUNNER_TEMP"/out/*.puml | wc -l) diagrams OK"
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: scripts/renderers/package-lock.json
+      - name: Check the Mermaid and HTML output
+        working-directory: scripts/renderers
+        run: |
+          # No install scripts: the browser is installed explicitly below.
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install puppeteer browsers install chrome-headless-shell
+          node check.mjs "$RUNNER_TEMP/out"
+
   # README coverage badge. Datadog exposes no public badge endpoint, so the
   # percentage is published as a shields.io endpoint payload at
   # https://raw.githubusercontent.com/devsuit-berlin/erdify/badges/coverage.json
@@ -341,7 +396,7 @@ jobs:
   gate:
     name: Tests passed
     if: always()
-    needs: [test, django, sqlalchemy, sql]
+    needs: [test, django, sqlalchemy, sql, renderers]
     runs-on: ubuntu-latest
     steps:
       # `badges` holds only bot-written badge payloads. A pull request from it
@@ -364,4 +419,5 @@ jobs:
         if: >-
           needs.test.result != 'success' || needs.django.result != 'success'
           || needs.sqlalchemy.result != 'success' || needs.sql.result != 'success'
+          || needs.renderers.result != 'success'
         run: exit 1

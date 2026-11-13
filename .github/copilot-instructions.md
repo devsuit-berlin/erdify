@@ -43,6 +43,19 @@ them, e.g.:
 uv run erdify tests/fixtures/ecommerce --title 'E-Commerce ERD' -o tests/fixtures/ecommerce/expected.puml
 ```
 
+### Real renderers and the JSON schema
+
+`scripts/render_outputs.py` writes every fixture directory, edge-case catalog
+module and docs example in every format. The CI job `renderers` checks the
+`.puml` files with a pinned, checksum-verified PlantUML (`-checkonly`) and
+renders the `.mmd` files and HTML pages with the pinned Mermaid in headless
+Chromium (`scripts/renderers/`, its own `package.json` / lockfile, Dependabot
+`npm`). `tests/test_json_schema.py` validates the JSON against
+`docs/schema/output-v1.json` (published on the docs site) and requires the
+emitted keys, the schema and the docs tables in `docs/usage/output-formats.md`
+to agree: a new JSON key updates all three. A source with special options
+(SQL dialect, `--base-classes`) is listed in `render_outputs.py`.
+
 ### Ground-truth tests
 
 Golden files only lock in erdify's own output. The ground-truth tests check it

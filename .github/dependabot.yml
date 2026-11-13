@@ -67,3 +67,26 @@ updates:
           - "major"
           - "minor"
           - "patch"
+  # The renderer check's pinned Mermaid and Puppeteer (scripts/renderers,
+  # CI job `renderers`). Mermaid should follow the major the HTML output loads
+  # from the CDN (generator.MERMAID_CDN, mermaid@11).
+  - package-ecosystem: "npm"
+    directory: "/scripts/renderers"
+    schedule:
+      interval: "cron"
+      cronjob: "0 2 * * 3"
+    cooldown:
+      default-days: 7
+    ignore:
+      # A Mermaid major lands together with the CDN URL in generator.py
+      # (check.mjs fails when the two differ), by hand.
+      - dependency-name: "mermaid"
+        update-types: ["version-update:semver-major"]
+    groups:
+      version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
