@@ -30,7 +30,11 @@ MANY_WRAPPERS = frozenset({"WriteOnlyMapped", "DynamicMapped"})
 MAPPED_WRAPPERS = frozenset({"Mapped"}) | MANY_WRAPPERS
 #: Type qualifiers: they say how a field is declared, not what it holds, so a
 #: column's type and nullability are those of the qualified type.
-QUALIFIERS = frozenset({"Final", "InitVar", "Required", "NotRequired", "ReadOnly"})
+QUALIFIERS = frozenset({"Final", "Required", "NotRequired", "ReadOnly"})
+#: Annotations that declare no field: a class variable or a dataclass
+#: ``__init__``-only parameter. ``dataclasses.fields()`` leaves both out, and
+#: redeclaring an inherited field as one hides it.
+NON_FIELDS = frozenset({"ClassVar", "InitVar"})
 #: Single-argument collections of a model: a "many" reference.
 MANY_CONTAINERS = frozenset(
     {
@@ -61,6 +65,31 @@ def expr_name(node: ast.expr) -> str | None:
     if isinstance(node, ast.Attribute):
         return node.attr
     return None
+
+
+def is_non_field(node: ast.expr) -> bool:
+    """``ClassVar`` / ``InitVar``, bare, subscripted, qualified or quoted.
+
+    Neither makes a field: dataclasses leave them out of ``fields()``,
+    Pydantic and SQLModel skip a ``ClassVar`` (and reject an ``InitVar``),
+    and SQLAlchemy maps no column for them.
+    """
+    return _annotation_name(node) in NON_FIELDS
+
+
+def is_kw_only(node: ast.expr) -> bool:
+    """The dataclass ``KW_ONLY`` sentinel: no field, and it hides no inherited one."""
+    return _annotation_name(node) == "KW_ONLY"
+
+
+def _annotation_name(node: ast.expr) -> str | None:
+    """The name of an annotation's outermost type, also subscripted, qualified or quoted."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        parsed = parse_quoted(node)
+        return _annotation_name(parsed) if parsed is not None else None
+    if isinstance(node, ast.Subscript):
+        node = node.value
+    return expr_name(node)
 
 
 def is_call_to(value: ast.expr, func_name: str) -> TypeGuard[ast.Call]:

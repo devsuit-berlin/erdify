@@ -45,7 +45,7 @@ erdify . --include models.py entities.py
 | Fields attached with `setattr()` or in a loop | Invisible. Only class-body assignments and annotations are read. |
 | Fields under `if TYPE_CHECKING:` | Invisible. |
 | Models registered by a third-party package | Invisible unless their source is in the scanned files. |
-| A **base class** defined outside the scan (`ninja.Schema`, a shared internal `BaseSchema`) | Its subclasses are skipped, because the inheritance chain to `BaseModel` cannot be resolved. Name it with [`--base-classes`](../usage/cli.md#bases-defined-outside-the-scan-base-classes). |
+| A **base class** defined outside the scan (`ninja.Schema`, a shared internal `BaseSchema`) | Its subclasses are skipped, because the inheritance chain to `BaseModel` cannot be resolved. The same goes for a base built on an aliased import (`from pydantic import BaseModel as PydBase`). Name it with [`--base-classes`](../usage/cli.md#bases-defined-outside-the-scan-base-classes). |
 
 If your schema is genuinely assembled at runtime, an import-based tool is the
 right instrument — see the [comparison](../comparison.md).
@@ -316,6 +316,17 @@ Pydantic models and dataclasses have no keys to read. Without `--infer-keys`,
 `id` and `<x>_id` stay ordinary columns and no relationships are drawn — see
 [Filtering & Key Inference](../usage/filtering.md). Inference is a heuristic on
 names, so it can be wrong in both directions.
+
+A Pydantic field annotated `Final` with a default (`version: Final[int] = 1`)
+is drawn as a field. Pydantic 2 treats it as a class variable instead, which
+it deprecated in 2.11, announcing that it becomes a field in Pydantic 3, as in
+a dataclass.
+Annotate a class variable with `ClassVar` to leave it out.
+
+A member whose name starts with an underscore (`_balance: int`) is never
+drawn. That is right for Pydantic, where it is a private attribute, but a
+dataclass field with such a name is a real field
+([#341](https://github.com/devsuit-berlin/erdify/issues/341)).
 
 ## Deferred / Not supported
 

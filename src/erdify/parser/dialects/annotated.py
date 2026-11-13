@@ -18,6 +18,8 @@ from ..annotations import (
     expand_aliases,
     expr_name,
     is_call_to,
+    is_kw_only,
+    is_non_field,
 )
 from ..common import _Rel, is_enum_class
 from .base import Dialect
@@ -44,8 +46,13 @@ class AnnotatedDialect(Dialect):
                 if self.reads_annotated_columns:
                     node = self._with_aliases_expanded(node, class_node)
 
-                # Skip special attributes
-                if field_name.startswith("_"):
+                # Skip special attributes, class variables and InitVar parameters
+                # (the name still shadows an inherited field: declared_names).
+                if (
+                    field_name.startswith("_")
+                    or is_non_field(node.annotation)
+                    or is_kw_only(node.annotation)
+                ):
                     continue
 
                 # Check for an explicit relationship call (SQLModel/SQLAlchemy)

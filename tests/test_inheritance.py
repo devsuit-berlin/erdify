@@ -67,7 +67,8 @@ class Settings(Left, Right):
 class TestDiamond:
     """A sibling base's redeclaration replaces what the shared root declared.
 
-    Except in Django, which keeps the first copy it inherits (#272).
+    Except in Django, which keeps the first copy it inherits (#272), and in
+    Pydantic and dataclasses, which merge the bases' fields (#267).
     """
 
     def test_django_keeps_the_first_copy(self, tmp_path: Path):
@@ -85,7 +86,8 @@ class TestDiamond:
         assert 'Settings |o--|| Account : "owner_id"' in out
         assert "Other :" not in out
 
-    def test_pydantic_redeclared_in_sibling(self, tmp_path: Path):
+    def test_pydantic_keeps_the_first_base_s_inherited_field(self, tmp_path: Path):
+        """Pydantic merges ``Left.model_fields`` last: its ``user`` from ``Root`` wins."""
         src = """
 from pydantic import BaseModel
 
@@ -110,8 +112,8 @@ class Post(Left, Right):
     id: int
 """
         post = _parse(tmp_path, src)["Post"]
-        assert post.relationships == []
-        assert [f.name for f in post.fields] == ["user", "id"]
+        assert post.relationships == [("User", "one", "user")]
+        assert [f.name for f in post.fields] == ["id"]
 
 
 class TestBasePrecedence:
@@ -712,7 +714,7 @@ class Child(Left, Right):
 
 
 class TestDataclassUndecoratedAncestors:
-    """Undecorated classes contribute no dataclass fields, only mixin-only attributes."""
+    """Undecorated classes contribute no dataclass fields, as in ``dataclasses.fields()``."""
 
     def test_plain_mixin_does_not_override_a_dataclass_field(self, tmp_path: Path):
         src = """
@@ -760,7 +762,8 @@ class Child(Left, Right):
         # dataclasses.fields(Child) reports value: str (Left exposes Root's fields).
         assert _field(_parse(tmp_path, src), "Child", "value").type_str == "str"
 
-    def test_mixin_only_attribute_is_still_shown(self, tmp_path: Path):
+    def test_mixin_only_attribute_is_not_a_field(self, tmp_path: Path):
+        """The stdlib ignores an undecorated base's annotations (#267)."""
         src = """
 from dataclasses import dataclass
 
@@ -774,7 +777,7 @@ class Child(AuditMixin):
     id: int
 """
         child = _parse(tmp_path, src)["Child"]
-        assert [f.name for f in child.fields] == ["created", "id"]
+        assert [f.name for f in child.fields] == ["id"]
 
 
 class TestDjangoSelfOwnerEdgeCases:

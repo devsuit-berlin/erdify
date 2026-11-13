@@ -2,7 +2,8 @@
 
 Shared by every dialect. A model's fields come from its own body and its
 bases; which declaration wins follows Python's MRO (#228) unless a dialect
-resolves it its own way (Django follows ``ModelBase``, #272), and the order
+resolves it its own way (Django follows ``ModelBase``, #272; Pydantic and
+dataclasses merge the bases' fields like ``dataclasses.fields()``, #267), and the order
 they are listed in follows the pre-MRO recursive merge.
 """
 

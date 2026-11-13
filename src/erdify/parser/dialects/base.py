@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable, ClassVar, Dict, Iterable, List, Mapping, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
-from ..annotations import is_call_to
+from ..annotations import is_call_to, is_kw_only
 from ..common import _ClassMembers, _Rel, to_snake_case
 from ..inheritance import ClassIndex, merge_members, reorder
 
@@ -167,7 +167,11 @@ class Dialect:
         return [
             node.target.id
             for node in self.member_nodes(class_node)
-            if isinstance(node.target, ast.Name) and not node.target.id.startswith("_")
+            if isinstance(node.target, ast.Name)
+            and not node.target.id.startswith("_")
+            # The dataclass KW_ONLY sentinel declares nothing (not even in
+            # __dataclass_fields__), so it hides no inherited field.
+            and not is_kw_only(node.annotation)
         ]
 
     def member_nodes(self, class_node: ast.ClassDef) -> List[ast.AnnAssign]:

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Pydantic / dataclasses: a `ClassVar` member is no longer drawn as a field,
+  nor is a dataclass `InitVar` parameter; neither is a field
+  (`Model.model_fields` / `dataclasses.fields()` leave them out). A
+  dataclass `KW_ONLY` sentinel with a name other than `_` is no longer drawn
+  either; it hides no inherited field. A `ClassVar` (and, in a dataclass, an
+  `InitVar`) redeclaring an inherited field removes it, also for further
+  subclasses, as in the standard library and Pydantic. A SQLModel model
+  skips `ClassVar` members too.
+- Pydantic: with diamond inheritance, a field one base merely inherits wins
+  over a later base's redeclaration (`Post(Left, Right)` gets `Left`'s copy),
+  as Pydantic merges its bases' `model_fields`; erdify followed Python's
+  attribute lookup instead. Likewise a model base's field now wins over a
+  plain mixin's bare annotation of the same name, even when the mixin comes
+  first in the MRO; a mixin that also gives it a default still wins there.
+- Dataclasses: an annotation on a plain (undecorated) mixin is no longer drawn
+  as a field; `dataclasses.fields()` ignores it. A Pydantic model still gets a
+  plain mixin's annotations as fields, as Pydantic does.
+- Docs: Pydantic 2 treats a `Final` field with a default as a class variable;
+  erdify draws it as a field (documented in
+  [Limitations](https://erdify.devsuit.io/frameworks/limitations/#keyless-models)).
+
+These were found by new ground-truth tests that check erdify's reading of
+Pydantic models and dataclasses against `Model.model_fields` and
+`dataclasses.fields()`
+([#267](https://github.com/devsuit-berlin/erdify/issues/267)).
+
+### Output changes
+
+- Pydantic / dataclass / SQLModel diagrams lose `ClassVar` (and dataclass
+  `InitVar` and named `KW_ONLY`) members, a dataclass loses the columns of undecorated mixins, and
+  a Pydantic model with diamond inheritance, or with a plain mixin that
+  redeclares a model base's field, may get another base's field (its type,
+  nullability, or a relationship instead of a column). Regenerate the
+  diagram once if you gate CI on `--check`.
+
 ## [1.5.3] - 2026-11-13
 
 ### Fixed

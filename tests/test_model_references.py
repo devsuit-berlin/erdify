@@ -19,8 +19,25 @@ def _parse(tmp_path: Path, source: str) -> dict:
 
 
 PYDANTIC = """
+import types
 import typing
-from typing import Annotated, List, Optional, Sequence, Set, Union
+from collections import deque
+from types import NoneType
+from typing import (
+    AbstractSet,
+    Annotated,
+    FrozenSet,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    MutableSequence,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 import schemas
 from pydantic import BaseModel, Field
