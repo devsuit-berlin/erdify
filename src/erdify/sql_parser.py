@@ -157,6 +157,11 @@ class SqlSchemaParser:
         #: for tables and, per table, for columns.
         self._table_keys: dict[str, str] = {}
         self._column_keys: dict[str, dict[str, str]] = {}
+        #: Enum type name keys -> declared names.
+        self._enum_keys: dict[str, str] = {}
+        #: Columns of a user-defined type: (field, schema prefix, type name key),
+        #: matched to the enums in _finalize().
+        self._typed_fields: list[tuple[FieldInfo, str, str]] = []
         self._dialect: Any = None
 
     def parse(self) -> tuple[dict[str, EntityInfo], dict[str, EnumInfo]]:
@@ -335,6 +340,7 @@ class SqlSchemaParser:
                     values.append(lit.this)
         if name and values:
             self._enums[name] = EnumInfo(name=name, values=values)
+            self._enum_keys[self._key(name_node)] = name
 
     def _column(
         self,
@@ -348,6 +354,11 @@ class SqlSchemaParser:
         name = coldef.name  # type: ignore[attr-defined]
         kind = coldef.args.get("kind")  # type: ignore[attr-defined]
         type_str = kind.sql().lower() if kind is not None else ""
+        type_ref = self._user_defined_type(kind, exp)
+        if type_ref is not None:
+            prefix, ident = type_ref
+            # Unquoted like the CREATE TYPE name: a quoted name keeps its case (#328).
+            type_str = prefix + (ident.name if ident.quoted else ident.name.lower())
         constraints = coldef.constraints  # type: ignore[attr-defined]  # list[exp.ColumnConstraint]
         is_pk = name in pk_cols or self._has_constraint(
             constraints,
@@ -366,7 +377,7 @@ class SqlSchemaParser:
             constraints,
             exp.UniqueColumnConstraint,  # type: ignore[attr-defined]
         )
-        return FieldInfo(
+        field = FieldInfo(
             name=name,
             type_str=type_str,
             is_primary_key=is_pk,
@@ -375,6 +386,31 @@ class SqlSchemaParser:
             default_value=default,
             is_unique=is_unique,
         )
+        if type_ref is not None:
+            self._typed_fields.append((field, type_ref[0], self._key(type_ref[1])))
+        return field
+
+    @staticmethod
+    def _user_defined_type(kind: Any, exp: Any) -> tuple[str, Any] | None:
+        """A user-defined column type (e.g. an enum) as (schema prefix, name
+        identifier), or ``None`` for a built-in type.
+
+        Only a dialect that reads quoted type names (PostgreSQL) has the
+        identifier; the generic dialect keeps the name as plain text.
+        """
+        if not isinstance(kind, exp.DataType) or kind.this != exp.DataType.Type.USERDEFINED:
+            return None
+        ref = kind.args.get("kind")
+        if isinstance(ref, exp.Identifier):
+            return "", ref
+        if isinstance(ref, exp.Dot) and isinstance(ref.expression, exp.Identifier):
+            # Each schema part follows the type name's rule: quoted keeps its case.
+            schema = ".".join(
+                part.name if part.quoted else part.name.lower()
+                for part in ref.this.find_all(exp.Identifier, bfs=False)
+            )
+            return schema + ".", ref.expression
+        return None
 
     @staticmethod
     def _has_constraint(constraints: list[object], kind: "type") -> bool:
@@ -559,7 +595,13 @@ class SqlSchemaParser:
         return part
 
     def _finalize(self) -> None:
-        """Detect link tables, then apply ``exclude_patterns``."""
+        """Name enum-typed columns' types as their enum, detect link tables,
+        then apply ``exclude_patterns``."""
+        # Type names fold like table names: `mood` is the enum `Mood` (#328).
+        for field, prefix, key in self._typed_fields:
+            enum_name = self._enum_keys.get(key)
+            if enum_name is not None:
+                field.type_str = prefix + enum_name
         for entity in self._entities.values():
             normalize_key_uniqueness(entity.fields)
             entity.is_link_table = is_structural_link_table(entity.fields)
