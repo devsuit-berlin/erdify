@@ -54,6 +54,7 @@ dev = [
     "sqlglot",
     "pyyaml>=6.0.3",
     "packaging>=26.2",
+    "jsonschema>=4.26.0",
 ]
 docs = ["mkdocs-material[imaging]"]
 

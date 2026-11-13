@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://erdify.devsuit.io/schema/output-v1.json",
+  "title": "erdify JSON output, schema_version 1",
+  "description": "The document `erdify --format json` writes. Documented in https://erdify.devsuit.io/usage/output-formats/#json. Keys added later are allowed: consumers must ignore keys they do not know.",
+  "type": "object",
+  "required": ["schema_version", "title", "entities", "enums"],
+  "properties": {
+    "schema_version": {
+      "description": "Version of this document shape.",
+      "const": 1
+    },
+    "title": {
+      "description": "The diagram title (--title).",
+      "type": "string"
+    },
+    "entities": {
+      "description": "One object per table / model.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "enums": {
+      "description": "Empty when enums are disabled (--no-enums).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/enum" }
+    }
+  },
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "required": ["name", "table_name", "source", "is_link_table", "fields", "relationships"],
+      "properties": {
+        "name": {
+          "description": "Class name (or table name for SQL DDL).",
+          "type": "string"
+        },
+        "table_name": {
+          "description": "Database table name.",
+          "type": "string"
+        },
+        "source": {
+          "description": "The framework the entity was read from.",
+          "enum": ["sqlmodel", "sqlalchemy", "django", "dataclass", "pydantic", "sql"]
+        },
+        "is_link_table": {
+          "description": "true for a detected many-to-many join table.",
+          "type": "boolean"
+        },
+        "fields": {
+          "description": "Columns, in declaration order.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/field" }
+        },
+        "relationships": {
+          "description": "Empty when relationships are disabled (--no-relationships).",
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationship" }
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": [
+        "name",
+        "type",
+        "primary_key",
+        "foreign_key",
+        "nullable",
+        "foreign_table",
+        "index",
+        "unique",
+        "default"
+      ],
+      "properties": {
+        "name": { "description": "Column / attribute name.", "type": "string" },
+        "type": {
+          "description": "Type as written in the source (or the mapped Python type).",
+          "type": "string"
+        },
+        "primary_key": { "description": "Part of the primary key.", "type": "boolean" },
+        "foreign_key": { "description": "References another table.", "type": "boolean" },
+        "nullable": { "description": "Column accepts NULL.", "type": "boolean" },
+        "foreign_table": {
+          "description": "Referenced table.column when foreign_key is true.",
+          "type": ["string", "null"]
+        },
+        "index": { "description": "Column is indexed.", "type": "boolean" },
+        "unique": {
+          "description": "Column is unique on its own. Always false on a table's only primary-key column.",
+          "type": "boolean"
+        },
+        "default": {
+          "description": "Default value as source text, if any.",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "required": ["target", "type", "attribute", "nullable", "inverse"],
+      "properties": {
+        "target": { "description": "Name of the related entity.", "type": "string" },
+        "type": {
+          "description": "Cardinality of this side.",
+          "enum": ["one", "many", "one_to_one", "many_to_many"]
+        },
+        "attribute": { "description": "Attribute name on this entity.", "type": "string" },
+        "nullable": {
+          "description": "true when a one relationship's annotation admits None; false otherwise.",
+          "type": "boolean"
+        },
+        "inverse": {
+          "description": "The other side's attribute, when the source names it (back_populates=).",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "enum": {
+      "type": "object",
+      "required": ["name", "values"],
+      "properties": {
+        "name": { "description": "Enum class name.", "type": "string" },
+        "values": {
+          "description": "Enum members, in declaration order.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The JSON output's schema is published as a JSON Schema (draft 2020-12),
+  [`output-v1.json`](https://erdify.devsuit.io/schema/output-v1.json), linked
+  from the [JSON output docs](https://erdify.devsuit.io/usage/output-formats/#schema).
+  CI validates the JSON of every test fixture against it, and checks the
+  PlantUML, Mermaid and HTML output with the real renderers
+  ([#268](https://github.com/devsuit-berlin/erdify/issues/268)).
+
 ## [1.5.4] - 2026-11-13
 
 ### Fixed

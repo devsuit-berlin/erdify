@@ -263,6 +263,30 @@ Check for new series locally with:
 uv run --no-project --with pyyaml --with packaging python scripts/check_upstream_series.py
 ```
 
+### Real Renderers and the JSON Schema
+
+String comparisons can't tell whether a renderer accepts the output. The CI job
+`renderers` writes every fixture, edge-case catalog module and docs example
+in every format (`scripts/render_outputs.py`), checks the `.puml` files with
+PlantUML (`-checkonly`), and renders the `.mmd` files and every HTML page with
+the real Mermaid in headless Chromium (`scripts/renderers/check.mjs`; the
+page's CDN request is answered by the pinned local Mermaid, any other request
+is blocked). `tests/test_json_schema.py` validates the JSON of the same
+sources against `docs/schema/output-v1.json`, and checks that the keys erdify
+emits, the schema and the tables in `docs/usage/output-formats.md` agree: a
+new JSON key goes into all three. A new fixture directory or catalog module is
+picked up automatically.
+
+Run the renderer check locally (needs Java and Node):
+
+```bash
+uv run python scripts/render_outputs.py /tmp/erdify-out
+plantuml -checkonly -failfast2 /tmp/erdify-out/*.puml   # or java -jar plantuml.jar ...
+cd scripts/renderers && npm ci --ignore-scripts \
+  && npx --no-install puppeteer browsers install chrome-headless-shell \
+  && node check.mjs /tmp/erdify-out
+```
+
 ### Adding New Test Fixtures
 
 1. Create a new directory under `tests/fixtures/`

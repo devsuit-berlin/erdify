@@ -906,7 +906,8 @@ def generate_json(
     [{name, values}]}``. Downstream tools can consume this without re-parsing.
     ``schema_version`` is :data:`JSON_SCHEMA_VERSION`; consumers should ignore
     keys they do not know. The full schema is documented in
-    ``docs/usage/output-formats.md``.
+    ``docs/usage/output-formats.md`` and published as a JSON Schema,
+    ``docs/schema/output-v1.json``.
 
     Args:
         entities: Dictionary of entity name to EntityInfo

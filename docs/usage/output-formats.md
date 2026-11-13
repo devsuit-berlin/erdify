@@ -162,6 +162,12 @@ point for downstream tools that want erdify's model without re-parsing source.
 
 ### Schema
 
+The schema is also published as a [JSON Schema](https://json-schema.org/)
+(draft 2020-12): [`output-v1.json`](../schema/output-v1.json)
+(`https://erdify.devsuit.io/schema/output-v1.json`). It allows keys it doesn't
+list, so a document from a later erdify that adds keys still validates. CI
+validates erdify's output for every test fixture against it.
+
 Top level:
 
 | Key | Type | Description |
