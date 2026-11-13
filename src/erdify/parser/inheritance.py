@@ -16,7 +16,8 @@ class RedeclarationRule(Protocol):
     """What a class body's redeclared attribute removes from what its bases stored.
 
     Implemented by every dialect (:class:`~.dialects.base.Dialect`); Django
-    overrides it because its storage key depends on the field kind.
+    overrides the listing rule because its storage key depends on the field
+    kind (and resolves the winners itself, ``DjangoDialect.merge``).
     """
 
     def drop_on_merge(

@@ -815,3 +815,198 @@ class Ticket(models.Model):
         assert fks["legacy_id"] == "crm_customer.LEGACY_ID"
         assert fks["view_id"] == "crm_customer.id"
         assert fks["archive_id"] == "crm_customer.ARCHIVE_ID"
+
+
+def _parse_app(tmp_path: Path, src: str) -> dict:
+    """Parse ``src`` as ``app/models.py`` (app label ``app``)."""
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "models.py").write_text(src, encoding="utf-8")
+    entities, _ = parse_models_directory(tmp_path)
+    return entities
+
+
+class TestDjangoCompositePrimaryKey:
+    """Django 5.2's ``CompositePrimaryKey`` (#276)."""
+
+    def test_named_columns_are_the_key_and_no_id_is_added(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class Order(models.Model):
+    pass
+
+
+class OrderLine(models.Model):
+    pk = models.CompositePrimaryKey("order", "line_no")
+    order = models.ForeignKey(Order, on_delete=models.CASCADE)
+    line_no = models.PositiveIntegerField(unique=True)
+"""
+        line = _parse_app(tmp_path, src)["OrderLine"]
+        assert [(f.name, f.is_primary_key) for f in line.fields] == [
+            ("order_id", True),
+            ("line_no", True),
+        ]
+        assert not any(f.is_nullable for f in line.fields)
+        # A member is no key on its own: Django keeps its UNIQUE constraint.
+        assert [f.is_unique for f in line.fields] == [False, True]
+
+    def test_removed_in_a_subclass(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class Order(models.Model):
+    pass
+
+
+class Base(models.Model):
+    pk = models.CompositePrimaryKey("order_id", "line_no")
+    order = models.ForeignKey(Order, on_delete=models.CASCADE)
+    line_no = models.PositiveIntegerField()
+
+    class Meta:
+        abstract = True
+
+
+class OrderLine(Base):
+    pk = None
+"""
+        line = _parse_app(tmp_path, src)["OrderLine"]
+        assert [(f.name, f.is_primary_key) for f in line.fields] == [
+            ("id", True),
+            ("order_id", False),
+            ("line_no", False),
+        ]
+
+
+class TestDjangoInheritedMeta:
+    """A model without its own ``Meta`` takes its abstract base's (#279)."""
+
+    def test_db_table_and_app_label(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+
+class Filed(models.Model):
+    class Meta:
+        abstract = True
+        db_table = "filed"
+
+
+class Copied(models.Model):
+    class Meta:
+        abstract = True
+        db_table = "copied"
+
+
+class Labelled(models.Model):
+    class Meta:
+        abstract = True
+        app_label = "core"
+
+
+class Memo(Filed):
+    pass
+
+
+class Copy(Copied):
+    class Meta(Copied.Meta):
+        ordering = ["id"]
+
+
+class Draft(Filed):
+    class Meta:
+        ordering = ["id"]
+
+
+class Tag(Labelled):
+    pass
+
+
+class Ref(models.Model):
+    memo = models.ForeignKey(Memo, on_delete=models.CASCADE)
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE)
+"""
+        entities = _parse_app(tmp_path, src)
+        tables = {name: e.table_name for name, e in entities.items()}
+        assert tables["Memo"] == "filed"
+        assert tables["Copy"] == "copied"
+        assert tables["Draft"] == "app_draft"
+        assert tables["Tag"] == "core_tag"
+        fks = {f.name: f.foreign_table for f in entities["Ref"].fields if f.is_foreign_key}
+        assert fks == {"memo_id": "filed.id", "tag_id": "core_tag.id"}
+
+    def test_concrete_parent_meta_is_not_inherited(self, tmp_path: Path):
+        """Django pops a concrete model's ``Meta``: a multi-table child has its own name."""
+        src = """
+from django.db import models
+
+
+class Place(models.Model):
+    class Meta:
+        db_table = "places"
+
+
+class Restaurant(Place):
+    pass
+"""
+        assert _parse_app(tmp_path, src)["Restaurant"].table_name == "app_restaurant"
+
+
+class TestDjangoMetaUniqueness:
+    """``Meta.constraints`` / ``unique_together`` instead of ``__table_args__`` (#274)."""
+
+    def test_single_field_groups_only(self, tmp_path: Path):
+        src = """
+from django.db import models
+from django.db.models.functions import Lower
+
+
+class Owner(models.Model):
+    pass
+
+
+class Account(models.Model):
+    owner = models.ForeignKey(Owner, on_delete=models.CASCADE)
+    email = models.CharField(max_length=50)
+    handle = models.CharField(max_length=50)
+    code = models.CharField(max_length=10)
+    tenant = models.IntegerField()
+    slug = models.SlugField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["owner_id"], name="u_owner"),
+            models.UniqueConstraint(fields=("email",), name="u_email", condition=None),
+            models.UniqueConstraint(Lower("handle"), name="u_handle"),
+            models.UniqueConstraint(fields=["code"], name="u_code", condition=models.Q(tenant=1)),
+            models.CheckConstraint(condition=models.Q(tenant__gte=0), name="c_tenant"),
+        ]
+        unique_together = [("tenant", "slug"), ("handle",)]
+"""
+        account = _parse_app(tmp_path, src)["Account"]
+        unique = {f.name for f in account.fields if f.is_unique}
+        assert unique == {"owner_id", "email", "handle"}
+
+
+class TestDjangoMixinBases:
+    """Only Django models contribute fields (#280)."""
+
+    def test_unknown_base_is_still_read(self, tmp_path: Path):
+        """A base built on a class outside the scanned files may be a model."""
+        src = """
+from django.db import models
+from somewhere import Base
+
+
+class Stamped(Base):
+    created = models.DateTimeField()
+
+
+class Post(Stamped, models.Model):
+    title = models.CharField(max_length=50)
+"""
+        post = _parse_app(tmp_path, src)["Post"]
+        assert [f.name for f in post.fields] == ["id", "created", "title"]

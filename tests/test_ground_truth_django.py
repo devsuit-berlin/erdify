@@ -39,20 +39,7 @@ EDGE_CASES_DIR = ROOT / "tests" / "fixtures" / "django_edge_cases"
 EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
 
 # erdify output that differs from Django's schema, pending a fix.
-KNOWN_DIFFERENCES = {
-    "test_inheritance.py::DJANGO_DIAMOND": (
-        "#272: diamond abstract inheritance follows Python's MRO, Django keeps the first copy"
-    ),
-    "test_dialects.py::test_django_table_args_uniqueness_kept": (
-        "#274: SQLAlchemy __table_args__ is applied to a Django model"
-    ),
-    "test_inheritance.py::TestDjangoSelfOwnerEdgeCases.test_plain_mixin_self_binds_to_the_model"
-    ".src": "#280: a field on a plain (non-Model) mixin is not a column in Django",
-    # Edge-case catalog (tests/fixtures/django_edge_cases).
-    "abstract_meta_inheritance": "#279: Meta.db_table inherited from an abstract base",
-    "composite_primary_key": "#276: CompositePrimaryKey is not supported",
-    "meta_constraints": "#274: a single-field Meta.constraints UniqueConstraint is not read",
-}
+KNOWN_DIFFERENCES: dict[str, str] = {}
 
 # Sources where Django itself builds an inconsistent model, so there is no
 # schema to hold erdify to.
@@ -123,6 +110,9 @@ EXPECTED_UNLOADABLE = {
         "relation to a model in another app's file"
     ),
     "test_base_classes.py::TestModelDerivedSchemas.DJANGO_MODEL": "imports django-ninja",
+    "test_django.py::TestDjangoMixinBases.test_unknown_base_is_still_read.src": (
+        "a base imported from a module outside the source"
+    ),
     "test_cardinality.py::TestDjangoInheritedOverride.BASE": "str.format template",
     "test_cardinality.py::TestDeclaredRelationshipNullability.DJANGO": "str.format template",
     "test_cardinality.py::TestDjangoForeignKeyTarget.SRC": "relation to a model outside the file",

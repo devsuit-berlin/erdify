@@ -34,8 +34,8 @@ def test_default_context_resolves_model_references():
     assert rels == {"user": ("User", "one", "user", False, None)}
 
 
-def test_django_table_args_uniqueness_kept(tmp_path: Path):
-    """The __table_args__ uniqueness pass runs for every dialect, as before #81."""
+def test_django_table_args_uniqueness_ignored(tmp_path: Path):
+    """Django ignores SQLAlchemy's __table_args__, so the column isn't unique (#274)."""
     (tmp_path / "models.py").write_text(
         "from django.db import models\n"
         "from sqlalchemy import UniqueConstraint\n\n\n"
@@ -47,5 +47,5 @@ def test_django_table_args_uniqueness_kept(tmp_path: Path):
     entities, _ = parse_models_directory(tmp_path)
     assert [(f.name, f.is_unique) for f in entities["Account"].fields] == [
         ("id", False),
-        ("email", True),
+        ("email", False),
     ]
