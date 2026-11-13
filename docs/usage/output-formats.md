@@ -121,8 +121,9 @@ In both formats a line break (any control character) in a name or text becomes a
 - An encoded name that collides with another one (`"a b"` and `a_b` both
   become the PlantUML alias `a_b`, or an entity and an enum share a name) gets
   a `_2`, `_3`, ... suffix. A name that is valid as it is keeps it.
-- Mermaid reads `direction TB` (`BT`, `LR`, `RL`) as a layout statement
-  anywhere on a line, even inside quotes, so the space is written `#32;`.
+- Mermaid reads `direction TB` (`BT`, `LR`, `RL`) in a quoted entity name as
+  a layout statement, so its space is written `#32;` (in all quoted text; it
+  draws the same).
 - `--format html` HTML-escapes the Mermaid source in the page.
 - PlantUML reads a backslash followed by `n` as a line break in any text; a
   name containing `\n` is drawn on two lines.

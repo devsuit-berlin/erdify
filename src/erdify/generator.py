@@ -71,15 +71,13 @@ class _ERGenerator:
 
         A name the format accepts as it is keeps it; an encoded name that
         collides with another one gets a ``_2``, ``_3``, ... suffix. Entities
-        are numbered before enums, each in diagram order. Both an entity's
-        ``name`` and its key in ``entities`` (a relationship target) are
-        mapped, in case a caller's keys differ from the names. Built once per
-        :meth:`generate` call.
+        are numbered before enums, each in diagram order. Keyed by
+        ``EntityInfo.name`` / ``EnumInfo.name`` (:meth:`_ref` resolves a dict
+        key first); built once per :meth:`generate` call.
         """
         if self._ids is None:
-            entity_names = [e.name for e in self.entities.values()] + list(self.entities)
-            used = sorted(self._get_used_enums())
-            enum_names = [self.enums[n].name for n in used] + used
+            entity_names = [e.name for e in self.entities.values()]
+            enum_names = [self.enums[n].name for n in sorted(self._get_used_enums())]
             keys = [("entity", name) for name in dict.fromkeys(entity_names)]
             keys += [("enum", name) for name in dict.fromkeys(enum_names)]
             encoded = {key: self._identifier(key[1]) for key in keys}
@@ -101,7 +99,14 @@ class _ERGenerator:
         return self._ids
 
     def _ref(self, entity_name: str, kind: str = "entity") -> str:
-        """The diagram reference to an entity (or enum) called ``entity_name``."""
+        """The diagram reference to an entity (or enum) called ``entity_name``.
+
+        ``entity_name`` may also be a key of ``entities`` / ``enums`` (a
+        relationship target), which a caller's dict may hold apart from the name.
+        """
+        index = self.entities if kind == "entity" else self.enums
+        if entity_name in index:
+            entity_name = index[entity_name].name
         return self._render_ref(self._diagram_ids()[(kind, entity_name)])
 
     def _edge(self, left: str, glyph: str, right: str, label: str) -> str:
@@ -682,8 +687,9 @@ class MermaidGenerator(_ERGenerator):
         ">": "#gt;",
         "~": "#126;",
     }
-    #: A layout statement Mermaid finds anywhere on a line, even inside quotes.
-    _DIRECTION = re.compile(r"(direction)\s+(?=(?:tb|bt|rl|lr))", re.IGNORECASE)
+    #: A layout statement Mermaid finds even in a quoted entity name; written
+    #: as codes in all quoted text, which draws the same.
+    _DIRECTION = re.compile(r"(direction)(\s+)(?=(?:tb|bt|rl|lr))", re.IGNORECASE)
 
     def _identifier(self, name: str) -> str:
         """The entity name as quoted text (:meth:`_text`)."""
@@ -703,12 +709,12 @@ class MermaidGenerator(_ERGenerator):
     def _text(cls, text: str) -> str:
         """Text for inside double quotes, drawn as it is: ``R&D "x"`` -> ``R#38;D #quot;x#quot;``.
 
-        A control character (line break) becomes a space, and the space in
+        A control character (line break) becomes a space, and each space in
         ``direction TB`` (``LR``, ...) the code ``#32;``.
         """
         text = re.sub(r"[\x00-\x1f\x7f]", " ", text)
         text = "".join(cls._CODES.get(c, c) for c in text)
-        return cls._DIRECTION.sub(r"\1#32;", text)
+        return cls._DIRECTION.sub(lambda m: m.group(1) + "#32;" * len(m.group(2)), text)
 
     @classmethod
     def _attribute_word(cls, name: str) -> str:

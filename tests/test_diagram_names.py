@@ -249,3 +249,16 @@ class TestReviewFollowUps:
         gen.generate()
         entities["B c"] = _entity("B c", _pk())
         assert '"B c" {' in gen.generate()
+
+    def test_declared_relationship_to_a_key_that_differs_from_the_name(self):
+        order = _entity("Order Item", _pk())
+        order.relationships = [("users", "one", "user")]
+        entities = {"orders": order, "users": _entity("User", _pk())}
+        out = generate_mermaid(entities)
+        assert '"Order Item" }o--|| User : "user"' in out
+        assert "users" not in out
+        assert "Order_Item }o--|| User" in generate_plantuml(entities)
+
+    def test_direction_keeps_every_space(self):
+        out = generate_mermaid({"direction   LR": _entity("direction   LR", _pk())})
+        assert '"direction#32;#32;#32;LR" {' in out
