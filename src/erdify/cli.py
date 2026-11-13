@@ -350,10 +350,14 @@ def main() -> int:
             include_relationships=not no_relationships,
         )
         target = output_path.with_suffix(ext) if output_path is not None else None
+        # A file ends with a newline, as POSIX text files and tools such as
+        # pre-commit's end-of-file-fixer expect. --check ignores trailing
+        # newlines, so a file either way (or one an older erdify wrote) passes.
+        text = rendered.rstrip("\n") + "\n"
 
         if args.check and target is not None:
             existing = target.read_text(encoding="utf-8") if target.exists() else None
-            if existing == rendered:
+            if existing is not None and existing.rstrip("\n") == rendered.rstrip("\n"):
                 print(f"{fmt} ERD is up to date: {target}", file=sys.stderr)
             else:
                 reason = "differs from" if existing is not None else "is missing at"
@@ -366,7 +370,7 @@ def main() -> int:
 
         if target is not None:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(rendered, encoding="utf-8")
+            target.write_text(text, encoding="utf-8")
             print(f"Generated {fmt} ERD: {target}", file=sys.stderr)
         elif inject_path is None:
             print(rendered)

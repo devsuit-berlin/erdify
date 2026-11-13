@@ -57,6 +57,9 @@ dev = [
     "jsonschema>=4.26.0",
 ]
 docs = ["mkdocs-material[imaging]"]
+hooks = [
+    "pre-commit>=4.7.0",
+]
 
 [project.scripts]
 erdify = "erdify.cli:main"

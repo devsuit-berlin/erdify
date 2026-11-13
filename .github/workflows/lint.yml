@@ -34,7 +34,6 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version-file: .python-version
-      - name: Install pre-commit
-        run: pip install pre-commit
       - name: Run pre-commit hooks
-        run: pre-commit run --all-files
+        # pre-commit comes from uv.lock (the `hooks` group), like every other tool.
+        run: uv run --frozen --group hooks pre-commit run --all-files

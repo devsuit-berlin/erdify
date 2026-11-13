@@ -101,8 +101,9 @@ one falls back to the class-name conversion without warning — see
 
 ## `--check` fails but the diagram looks identical
 
-`--check` compares bytes, so a trailing newline, a changed `--title`, or a
-different flag set between your local run and CI is enough. Make sure both run
+`--check` compares the text exactly (only trailing newlines are ignored), so
+a changed `--title`, a different flag set, or another erdify version between
+your local run and CI is enough. Make sure both run
 the *same* command — the cleanest way is to put the settings in
 `[tool.erdify]` and run plain `erdify .` everywhere.
 

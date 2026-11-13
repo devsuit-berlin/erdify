@@ -670,3 +670,27 @@ def test_cli_no_relationships_hides_edges(tmp_path: Path, capsys, fmt: str):
     out = capsys.readouterr().out
     assert '"a_id"' not in out
     assert "a_id" in out  # the FK column itself is still listed
+
+
+@pytest.mark.parametrize("fmt", ["plantuml", "mermaid", "json", "html"])
+def test_written_file_ends_with_a_newline_and_check_ignores_trailing_ones(tmp_path, fmt):
+    """A file ends with one newline (#269), and --check accepts it with or without one.
+
+    pre-commit's end-of-file-fixer adds the newline erdify used to leave out,
+    after which --check (the erdify-check hook) could never pass again.
+    """
+    _models(tmp_path)
+    out = tmp_path / "erd.out"
+    argv = ["erdify", str(tmp_path), "--format", fmt, "-o", str(out)]
+    with patch.object(sys, "argv", argv):
+        assert main() == 0
+    written = next(tmp_path.glob("erd.*"))
+    text = written.read_text(encoding="utf-8")
+    assert text.endswith("\n") and not text.endswith("\n\n")
+    for variant in (text, text.rstrip("\n"), text + "\n"):
+        written.write_text(variant, encoding="utf-8")
+        with patch.object(sys, "argv", [*argv, "--check"]):
+            assert main() == 0, repr(variant[-3:])
+    written.write_text(text.replace("\n", " \n", 1), encoding="utf-8")
+    with patch.object(sys, "argv", [*argv, "--check"]):
+        assert main() == 1
