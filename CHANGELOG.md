@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-11-13
+
 ### Fixed
 
 - Django: `pk = models.CompositePrimaryKey(...)` (Django 5.2) makes the named
@@ -1343,7 +1345,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.5.2...HEAD
+[1.5.2]: https://github.com/devsuit-berlin/erdify/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/devsuit-berlin/erdify/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/devsuit-berlin/erdify/compare/v1.4.5...v1.5.0
 [1.4.5]: https://github.com/devsuit-berlin/erdify/compare/v1.4.4...v1.4.5
