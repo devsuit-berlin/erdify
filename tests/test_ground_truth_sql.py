@@ -62,6 +62,7 @@ DIALECTS = {
     "test_sql.py::test_create_type_enum": "postgres",
     "test_sql.py::test_column_typed_with_a_quoted_enum_name_matches_the_enum": "postgres",
     "test_sql.py::test_column_type_resolves_to_the_enum_as_the_dialect_folds_names": "postgres",
+    "test_sql.py::test_quoted_enum_type_is_drawn": "postgres",
     "test_ground_truth_sql.py::test_reference_transpiles_only_the_statements_sqlite_rejects"
     ".schema": "postgres",
 }

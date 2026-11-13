@@ -404,7 +404,12 @@ class SqlSchemaParser:
         if isinstance(ref, exp.Identifier):
             return "", ref
         if isinstance(ref, exp.Dot) and isinstance(ref.expression, exp.Identifier):
-            return ref.this.sql().lower().replace('"', "") + ".", ref.expression
+            # Each schema part follows the type name's rule: quoted keeps its case.
+            schema = ".".join(
+                part.name if part.quoted else part.name.lower()
+                for part in ref.this.find_all(exp.Identifier, bfs=False)
+            )
+            return schema + ".", ref.expression
         return None
 
     @staticmethod

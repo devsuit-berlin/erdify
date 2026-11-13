@@ -707,8 +707,25 @@ def test_schema_qualified_column_type_keeps_its_schema(tmp_path: Path) -> None:
         tmp_path,
         """
         CREATE TYPE public."order state" AS ENUM ('new', 'done');
-        CREATE TABLE t (id INTEGER PRIMARY KEY, s public."order state");
+        CREATE TABLE t (
+            id INTEGER PRIMARY KEY, s public."order state", q "MySchema"."order state"
+        );
         """,
         dialect="postgres",
     )
-    assert entities["t"].fields[1].type_str == "public.order state"
+    types = [f.type_str for f in entities["t"].fields[1:]]
+    assert types == ["public.order state", "MySchema.order state"]
+
+
+def test_quoted_enum_type_is_drawn(tmp_path: Path) -> None:
+    """The enum a quoted column type names is drawn in PlantUML and Mermaid (#328)."""
+    entities, enums = _parse_sql(
+        tmp_path,
+        """
+        CREATE TYPE "order state" AS ENUM ('new', 'done');
+        CREATE TABLE t (id INTEGER PRIMARY KEY, s "order state");
+        """,
+        dialect="postgres",
+    )
+    assert 'enum "order state" as order_state' in generate_plantuml(entities, enums)
+    assert '"order state" {' in generate_mermaid(entities, enums)
