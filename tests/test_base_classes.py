@@ -220,3 +220,22 @@ class TestModelDerivedSchemas:
 
         assert result == 0
         assert "skipped UserSchema" in capsys.readouterr().err
+
+
+def test_scanned_base_class_merges_like_a_model(tmp_path: Path):
+    """A scanned --base-classes base passes its fields on like a model base (#267).
+
+    Pydantic copies the first base's field: ``Child`` gets ``BaseSchema.x``
+    (nullable), not ``Other.x``.
+    """
+    (tmp_path / "models.py").write_text(
+        "from pydantic import BaseModel\n"
+        "from pydantic import BaseModel as PydBase\n\n\n"
+        "class BaseSchema(PydBase):\n    x: int | None = None\n\n\n"
+        "class Other(BaseModel):\n    x: int\n\n\n"
+        "class Child(BaseSchema, Other):\n    id: int\n",
+        encoding="utf-8",
+    )
+    entities, _ = parse_models_directory(tmp_path, base_classes=["BaseSchema"])
+    x = next(f for f in entities["Child"].fields if f.name == "x")
+    assert x.is_nullable

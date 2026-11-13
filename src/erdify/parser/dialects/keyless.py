@@ -28,7 +28,9 @@ class _FieldMergeDialect(AnnotatedDialect):
     Python's attribute lookup. A plain class has no fields of its own: it
     exposes those of the first model class in its MRO. ``mixin_fields``: the
     annotations of plain classes in the hierarchy also become fields, where no
-    model class declares the attribute (the first such class in the MRO wins).
+    model class declares the attribute (the first such class in the MRO wins),
+    and the first annotation in the MRO where a plain class gives the name a
+    default (:meth:`_with_mixin_fields`).
 
     A ``ClassVar`` / ``InitVar`` redeclaring a field hides it: in a dataclass
     in every subclass (a pseudo-field passed down), with ``mixin_fields``
@@ -43,8 +45,12 @@ class _FieldMergeDialect(AnnotatedDialect):
         self._fields_cache: Dict[str, _Effective] = {}
 
     def owns_fields(self, class_node: ast.ClassDef) -> bool:
-        """Whether the class is a model class with fields of its own."""
-        return self.detect(class_node)
+        """Whether the class is a model class with fields of its own.
+
+        A class named in ``--base-classes`` is one too, also when its own base
+        is not recognised (it is a model base by declaration).
+        """
+        return self.detect(class_node) or class_node.name in self.ctx.base_classes
 
     def merge(
         self,
@@ -111,10 +117,13 @@ class _FieldMergeDialect(AnnotatedDialect):
         fields: Dict[str, FieldInfo],
         rels: Dict[str, _Rel],
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
-        """Add plain bases' annotations, then drop names whose first annotation is a class var.
+        """Add plain bases' annotations, then apply the first annotation where Pydantic does.
 
         As in Pydantic: the annotation found first along the MRO decides
         whether a name is a class variable, whichever class declares the field.
+        It is also the field when a plain base binds the name to a value (a
+        default Pydantic finds on the class); otherwise an inherited field
+        comes from the model bases, as merged.
         """
         fields, rels = dict(fields), dict(rels)
         for base in mro:
@@ -129,10 +138,38 @@ class _FieldMergeDialect(AnnotatedDialect):
                     rels[attr] = rel
         for attr in [*fields, *rels]:
             first = next((b for b in mro if attr in self.declared_names(self.classes.all[b])), None)
-            if first is not None and attr in self._non_fields(first):
+            if first is None:
+                continue
+            if attr in self._non_fields(first):
                 fields.pop(attr, None)
                 rels.pop(attr, None)
+            elif any(
+                not self.owns_fields(self.classes.all[b])
+                and attr in _value_bindings(self.classes.all[b])
+                for b in mro
+            ):
+                first_fields, first_rels, _ = members[first]
+                fields.pop(attr, None)
+                rels.pop(attr, None)
+                if attr in first_fields:
+                    fields[attr] = first_fields[attr]
+                elif attr in first_rels:
+                    rels[attr] = first_rels[attr]
         return fields, rels
+
+
+def _value_bindings(class_node: ast.ClassDef) -> Set[str]:
+    """Names a class body assigns a value to (``x: T = v`` or ``x = v``)."""
+    names: Set[str] = set()
+    for node in class_node.body:
+        if isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets: List[ast.expr] = [node.target]
+        elif isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        else:
+            continue
+        names.update(t.id for t in targets if isinstance(t, ast.Name))
+    return names
 
 
 class DataclassDialect(_FieldMergeDialect):

@@ -199,7 +199,9 @@ class Order(models.Model):
     inherits from a shared base still wins over `Right`'s redeclaration, as
     `Model.model_fields` and `dataclasses.fields()` report it. A plain
     (undecorated) mixin's annotations are not dataclass fields; in Pydantic they
-    are, unless a model base declares the field, even one later in the MRO.
+    are, unless a model base declares the field, even one later in the MRO
+    (but where the mixin also gives it a default, the first annotation along
+    the MRO is the field, as in Pydantic).
     `ClassVar` and `InitVar` members are not fields. In a dataclass, a
     `ClassVar` / `InitVar` redeclaring a field hides it in every subclass; in
     Pydantic, the annotation found first along the MRO decides whether a name

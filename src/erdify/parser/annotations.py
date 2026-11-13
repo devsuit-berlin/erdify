@@ -31,9 +31,10 @@ MAPPED_WRAPPERS = frozenset({"Mapped"}) | MANY_WRAPPERS
 #: Type qualifiers: they say how a field is declared, not what it holds, so a
 #: column's type and nullability are those of the qualified type.
 QUALIFIERS = frozenset({"Final", "Required", "NotRequired", "ReadOnly"})
-#: Annotations that declare no field at all: a class variable, or a dataclass
-#: ``__init__``-only parameter (``dataclasses.fields()`` leaves both out).
-NON_FIELDS = frozenset({"ClassVar", "InitVar"})
+#: Annotations that declare no field at all: a class variable, a dataclass
+#: ``__init__``-only parameter, or the ``KW_ONLY`` sentinel
+#: (``dataclasses.fields()`` leaves them out).
+NON_FIELDS = frozenset({"ClassVar", "InitVar", "KW_ONLY"})
 #: Single-argument collections of a model: a "many" reference.
 MANY_CONTAINERS = frozenset(
     {
@@ -67,7 +68,7 @@ def expr_name(node: ast.expr) -> str | None:
 
 
 def is_non_field(node: ast.expr) -> bool:
-    """``ClassVar`` / ``InitVar``, bare, subscripted, qualified or quoted.
+    """``ClassVar`` / ``InitVar`` / ``KW_ONLY``, bare, subscripted, qualified or quoted.
 
     No framework read with annotated members makes a field of either:
     dataclasses, Pydantic and SQLModel skip them, and SQLAlchemy maps no

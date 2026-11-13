@@ -102,6 +102,10 @@ LIMITATIONS = {
     "pydantic_final_default": (
         "limitations.md: Pydantic 2 makes a Final field with a default a class variable"
     ),
+    # The test passes --base-classes, which the harness doesn't.
+    "test_base_classes.py::test_scanned_base_class_merges_like_a_model": (
+        "limitations.md: a base erdify can't resolve to BaseModel needs --base-classes"
+    ),
 }
 
 # Sources Pydantic or @dataclass refuse to create that the suite still feeds

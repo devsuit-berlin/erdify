@@ -12,14 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pydantic / dataclasses: a `ClassVar` member is no longer drawn as a field,
   nor is a dataclass `InitVar` parameter; neither is a field
   (`Model.model_fields` / `dataclasses.fields()` leave them out). A
-  `ClassVar` / `InitVar` redeclaring an inherited field removes it, also for
+  dataclass `KW_ONLY` sentinel with a name other than `_` is no longer drawn
+  either. A `ClassVar` / `InitVar` redeclaring an inherited field removes it, also for
   further subclasses, as in the standard library and Pydantic. A SQLModel model skips `ClassVar` members too.
 - Pydantic: with diamond inheritance, a field one base merely inherits wins
   over a later base's redeclaration (`Post(Left, Right)` gets `Left`'s copy),
   as Pydantic merges its bases' `model_fields`; erdify followed Python's
   attribute lookup instead. Likewise a model base's field now wins over a
-  plain mixin's annotation of the same name, even when the mixin comes first
-  in the MRO.
+  plain mixin's bare annotation of the same name, even when the mixin comes
+  first in the MRO; a mixin that also gives it a default still wins there.
 - Dataclasses: an annotation on a plain (undecorated) mixin is no longer drawn
   as a field; `dataclasses.fields()` ignores it. A Pydantic model still gets a
   plain mixin's annotations as fields, as Pydantic does.

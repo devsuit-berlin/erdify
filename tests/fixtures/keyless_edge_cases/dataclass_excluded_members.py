@@ -44,3 +44,10 @@ class Init(Order):
 @dataclass
 class InitGrand(Init):
     pass
+
+
+@dataclass
+class NamedSentinel:
+    id: int
+    kw: KW_ONLY
+    label: str = ""
