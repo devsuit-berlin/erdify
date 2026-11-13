@@ -49,6 +49,9 @@ constructs. Notable case:
 - **`CREATE TYPE ... AS ENUM`** is a PostgreSQL extension. It is only recognised
   when you pass `--sql-dialect postgres`. Under the generic dialect those statements
   are skipped and no enum entities are emitted.
+  A column of an enum type is matched to it the way PostgreSQL resolves the
+  type name: a quoted name (`"order state"`) is read without its quotes and
+  keeps its case, an unquoted one is case-insensitive.
 
 The flag is also settable in `pyproject.toml`:
 

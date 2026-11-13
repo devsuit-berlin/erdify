@@ -667,3 +667,48 @@ def test_column_in_two_foreign_keys_keeps_the_first(tmp_path: Path) -> None:
         """,
     )
     assert _cols(entities, "c")["x"].foreign_table == "a.id"
+
+
+def test_column_typed_with_a_quoted_enum_name_matches_the_enum(tmp_path: Path) -> None:
+    """A quoted type name loses its quotes and keeps its case, like the
+    ``CREATE TYPE`` name it refers to (#328)."""
+    entities, enums = _parse_sql(
+        tmp_path,
+        """
+        CREATE TYPE "order state" AS ENUM ('new', 'done');
+        CREATE TYPE "Tone" AS ENUM ('calm');
+        CREATE TABLE t (id INTEGER PRIMARY KEY, s "order state", n "Tone");
+        """,
+        dialect="postgres",
+    )
+    types = {f.name: f.type_str for f in entities["t"].fields}
+    assert types == {"id": "int", "s": "order state", "n": "Tone"}
+    assert set(enums) == {"order state", "Tone"}
+
+
+def test_column_type_resolves_to_the_enum_as_the_dialect_folds_names(tmp_path: Path) -> None:
+    """Unquoted type names are case-insensitive: ``mood`` is the enum ``Mood``,
+    even when the type is created after the table (#328)."""
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TABLE t (id INTEGER PRIMARY KEY, m mood, d MyDomain);
+        CREATE TYPE Mood AS ENUM ('happy', 'sad');
+        """,
+        dialect="postgres",
+    )
+    types = {f.name: f.type_str for f in entities["t"].fields}
+    assert types == {"id": "int", "m": "Mood", "d": "mydomain"}
+
+
+def test_schema_qualified_column_type_keeps_its_schema(tmp_path: Path) -> None:
+    """A schema-qualified enum type resolves to the enum, schema kept (#328)."""
+    entities, _ = _parse_sql(
+        tmp_path,
+        """
+        CREATE TYPE public."order state" AS ENUM ('new', 'done');
+        CREATE TABLE t (id INTEGER PRIMARY KEY, s public."order state");
+        """,
+        dialect="postgres",
+    )
+    assert entities["t"].fields[1].type_str == "public.order state"
