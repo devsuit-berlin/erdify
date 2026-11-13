@@ -66,7 +66,7 @@ See the [documentation](https://erdify.devsuit.io/) for installation options, th
 
 The same `User` / `Order` schema in **SQLModel, SQLAlchemy 2.0, Django, Pydantic
 and dataclasses** — only the syntax differs. Each one produces the **identical**
-diagram:
+diagram (Pydantic and dataclasses have no keys, so render them with `--infer-keys`):
 
 ![The same User/Order schema in SQLModel, SQLAlchemy, Django, Pydantic and dataclasses, all producing one ERD](https://raw.githubusercontent.com/devsuit-berlin/erdify/main/docs/examples/frameworks.png "Five frameworks, one diagram")
 

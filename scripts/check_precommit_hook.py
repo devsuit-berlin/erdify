@@ -7,8 +7,9 @@ installs erdify from it into its own environment and runs the hooks:
 
 1. ``erdify`` writes the missing diagram (pre-commit passes: it only flags
    changes to tracked files), and passes again once it is committed;
-2. ``erdify-check`` passes on the committed diagram, and also after pre-commit's
-   usual ``end-of-file-fixer`` touched it;
+2. the diagram ends with exactly one newline, and ``erdify-check`` passes on
+   it, on a file without one (an older erdify) and on one with it added
+   (what pre-commit's ``end-of-file-fixer`` leaves; simulated, not run);
 3. after a model change, ``erdify-check`` fails without writing anything, and
    ``erdify`` regenerates the diagram so the check passes again;
 4. neither hook runs for a change to a file that is no ``models.py``.
@@ -75,7 +76,9 @@ def git(project: Path, *args: str) -> None:
 
 def hook(project: Path, hook_id: str, *files: str) -> subprocess.CompletedProcess[str]:
     selection = ["--files", *files] if files else ["--all-files"]
-    return run(project, sys.executable, "-m", "pre_commit", "run", hook_id, *selection)
+    return run(
+        project, sys.executable, "-m", "pre_commit", "run", "--color=never", hook_id, *selection
+    )
 
 
 def expect(result: subprocess.CompletedProcess[str], code: int, step: str) -> None:
@@ -126,7 +129,11 @@ def main(argv: list[str]) -> int:
         commit(project, "diagram")
         expect(hook(project, "erdify"), 0, "erdify passes once the diagram is committed")
 
-        # 2. erdify-check passes, also with the newline end-of-file-fixer leaves.
+        # 2. One trailing newline; erdify-check passes with or without it.
+        written = diagram.read_text(encoding="utf-8")
+        if not written.endswith("\n") or written.endswith("\n\n"):
+            raise SystemExit("FAIL: the diagram does not end with exactly one newline")
+        print("ok: the diagram ends with one newline")
         expect(hook(project, "erdify-check"), 0, "erdify-check passes on the committed diagram")
         text = diagram.read_text(encoding="utf-8").rstrip("\n")
         for ending, origin in (("", "an older erdify"), ("\n", "end-of-file-fixer")):
@@ -155,11 +162,12 @@ def main(argv: list[str]) -> int:
         expect(hook(project, "erdify-check"), 0, "erdify-check passes again")
 
         # 4. The hooks only run for models.py changes.
-        result = hook(project, "erdify-check", "README.md")
-        expect(result, 0, "erdify-check is skipped for a non-model file")
-        if "(no files to check)Skipped" not in result.stdout:
-            print(result.stdout, file=sys.stderr)
-            raise SystemExit("FAIL: erdify-check ran for README.md")
+        for hook_id in ("erdify", "erdify-check"):
+            result = hook(project, hook_id, "README.md")
+            expect(result, 0, f"{hook_id} is skipped for a non-model file")
+            if "(no files to check)Skipped" not in result.stdout:
+                print(result.stdout, file=sys.stderr)
+                raise SystemExit(f"FAIL: {hook_id} ran for README.md")
     print(f"The pre-commit hooks work (erdify at {rev[:12]}).")
     return 0
 

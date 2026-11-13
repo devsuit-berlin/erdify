@@ -10,7 +10,8 @@ source, with no imports, no database connection and no runtime dependencies.**
 ![The same User/Order schema in SQLModel, SQLAlchemy, Django, Pydantic and dataclasses, all producing one ERD](examples/frameworks.png "Five frameworks, one diagram")
 
 The same two tables, written in SQLModel, SQLAlchemy 2.0, Django, Pydantic and
-dataclasses, all render to the same diagram.
+dataclasses, all render to the same diagram (Pydantic and dataclasses with
+`--infer-keys`, as they have no keys).
 
 ## Install and run
 

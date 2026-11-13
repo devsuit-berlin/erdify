@@ -30,8 +30,9 @@ uv run ruff format src/ tests/           # Format
 uv run python scripts/gen_cli_docs.py    # Regenerate docs/usage/cli.md from the argparse parser
 ```
 
-`pre-commit` runs ruff + mypy + the CLI-docs check; install hooks with
-`uv run pre-commit install`.
+`pre-commit` runs ruff + mypy + the CLI-docs check; it is locked in the
+`hooks` dependency group: install the hooks with
+`uv run --group hooks pre-commit install`.
 
 ### Golden-file tests
 
