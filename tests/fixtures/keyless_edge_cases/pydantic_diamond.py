@@ -6,6 +6,8 @@ Pydantic merges each base's ``model_fields`` in reversed MRO order, like
 when looking up an annotation.
 """
 
+from typing import ClassVar
+
 from pydantic import BaseModel
 
 
@@ -29,3 +31,20 @@ class Right(Root):
 
 class Post(Left, Right):
     id: int
+
+
+class Base(BaseModel):
+    tag: str
+
+
+class Plain(Base):
+    pass
+
+
+class Hiding(Base):
+    tag: ClassVar[str] = "x"
+
+
+class Tagged(Plain, Hiding):
+    # Hiding's class variable is the first annotation of tag in the MRO.
+    pass

@@ -6,13 +6,17 @@ field typed as another model is a relationship.
 
 import ast
 from dataclasses import replace
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 from ...config import FieldInfo
+from ..annotations import is_non_field
 from ..common import _ClassMembers, _Rel
 from ..inheritance import merge_members
 from .annotated import AnnotatedDialect
 from .base import ParseContext
+
+#: A class's fields, relationships, and names bound to a ClassVar / InitVar.
+_Effective = Tuple[Dict[str, FieldInfo], Dict[str, _Rel], Set[str]]
 
 
 class _FieldMergeDialect(AnnotatedDialect):
@@ -32,7 +36,7 @@ class _FieldMergeDialect(AnnotatedDialect):
 
     def __init__(self, ctx: ParseContext):
         super().__init__(ctx)
-        self._fields_cache: Dict[str, Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]] = {}
+        self._fields_cache: Dict[str, _Effective] = {}
 
     def owns_fields(self, class_node: ast.ClassDef) -> bool:
         """Whether the class is a model class with fields of its own."""
@@ -46,17 +50,26 @@ class _FieldMergeDialect(AnnotatedDialect):
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
         if self.classes.mro(class_node.name) is None:
             return super().merge(class_node, merge_order, members)
-        fields, rels = self._effective_fields(class_node.name, members)
+        fields, rels, _ = self._effective_fields(class_node.name, members)
         # The cache is shared across entities, and building an entity mutates
         # fields (e.g. is_unique), so each entity gets its own copies.
         return {attr: replace(f) for attr, f in fields.items()}, dict(rels)
 
-    def _effective_fields(
-        self, name: str, members: Dict[str, _ClassMembers]
-    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+    def _non_fields(self, name: str) -> Set[str]:
+        """Names a class body binds to a ``ClassVar`` / ``InitVar``."""
+        return {
+            node.target.id
+            for node in self.member_nodes(self.classes.all[name])
+            if isinstance(node.target, ast.Name) and is_non_field(node.annotation)
+        }
+
+    def _effective_fields(self, name: str, members: Dict[str, _ClassMembers]) -> _Effective:
         """A class's fields as the framework computes them; cached per parse.
 
-        A class's own members do not depend on the entity being built.
+        Also the names its merged view binds to a ``ClassVar`` / ``InitVar``
+        pseudo-field: like ``__dataclass_fields__``, they hide a field of an
+        earlier base in a subclass too. A class's own members do not depend
+        on the entity being built.
         """
         memo = self._fields_cache
         if name in memo:
@@ -64,28 +77,54 @@ class _FieldMergeDialect(AnnotatedDialect):
         mro = self.classes.mro(name) or [name]
         if not self.owns_fields(self.classes.all[name]):
             owner = next((c for c in mro if self.owns_fields(self.classes.all[c])), None)
-            result = self._effective_fields(owner, members) if owner is not None else ({}, {})
+            result = (
+                self._effective_fields(owner, members) if owner is not None else ({}, {}, set())
+            )
             memo[name] = result
             return result
         synthetic: Dict[str, _ClassMembers] = {}
+        hidden = self._non_fields(name)
         for base in mro[:0:-1]:
-            base_fields, base_rels = self._effective_fields(base, members)
-            synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels])
+            base_fields, base_rels, base_hidden = self._effective_fields(base, members)
+            synthetic[base] = (base_fields, base_rels, [*base_fields, *base_rels, *base_hidden])
+            hidden |= base_hidden
         synthetic[name] = members[name]
         fields, rels = merge_members([*mro[:0:-1], name], synthetic, self)
         if self.mixin_fields:
-            fields, rels = dict(fields), dict(rels)
-            for base in mro:
-                if self.owns_fields(self.classes.all[base]):
-                    continue
-                base_fields, base_rels, _ = members[base]
-                for attr, field in base_fields.items():
-                    if attr not in fields and attr not in rels:
-                        fields[attr] = field
-                for attr, rel in base_rels.items():
-                    if attr not in fields and attr not in rels:
-                        rels[attr] = rel
-        memo[name] = (fields, rels)
+            fields, rels = self._with_mixin_fields(mro, members, fields, rels)
+            hidden |= {n for base in mro for n in self._non_fields(base)}
+        hidden -= {*fields, *rels}
+        memo[name] = (fields, rels, hidden)
+        return memo[name]
+
+    def _with_mixin_fields(
+        self,
+        mro: List[str],
+        members: Dict[str, _ClassMembers],
+        fields: Dict[str, FieldInfo],
+        rels: Dict[str, _Rel],
+    ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:
+        """Add plain bases' annotations, then drop names whose first annotation is a class var.
+
+        As in Pydantic: the annotation found first along the MRO decides
+        whether a name is a class variable, whichever class declares the field.
+        """
+        fields, rels = dict(fields), dict(rels)
+        for base in mro:
+            if self.owns_fields(self.classes.all[base]):
+                continue
+            base_fields, base_rels, _ = members[base]
+            for attr, field in base_fields.items():
+                if attr not in fields and attr not in rels:
+                    fields[attr] = field
+            for attr, rel in base_rels.items():
+                if attr not in fields and attr not in rels:
+                    rels[attr] = rel
+        for attr in [*fields, *rels]:
+            first = next((b for b in mro if attr in self.declared_names(self.classes.all[b])), None)
+            if first is not None and attr in self._non_fields(first):
+                fields.pop(attr, None)
+                rels.pop(attr, None)
         return fields, rels
 
 

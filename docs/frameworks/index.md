@@ -181,7 +181,8 @@ class Order(models.Model):
     Mixins / abstract bases (e.g. a SQLAlchemy mixin without `__tablename__`, or a
     Django `class Meta: abstract = True` base) are not drawn as tables, but their
     columns are inherited into concrete entities. In Django only abstract models
-    pass fields on: a plain mixin that isn't a `models.Model` adds none. A Django model subclassing a
+    pass fields on: a plain mixin that isn't a `models.Model` adds none; likewise only
+    `@dataclass` bases pass fields on to a dataclass. A Django model subclassing a
     *concrete* model is the exception: it gets its own table linked 1:1 to the
     parent ([multi-table inheritance](django.md#inheritance)). SQLAlchemy works the
     same way for a subclass of a mapped class: with a `__tablename__` of its own
@@ -193,8 +194,8 @@ class Order(models.Model):
     the model: the class body wins, then, along the MRO, the first copy a
     direct abstract base passes on, unless a class earlier in the MRO already
     binds the name ([Django inheritance](django.md#inheritance)). Pydantic and
-    dataclasses merge their bases' fields, each base's own merged set, from the
-    last base to the first: in `Post(Left, Right)` a field that `Left` merely
+    dataclasses merge the fields of every class in reverse MRO order, each
+    class's own merged set: in `Post(Left, Right)` a field that `Left` merely
     inherits from a shared base still wins over `Right`'s redeclaration, as
     `Model.model_fields` and `dataclasses.fields()` report it. A plain
     (undecorated) mixin's annotations are not dataclass fields; in Pydantic they

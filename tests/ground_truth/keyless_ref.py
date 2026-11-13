@@ -141,11 +141,16 @@ def _dataclass_field_type(cls: type, field: dataclasses.Field[Any]) -> Any:
     annotation than the one ``dataclasses.fields()`` merged (a diamond).
     """
     owner = next(
-        base
-        for base in cls.__mro__
-        if vars(base).get("__dataclass_fields__", {}).get(field.name) is field
-        and field.name in inspect.get_annotations(base)
+        (
+            base
+            for base in cls.__mro__
+            if vars(base).get("__dataclass_fields__", {}).get(field.name) is field
+            and field.name in inspect.get_annotations(base)
+        ),
+        None,
     )
+    if owner is None:
+        raise AssertionError(f"no class in {cls.__name__}'s MRO declares field {field.name!r}")
     return typing.get_type_hints(owner, include_extras=True)[field.name]
 
 

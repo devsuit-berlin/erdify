@@ -242,7 +242,10 @@ parse: field names, whether a field admits `None`, and which fields name
 another model (target, one / many, optional). Keys, table names and type
 display strings are not compared; they are erdify's own. Test models must be
 importable: give a template every import its annotations use. A source the
-library refuses on purpose is listed in `EXPECTED_REJECTED`.
+library refuses on purpose is listed in `EXPECTED_REJECTED`, one that is not
+self-contained in `EXPECTED_UNLOADABLE`; a real erdify bug you aren't fixing
+goes in `KNOWN_DIFFERENCES` with an issue, a documented limitation in
+`LIMITATIONS`.
 
 ```bash
 uv run pytest tests/test_ground_truth_keyless.py -rsx

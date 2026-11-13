@@ -28,3 +28,19 @@ class Order:
 class Shadowed(Order):
     # A class variable redeclaring an inherited field removes it.
     amount: ClassVar[float] = 1.0
+
+
+@dataclass
+class Grand(Shadowed):
+    # The class variable still hides the field one level down.
+    extra: int = 0
+
+
+@dataclass
+class Init(Order):
+    secret: InitVar[str] = ""
+
+
+@dataclass
+class InitGrand(Init):
+    pass

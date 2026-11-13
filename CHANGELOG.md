@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pydantic / dataclasses: a `ClassVar` member is no longer drawn as a field,
   nor is a dataclass `InitVar` parameter; neither is a field
   (`Model.model_fields` / `dataclasses.fields()` leave them out). A
-  `ClassVar` redeclaring an inherited dataclass field removes it, as in the
-  standard library. A SQLModel model skips `ClassVar` members too.
+  `ClassVar` / `InitVar` redeclaring an inherited field removes it, also for
+  further subclasses, as in the standard library and Pydantic. A SQLModel model skips `ClassVar` members too.
 - Pydantic: with diamond inheritance, a field one base merely inherits wins
   over a later base's redeclaration (`Post(Left, Right)` gets `Left`'s copy),
   as Pydantic merges its bases' `model_fields`; erdify followed Python's

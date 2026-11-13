@@ -26,3 +26,21 @@ class Order(BaseModel):
 
     def total(self) -> float:
         return self.amount
+
+
+class Shadowed(Order):
+    # A class variable redeclaring an inherited field removes it.
+    amount: ClassVar[float] = 1.0
+
+
+class Grand(Shadowed):
+    extra: int = 0
+
+
+class Mixin:
+    id: ClassVar[int] = 0
+
+
+class MixedFirst(Mixin, Order):
+    # The mixin's class variable comes first in the MRO: id is no field.
+    pass

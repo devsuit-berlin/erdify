@@ -34,7 +34,8 @@ Release PRs ("chore: release X.Y.Z") use .github/release-pr-template.md instead.
 <!--
 Which tests were added or changed, and what they cover. For parser changes:
 - a regression test with a minimal model snippet,
-- for SQLAlchemy / SQLModel / Django: a module in the edge-case catalog
+- for SQLAlchemy / SQLModel / Django / Pydantic / dataclasses: a module in the
+  edge-case catalog
   (tests/fixtures/*_edge_cases/) and a passing ground-truth comparison
   (tests/test_ground_truth_*.py), or the KNOWN_DIFFERENCES / LIMITATIONS entry
   you added and why.

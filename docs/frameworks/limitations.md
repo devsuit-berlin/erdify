@@ -319,7 +319,8 @@ names, so it can be wrong in both directions.
 
 A Pydantic field annotated `Final` with a default (`version: Final[int] = 1`)
 is drawn as a field. Pydantic 2 treats it as a class variable instead, which
-it deprecated in 2.11; Pydantic 3 makes it a field, as a dataclass does.
+it deprecated in 2.11, announcing that it becomes a field in Pydantic 3, as in
+a dataclass.
 Annotate a class variable with `ClassVar` to leave it out.
 
 ## Deferred / Not supported
