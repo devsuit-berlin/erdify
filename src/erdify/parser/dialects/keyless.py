@@ -6,7 +6,7 @@ field typed as another model is a relationship.
 
 import ast
 from dataclasses import replace
-from typing import Dict, List, Set, Tuple
+from typing import Dict, FrozenSet, List, Set, Tuple
 
 from ...config import FieldInfo
 from ..annotations import is_non_field
@@ -43,6 +43,8 @@ class _FieldMergeDialect(AnnotatedDialect):
     def __init__(self, ctx: ParseContext):
         super().__init__(ctx)
         self._fields_cache: Dict[str, _Effective] = {}
+        self._owns_cache: Dict[str, bool] = {}
+        self._body_cache: Dict[str, Tuple[Set[str], Set[str], Set[str]]] = {}
 
     def owns_fields(self, class_node: ast.ClassDef) -> bool:
         """Whether the class is a model class with fields of its own.
@@ -50,7 +52,27 @@ class _FieldMergeDialect(AnnotatedDialect):
         A class named in ``--base-classes`` is one too, also when its own base
         is not recognised (it is a model base by declaration).
         """
-        return self.detect(class_node) or class_node.name in self.ctx.base_classes
+        name = class_node.name
+        if name not in self._owns_cache:  # detect() walks the ancestors: memoize
+            self._owns_cache[name] = self.detect(class_node) or name in self.ctx.base_classes
+        return self._owns_cache[name]
+
+    def _body(self, name: str) -> Tuple[Set[str], Set[str], Set[str]]:
+        """A class body's declared names, ``ClassVar`` / ``InitVar`` names and
+        names bound to a value; memoized (the MRO scans repeat them)."""
+        if name not in self._body_cache:
+            node = self.classes.all[name]
+            non_fields = {
+                member.target.id
+                for member in self.member_nodes(node)
+                if isinstance(member.target, ast.Name) and is_non_field(member.annotation)
+            }
+            self._body_cache[name] = (
+                set(self.declared_names(node)),
+                non_fields,
+                _value_bindings(node),
+            )
+        return self._body_cache[name]
 
     def merge(
         self,
@@ -65,13 +87,9 @@ class _FieldMergeDialect(AnnotatedDialect):
         # fields (e.g. is_unique), so each entity gets its own copies.
         return {attr: replace(f) for attr, f in fields.items()}, dict(rels)
 
-    def _non_fields(self, name: str) -> Set[str]:
+    def _non_fields(self, name: str) -> FrozenSet[str]:
         """Names a class body binds to a ``ClassVar`` / ``InitVar``."""
-        return {
-            node.target.id
-            for node in self.member_nodes(self.classes.all[name])
-            if isinstance(node.target, ast.Name) and is_non_field(node.annotation)
-        }
+        return frozenset(self._body(name)[1])
 
     def _effective_fields(self, name: str, members: Dict[str, _ClassMembers]) -> _Effective:
         """A class's fields as the framework computes them; cached per parse.
@@ -93,7 +111,7 @@ class _FieldMergeDialect(AnnotatedDialect):
             memo[name] = result
             return result
         synthetic: Dict[str, _ClassMembers] = {}
-        hidden = self._non_fields(name)
+        hidden = set(self._non_fields(name))  # a copy: the body cache is shared
         for base in mro[:0:-1]:
             base_fields, base_rels, base_hidden = self._effective_fields(base, members)
             # Dataclasses carry ClassVar / InitVar pseudo-fields down to every
@@ -137,16 +155,14 @@ class _FieldMergeDialect(AnnotatedDialect):
                 if attr not in fields and attr not in rels:
                     rels[attr] = rel
         for attr in [*fields, *rels]:
-            first = next((b for b in mro if attr in self.declared_names(self.classes.all[b])), None)
+            first = next((b for b in mro if attr in self._body(b)[0]), None)
             if first is None:
                 continue
             if attr in self._non_fields(first):
                 fields.pop(attr, None)
                 rels.pop(attr, None)
             elif any(
-                not self.owns_fields(self.classes.all[b])
-                and attr in _value_bindings(self.classes.all[b])
-                for b in mro
+                attr in self._body(b)[2] and not self.owns_fields(self.classes.all[b]) for b in mro
             ):
                 first_fields, first_rels, _ = members[first]
                 fields.pop(attr, None)
