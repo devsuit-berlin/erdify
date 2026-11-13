@@ -325,6 +325,7 @@ names, so it can be wrong in both directions.
 | Fields added via `setattr` / loops / `if TYPE_CHECKING` | Not supported |
 | Non-literal `__tablename__` / `declared_attr` | Falls back to the class name, silently; a SQLAlchemy class with a `declared_attr` table name is not drawn ([details](#non-literal-__tablename__)) |
 | Non-literal Django `db_column` / `Meta.db_table` | Falls back to the attribute name / Django's default table name, silently |
+| Non-literal `CompositePrimaryKey(*names)` arguments | No implicit `id` is added, but no column is marked as the primary key |
 | `__table_args__` (composite FKs, composite `UniqueConstraint`, partial or non-unique `Index`, `schema=`) | Not read; single-column `UniqueConstraint` / unique `Index` is read |
 | Django composite `Meta.unique_together` / `Meta.constraints`, conditional or expression `UniqueConstraint`, `Meta.indexes` | Not read; a single-field, unconditional unique constraint is |
 | Django app label from an `AppConfig` named in `INSTALLED_APPS` (`"shop.apps.Custom"`), or a non-literal `label` | The app's default `AppConfig` or the package name is used |

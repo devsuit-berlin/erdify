@@ -76,3 +76,11 @@ class Typed(Generic[T]):
 
 class Badge(Typed[str], models.Model):
     """A Generic mixin is no model: its field is no column."""
+
+
+class Wrapped(Typed[str]):
+    note = models.CharField(max_length=10)
+
+
+class Sticker(Wrapped, models.Model):
+    """A mixin on a scanned generic class (Typed[str]) is plain too."""

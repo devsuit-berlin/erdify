@@ -880,6 +880,25 @@ class OrderLine(Base):
             ("line_no", False),
         ]
 
+    def test_non_literal_key_adds_no_id(self, tmp_path: Path):
+        src = """
+from django.db import models
+
+KEY = ("order_id", "line_no")
+
+
+class Order(models.Model):
+    pass
+
+
+class OrderLine(models.Model):
+    pk = models.CompositePrimaryKey(*KEY)
+    order = models.ForeignKey(Order, on_delete=models.CASCADE)
+    line_no = models.PositiveIntegerField()
+"""
+        line = _parse_app(tmp_path, src)["OrderLine"]
+        assert [f.name for f in line.fields] == ["order_id", "line_no"]
+
 
 class TestDjangoInheritedMeta:
     """A model without its own ``Meta`` takes its abstract base's (#279)."""

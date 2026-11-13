@@ -38,8 +38,13 @@ MODULES = {
 EDGE_CASES_DIR = ROOT / "tests" / "fixtures" / "django_edge_cases"
 EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
 
-# erdify output that differs from Django's schema, pending a fix.
-KNOWN_DIFFERENCES: dict[str, str] = {}
+# erdify output that differs from Django's schema: pending a fix (an issue), or
+# a documented limitation (docs/frameworks/limitations.md).
+KNOWN_DIFFERENCES: dict[str, str] = {
+    "test_django.py::TestDjangoCompositePrimaryKey.test_non_literal_key_adds_no_id.src": (
+        "limitation: non-literal CompositePrimaryKey arguments mark no column as the key"
+    ),
+}
 
 # Sources where Django itself builds an inconsistent model, so there is no
 # schema to hold erdify to.

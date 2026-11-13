@@ -321,8 +321,11 @@ class DjangoDialect(Dialect):
         super().finish(entity, class_node)
         self._add_parent_links(entity, class_node)
         # Django implicitly adds an `id` primary key (BigAutoField since Django 3.2)
-        # when no field declares primary_key=True and there is no parent link.
-        if not any(f.is_primary_key for f in entity.fields):
+        # when no field declares primary_key=True and there is no parent link,
+        # nor a composite key (even one whose fields erdify can't read).
+        if not any(f.is_primary_key for f in entity.fields) and (
+            self._composite_primary_key(class_node) is None
+        ):
             entity.fields.insert(
                 0,
                 FieldInfo(
@@ -336,7 +339,8 @@ class DjangoDialect(Dialect):
         """The column keys of a ``CompositePrimaryKey`` the model has, if any (#276).
 
         Its arguments name fields or attnames (``order`` / ``order_id``); a
-        ``ForeignKey`` is the ``<name>_id`` column.
+        ``ForeignKey`` is the ``<name>_id`` column. Non-literal arguments are
+        left out, so the list may be empty.
         """
         declared = self._own_declarations(class_node)
         call = next(
@@ -812,10 +816,13 @@ class DjangoDialect(Dialect):
                 continue
             base_node = self.classes.all[base]
             inherited = self._own_declarations(base_node)
-            if base not in direct or self._is_plain_class(base, ()):
+            if self._is_concrete_django_model(base):
+                # Its local fields, including the implicit `id` / `<x>_ptr` links.
+                taken |= self._own_column_names(base_node)
+                if base not in direct:
+                    taken |= self._body_names(base_node)
+            elif base not in direct or self._is_plain_class(base, ()):
                 taken |= self._body_names(base_node) | set(inherited)
-            elif self._is_concrete_django_model(base):
-                taken |= set(inherited)
             else:
                 for attr, declaration in inherited.items():
                     if attr not in declared and attr not in taken:
@@ -855,10 +862,12 @@ class DjangoDialect(Dialect):
         if node is None or name in stack:
             return False
         for base in node.bases:
-            base_name = expr_name(base.value if isinstance(base, ast.Subscript) else base)
-            if base_name in _NON_MODEL_BASES:
+            inner = base.value if isinstance(base, ast.Subscript) else base  # Typed[str]
+            if expr_name(inner) in _NON_MODEL_BASES:
                 continue
-            if not (isinstance(base, ast.Name) and self._is_plain_class(base.id, stack + (name,))):
+            if not (
+                isinstance(inner, ast.Name) and self._is_plain_class(inner.id, stack + (name,))
+            ):
                 return False
         return True
 
@@ -1006,8 +1015,9 @@ class DjangoDialect(Dialect):
         """Return the Django field class name (e.g. "CharField", "ForeignKey").
 
         Only constructs that are relationship fields or end in "Field" qualify,
-        which filters out non-field assignments such as ``objects = Manager()``;
-        and ``CompositePrimaryKey``, which makes no column (#276).
+        which filters out non-field assignments such as ``objects = Manager()``.
+        ``CompositePrimaryKey`` is returned too: a model field that makes no
+        column (#276).
         """
         func = call.func
         if isinstance(func, ast.Attribute):
