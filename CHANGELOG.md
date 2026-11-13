@@ -39,9 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a unique foreign key 1:1), and a diamond-inherited field may change its
   target or primary-key status. Regenerate the diagram once if you gate CI on
   `--check`.
-- A composite primary-key member that is unique on its own is marked `UK` (Mermaid / PlantUML) and `"unique": true`
-  (JSON), and such a foreign key is drawn 1:1, also in a link
-  table (`||--o|` / `|o--||` instead of `||--o{` / `}o--||`). Regenerate the
+- A composite primary-key member that is unique on its own is marked `UK`
+  (Mermaid / PlantUML) and `"unique": true` (JSON), and such a foreign key is
+  drawn 1:1, also in a link table (`||--o|` / `|o--||` instead of `||--o{` / `}o--||`). Regenerate the
   diagram once if you gate CI on `--check`.
 
 ## [1.5.1] - 2026-11-13

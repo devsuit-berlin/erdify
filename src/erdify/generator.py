@@ -165,7 +165,7 @@ class _ERGenerator:
         ``sole_pk`` marks an FK that is the entity's *only* primary-key column
         (the shared-primary-key 1:1): the key makes it unique by definition, so
         it is drawn 1:1 too (#222). In a composite PK the FK alone is not
-        unique and stays N:1.
+        unique and stays N:1, unless it is unique on its own (#331).
         """
         child = "|o" if field.is_unique or sole_pk else "}o"
         parent = "o|" if field.is_nullable else "||"
@@ -212,9 +212,11 @@ class _ERGenerator:
         """Generate relationships through a link table.
 
         A binary association table (two FKs) is drawn as the classic M:N
-        pass-through path. A ternary or higher-order one (three or more FKs)
-        has no single binary cardinality, so it is drawn as a star: one edge
-        from each parent to the link entity (#118).
+        pass-through path; a member that is unique on its own (#331) caps its
+        side at one link row (``||--o|`` / ``|o--||``). A ternary or
+        higher-order one (three or more FKs) has no single binary cardinality,
+        so it is drawn as a star: one edge from each parent to the link
+        entity (#118).
         """
         lines: List[str] = []
         fk_fields = [f for f in link_entity.fields if f.is_foreign_key]
