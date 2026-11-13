@@ -765,7 +765,7 @@ class DjangoDialect(Dialect):
             is_primary_key=is_primary_key,
             is_foreign_key=True,
             is_nullable=is_nullable and not is_primary_key,
-            is_unique=is_unique and not is_primary_key,
+            is_unique=is_unique,  # cleared on a sole primary key (#331)
             foreign_table=f"{self._django_target_table(target)}.{column}",
         )
         self._fk_targets[id(fk)] = target
@@ -1060,7 +1060,7 @@ class DjangoDialect(Dialect):
             is_primary_key=is_primary_key,
             is_nullable=is_nullable and not is_primary_key,
             default_value=default_value,
-            is_unique=is_unique and not is_primary_key,
+            is_unique=is_unique,  # cleared on a sole primary key (#331)
         )
 
     def _django_choices_enum(self, call: ast.Call) -> str | None:

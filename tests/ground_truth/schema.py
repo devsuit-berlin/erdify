@@ -101,7 +101,7 @@ def _table(entity: EntityInfo, relationships: bool = False) -> Table:
         f.name: Column(
             pk=f.is_primary_key,
             nullable=f.is_nullable,
-            unique=f.is_unique and not f.is_primary_key,
+            unique=f.is_unique,  # never set on a sole primary key (#331)
             fk=f.foreign_table if f.is_foreign_key else None,
         )
         for f in entity.fields

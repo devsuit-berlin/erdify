@@ -332,7 +332,6 @@ names, so it can be wrong in both directions.
 | Django base built on a class outside the scanned files (`class Stamped(LibBase)`) | Read like an abstract model: its fields are columns. A scanned plain class (not a `models.Model` subclass, also on `Generic[...]` / `Protocol` / `ABC`) adds none |
 | Django `to_field=` naming a field the target inherits from a multi-table parent | Drawn to the parent's column; Django rejects it (`FieldError`) |
 | A foreign key to a Django model with a `CompositePrimaryKey` | Drawn to `<table>.id`, which doesn't exist; Django doesn't support such a key and rejects it |
-| A unique column (or one-to-one) that is a member of a composite primary key | Not marked `UK` and drawn N:1, though it is unique on its own ([#331](https://github.com/devsuit-berlin/erdify/issues/331)) |
 | Django `AUTH_USER_MODEL` | Not read from `settings.py`; the one scanned model built on `AbstractBaseUser` is assumed, else `auth.User` |
 | Django contrib bases imported under another name (`import AbstractUser as Base`), or subclassing the concrete `auth.User` | Fields of the contrib base are not added |
 | A base class named `AbstractUser` / `AbstractBaseUser` / `PermissionsMixin` imported from a non-Django module, while another scanned file imports Django's | Gets Django's fields: base classes are resolved by name across the scan. Relation targets, by contrast, follow each module's own imports |

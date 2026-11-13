@@ -1204,3 +1204,100 @@ def test_overridden_link_to_name_does_not_shield_other_foreign_keys(tmp_path: Pa
     entities = _parse(tmp_path, src)
     for i in range(20):
         assert _field(entities, f"A{i}", "acct_id").foreign_table == "acct.acct_pk"
+
+
+class TestCompositeKeyMemberUnique:
+    """A composite primary-key member keeps its own uniqueness (#331)."""
+
+    SRC = """
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Person(Base):
+    __tablename__ = "person"
+    id: Mapped[int] = mapped_column(primary_key=True, unique=True)
+
+
+class Tenant(Base):
+    __tablename__ = "tenant"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Seat(Base):
+    __tablename__ = "seat"
+    person_id: Mapped[int] = mapped_column(ForeignKey("person.id"), primary_key=True, unique=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant.id"), primary_key=True)
+"""
+
+    @pytest.fixture
+    def entities(self, tmp_path: Path):
+        (tmp_path / "models.py").write_text(self.SRC, encoding="utf-8")
+        return parse_models_directory(tmp_path)[0]
+
+    def test_ir(self, entities):
+        assert [f.is_unique for f in entities["Person"].fields] == [False]  # sole key
+        seat = {f.name: f.is_unique for f in entities["Seat"].fields}
+        assert seat == {"person_id": True, "tenant_id": False}
+
+    def test_mermaid(self, entities):
+        out = generate_mermaid(entities)
+        assert "int person_id PK,FK,UK" in out
+        assert "int tenant_id PK,FK\n" in out
+        assert "int id PK,UK" not in out
+        # Link table: each person has at most one seat.
+        assert 'Person ||--o| Seat : "person_id"' in out
+        assert 'Seat }o--|| Tenant : "tenant_id"' in out
+
+    def test_plantuml(self, entities):
+        out = generate_plantuml(entities)
+        seat = out[out.index('entity "seat"') :].split("}", 1)[0]
+        assert "person_id" in seat and "UK" in seat.split("person_id", 1)[1].split("\n", 1)[0]
+        assert "UK" not in seat.split("tenant_id", 1)[1].split("\n", 1)[0]
+
+    def test_json(self, entities):
+        data = json.loads(generate_json(entities))
+        seat = next(e for e in data["entities"] if e["name"] == "Seat")
+        assert {c["name"]: c["unique"] for c in seat["fields"]} == {
+            "person_id": True,
+            "tenant_id": False,
+        }
+
+
+class TestCompositeKeyMemberUniqueLinkEdges:
+    """Link-table edges of a unique composite-key member, in each position (#331)."""
+
+    def _mermaid(self, tmp_path: Path, ddl: str) -> str:
+        (tmp_path / "schema.sql").write_text(ddl, encoding="utf-8")
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["*.sql"])
+        return generate_mermaid(entities)
+
+    PARENTS = (
+        "CREATE TABLE a (id INTEGER PRIMARY KEY);\n"
+        "CREATE TABLE b (id INTEGER PRIMARY KEY);\n"
+        "CREATE TABLE c (id INTEGER PRIMARY KEY);\n"
+    )
+
+    def test_second_member_unique(self, tmp_path: Path):
+        out = self._mermaid(
+            tmp_path,
+            self.PARENTS + "CREATE TABLE ab (a_id INTEGER REFERENCES a (id), "
+            "b_id INTEGER UNIQUE REFERENCES b (id), PRIMARY KEY (a_id, b_id));",
+        )
+        assert 'a ||--o{ ab : "a_id"' in out
+        assert 'ab |o--|| b : "b_id"' in out
+
+    def test_ternary_member_unique(self, tmp_path: Path):
+        out = self._mermaid(
+            tmp_path,
+            self.PARENTS + "CREATE TABLE abc (a_id INTEGER REFERENCES a (id), "
+            "b_id INTEGER REFERENCES b (id), c_id INTEGER UNIQUE REFERENCES c (id), "
+            "PRIMARY KEY (a_id, b_id, c_id));",
+        )
+        assert 'a ||--o{ abc : "a_id"' in out
+        assert 'b ||--o{ abc : "b_id"' in out
+        assert 'c ||--o| abc : "c_id"' in out

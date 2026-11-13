@@ -233,8 +233,8 @@ class AnnotatedDialect(Dialect):
             foreign_table=foreign_table,
             index=index,
             default_value=default_value,
-            # is_unique is reserved for non-PK uniqueness (see FieldInfo).
-            is_unique=is_unique and not is_primary_key,
+            # Cleared on a sole primary key once the entity is built (#331).
+            is_unique=is_unique,
         )
 
     def _extract_default_value(self, node: ast.AnnAssign) -> str | None:

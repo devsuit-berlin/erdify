@@ -127,7 +127,9 @@ def _read(connection: sqlite3.Connection) -> Schema:
     for name in names:
         info = columns[name]
         pk = {c for c, (_, is_pk) in info.items() if is_pk}
-        unique = _unique_columns(connection, name) - pk
+        # Only a sole primary key is unique by the key; a composite member
+        # keeps its own UNIQUE (#331).
+        unique = _unique_columns(connection, name) - (pk if len(pk) == 1 else set())
         fks = _foreign_keys(connection, name, by_lower, columns)
         tables[name] = Table(
             table=name,

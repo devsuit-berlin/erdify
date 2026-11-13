@@ -290,8 +290,7 @@ class Dialect:
         unique_cols, unique_refs = self.unique_columns(class_node)
         db_names = self._db_column_names(class_node)
         for f in entity.fields:
-            if f.is_primary_key:
-                continue
+            # A sole primary key is cleared again later; a composite member keeps it (#331).
             if db_names.get(f.name, f.name) in unique_cols or f.name in unique_refs:
                 f.is_unique = True
 

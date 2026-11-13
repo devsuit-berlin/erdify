@@ -89,12 +89,13 @@ parent end follows FK nullability — so it renders `|o--||` when the column is
 `NOT NULL`, and `|o--o|` when it is nullable. Both
 column-level `col ... UNIQUE` and single-column table-level `UNIQUE (col)`
 (anonymous or named `CONSTRAINT ... UNIQUE (col)`) and a single-column
-`CREATE UNIQUE INDEX` are recognized; composite `UNIQUE (a, b)` is not. A unique non-primary-key column is also flagged with a
-`UK` marker in the entity block ([#97](https://github.com/devsuit-berlin/erdify/issues/97)).
+`CREATE UNIQUE INDEX` are recognized; composite `UNIQUE (a, b)` is not. A unique column is also
+flagged with a `UK` marker (not a table's only primary-key column, which the
+key already makes unique; a member of a composite primary key, yes) in the entity block ([#97](https://github.com/devsuit-berlin/erdify/issues/97)).
 A foreign key that is also the table's only primary-key column (a shared
 primary key, e.g. `id INTEGER PRIMARY KEY REFERENCES users(id)`) is unique by
 definition and is drawn 1:1 as well; one that is part of a composite primary
-key stays N:1.
+key stays N:1, unless it is unique on its own.
 
 A statement that fails to parse is reported on stderr and skipped; the rest of
 its file is still read (with [`--strict`](../usage/cli.md#files-that-cannot-be-parsed-strict),

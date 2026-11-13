@@ -9,7 +9,13 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
-from .config import EntityInfo, EnumInfo, FieldInfo, is_structural_link_table
+from .config import (
+    EntityInfo,
+    EnumInfo,
+    FieldInfo,
+    is_structural_link_table,
+    normalize_key_uniqueness,
+)
 from .parser import ModelParseError
 from .parser.discovery import DEFAULT_EXCLUDE_DIRS, _match_include
 
@@ -354,16 +360,11 @@ class SqlSchemaParser:
             for c in constraints
         )
         default = self._default_value(constraints, exp)
-        # A primary key is inherently unique, but is_unique is reserved for a
-        # *non-PK* uniqueness that implies a 1:1 relationship (a PK is tracked
-        # by is_primary_key). Never mark a PK column unique, even when it also
-        # carries an explicit UNIQUE constraint.
-        is_unique = not is_pk and (
-            name in unique_cols
-            or self._has_constraint(
-                constraints,
-                exp.UniqueColumnConstraint,  # type: ignore[attr-defined]
-            )
+        # Kept as declared: a member of a composite primary key is unique on
+        # its own only through UNIQUE; _finalize() clears it on a sole PK (#331).
+        is_unique = name in unique_cols or self._has_constraint(
+            constraints,
+            exp.UniqueColumnConstraint,  # type: ignore[attr-defined]
         )
         return FieldInfo(
             name=name,
@@ -518,7 +519,7 @@ class SqlSchemaParser:
         Each plain column of the index gets ``FieldInfo.index``; an expression
         (``lower(col)``) is not a column. A unique index on one plain column,
         without a ``WHERE`` clause, makes that column unique like a ``UNIQUE``
-        constraint (a primary key is never marked, see :meth:`_column`).
+        constraint (cleared again on a sole primary key, see :meth:`_finalize`).
         """
         index = create.this  # type: ignore[attr-defined]  # exp.Index
         table_node = index.find(exp.Table)  # type: ignore[attr-defined]
@@ -547,7 +548,7 @@ class SqlSchemaParser:
         for f in entity.fields:
             if f.name in indexed:
                 f.index = True
-                if unique and not f.is_primary_key:
+                if unique:
                     f.is_unique = True
 
     @staticmethod
@@ -560,6 +561,7 @@ class SqlSchemaParser:
     def _finalize(self) -> None:
         """Detect link tables, then apply ``exclude_patterns``."""
         for entity in self._entities.values():
+            normalize_key_uniqueness(entity.fields)
             entity.is_link_table = is_structural_link_table(entity.fields)
         self._apply_excludes()
 

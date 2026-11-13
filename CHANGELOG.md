@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lookup finds (#272).
 - Docs: a `to_field=` naming a field the target inherits from a multi-table
   parent was described as supported; Django rejects it (#273).
+- A column that is part of a composite primary key and unique on its own
+  (`unique=True`, a `OneToOneField`, a single-column `UNIQUE` / unique index or
+  Django `Meta` constraint) lost its uniqueness: no `UK`, and a foreign key was
+  drawn N:1 instead of 1:1. Every source keeps it now; only a table's sole
+  primary-key column, which the key already makes unique, drops it (#331).
 
 ### Output changes
 
@@ -34,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a unique foreign key 1:1), and a diamond-inherited field may change its
   target or primary-key status. Regenerate the diagram once if you gate CI on
   `--check`.
+- A composite primary-key member that is unique on its own is marked `UK` (Mermaid / PlantUML) and `"unique": true`
+  (JSON), and such a foreign key is drawn 1:1, also in a link
+  table (`||--o|` / `|o--||` instead of `||--o{` / `}o--||`). Regenerate the
+  diagram once if you gate CI on `--check`.
 
 ## [1.5.1] - 2026-11-13
 
