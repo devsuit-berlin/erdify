@@ -51,3 +51,15 @@ class NamedSentinel:
     id: int
     kw: KW_ONLY
     label: str = ""
+
+
+@dataclass
+class Keyed:
+    kw: int
+
+
+@dataclass
+class KeyedChild(Keyed):
+    # A KW_ONLY sentinel named like an inherited field doesn't hide it.
+    kw: KW_ONLY
+    label: str = ""

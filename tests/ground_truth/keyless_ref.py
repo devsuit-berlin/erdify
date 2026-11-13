@@ -2,8 +2,8 @@
 
 The source is executed as a fresh module. The fields of a Pydantic model come
 from ``Model.model_fields`` (after ``model_rebuild()`` resolves forward
-references), those of a dataclass from ``dataclasses.fields()`` with the types
-of ``typing.get_type_hints()``; both include inherited fields.
+references), those of a dataclass from ``dataclasses.fields()``, each type
+resolved in the class that declared the field; both include inherited fields.
 
 Pydantic models and dataclasses describe objects, not tables, so there are no
 keys: every column is compared by name and nullability only. A column is

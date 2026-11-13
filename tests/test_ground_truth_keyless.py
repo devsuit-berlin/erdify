@@ -94,7 +94,9 @@ def _template_sources() -> list[Snippet]:
 
 
 # erdify output that differs from the library, pending a fix.
-KNOWN_DIFFERENCES: dict[str, str] = {}
+KNOWN_DIFFERENCES = {
+    "dataclass_private_field": "#341: a dataclass field starting with an underscore is not drawn",
+}
 
 # Documented in docs/frameworks/limitations.md; strict xfails, so that the
 # page is updated once one is supported.
@@ -104,7 +106,7 @@ LIMITATIONS = {
     ),
     # The test passes --base-classes, which the harness doesn't.
     "test_base_classes.py::test_scanned_base_class_merges_like_a_model": (
-        "limitations.md: a base erdify can't resolve to BaseModel needs --base-classes"
+        "limitations.md: a base on an aliased BaseModel import needs --base-classes"
     ),
 }
 
