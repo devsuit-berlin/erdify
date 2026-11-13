@@ -37,7 +37,8 @@ from erdify import (
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
 EXAMPLES = ROOT / "docs" / "examples"
-# Fixture directories with nothing to draw: deliberately empty or unparsable input.
+# Sources with nothing to draw (deliberately empty or unparsable input): a
+# fixture directory by name, a catalog module as "<catalog>/<stem>".
 NO_DIAGRAM = {"empty", "malformed"}
 # Dialects of the SQL sources (the SQL ground-truth tests' DIALECTS, by file
 # stem or fixture path); the rest is parsed without one.
@@ -71,13 +72,15 @@ def sources() -> Iterator[Source]:
             continue
         if name.endswith("_edge_cases"):
             for module in sorted(directory.glob("*.py")) + sorted(directory.glob("*.sql")):
-                if module.name == "__init__.py":
+                if module.name == "__init__.py" or f"{name}/{module.stem}" in NO_DIAGRAM:
                     continue
+                is_sql = module.suffix == ".sql"
                 yield Source(
                     id=f"fixtures/{name}/{module.stem}",
-                    path=module if module.suffix == ".sql" else directory,
-                    include_patterns=None if module.suffix == ".sql" else [module.name],
-                    sql_dialect=SQL_DIALECTS.get(module.stem),
+                    path=module if is_sql else directory,
+                    include_patterns=None if is_sql else [module.name],
+                    # The dialect keys are SQL file stems: Python modules get none.
+                    sql_dialect=SQL_DIALECTS.get(module.stem) if is_sql else None,
                 )
         else:
             key = f"fixtures/{name}"

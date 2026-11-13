@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://erdify.devsuit.io/schema/output-v1.json",
   "title": "erdify JSON output, schema_version 1",
-  "description": "The document `erdify --format json` writes. Documented in https://erdify.devsuit.io/usage/output-formats/#json. Keys added later are allowed: consumers must ignore keys they do not know.",
+  "description": "The document `erdify --format json` writes. Documented in https://erdify.devsuit.io/usage/output-formats/#json. Keys added later are allowed: consumers must ignore keys they do not know. New `source` and relationship `type` values may be added in a minor release; this file is updated in place then.",
   "type": "object",
   "required": ["schema_version", "title", "entities", "enums"],
   "properties": {
