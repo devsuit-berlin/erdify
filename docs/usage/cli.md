@@ -249,7 +249,10 @@ whose `errors` attribute lists every `(file, message)` pair.
 `--check` regenerates the diagram in memory and compares it to the existing
 `--output` file or the injected region in an `--inject` target without writing.
 It exits `0` when the content is up to date and non-zero when the file is missing
-or stale — ideal for CI or a pre-commit hook.
+or stale — ideal for CI or a pre-commit hook. An `--output` file erdify writes
+ends with one newline, and `--check` ignores trailing newlines there, so a
+file that a tool such as `end-of-file-fixer` touched still counts as up to
+date.
 
 ```bash
 erdify ./src/database -o docs/erd.puml --check

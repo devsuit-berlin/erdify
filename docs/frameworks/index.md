@@ -253,19 +253,28 @@ with following code:
 
 ```plantuml
 @startuml Database ERD
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
 !define primary_key(x) <b><color:#b8861b><&key></color> x</b>
 !define foreign_key(x) <color:#aaaaaa><&key></color> x
 !define column(x) <color:#efefef><&media-record></color> x
 
 skinparam linetype ortho
+skinparam roundcorner 5
+skinparam class {
+    BackgroundColor White
+    ArrowColor Gray
+    BorderColor Gray
+}
 
 ' Enums
+
 enum UserRole << (E,#FFCC00) >> {
   ADMIN
   USER
 }
 
 ' Entities
+
 entity "user" as User {
   primary_key(id) : int
   column(name) : str
@@ -280,6 +289,7 @@ entity "order" as Order {
 }
 
 ' Relationships
+
 Order }o--|| User : "user_id"
 
 @enduml

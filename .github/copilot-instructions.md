@@ -60,7 +60,9 @@ to agree: a new JSON key updates all three. A source with special options
 
 `tests/test_docs_examples.py` runs every `docs/examples/<framework>` through
 the CLI with `--check` against `docs/examples/erd.puml` (the "identical
-diagram" the docs promise). The CI job `hooks` runs
+diagram" the docs promise), and checks that the Frameworks page's worked
+example shows the real output for its models (its PNG is rendered from that
+block). The CI job `hooks` runs
 `scripts/check_precommit_hook.py`, which exercises `.pre-commit-hooks.yaml`
 through pre-commit in a sample project pinned to the current commit; a change
 to the hooks or to how `-o` / `--check` write and compare files must keep it

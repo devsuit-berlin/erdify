@@ -301,8 +301,11 @@ cd scripts/renderers && npm ci --ignore-scripts \
 `tests/test_docs_examples.py` checks that every `docs/examples/<framework>`
 (the same User / Order schema in each framework) draws the committed
 `docs/examples/erd.puml`, as the README and the Frameworks page promise
-(Pydantic and dataclasses with `--infer-keys`). After an intended output
-change, regenerate it with the command the failing test prints.
+(Pydantic and dataclasses with `--infer-keys`), and that the worked example on
+the Frameworks page shows what erdify draws for its models. After an intended
+output change, regenerate the diagram with the command the failing test
+prints, update the worked example's code block, and re-render
+`docs/examples/example_erd.png` from it with PlantUML.
 
 The CI job `hooks` runs `scripts/check_precommit_hook.py`: it builds a sample
 project whose `.pre-commit-config.yaml` points at the current commit and runs
@@ -310,7 +313,7 @@ the hooks of `.pre-commit-hooks.yaml` through pre-commit itself. Run it
 locally after committing your change (it installs that commit):
 
 ```bash
-uv run --with pre-commit==4.7.0 python scripts/check_precommit_hook.py
+uv run --group hooks python scripts/check_precommit_hook.py
 ```
 
 ### Adding New Test Fixtures

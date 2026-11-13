@@ -15,10 +15,12 @@ installs erdify from it into its own environment and runs the hooks:
 
 Usage (needs git; pre-commit installs erdify, so the network is used)::
 
-    uv run --with pre-commit==4.7.0 python scripts/check_precommit_hook.py [REF]
+    uv run --group hooks python scripts/check_precommit_hook.py [REF]
 
 ``REF`` is the commit to install, ``HEAD`` by default: commit your changes
-first, uncommitted ones are not part of it.
+first, uncommitted ones are not part of it. pre-commit (the ``hooks``
+dependency group in ``uv.lock``) keeps its environments in the temporary
+directory, so nothing is left behind and every run installs afresh.
 """
 
 from __future__ import annotations
@@ -56,17 +58,19 @@ repos:
 """
 
 
+ENV = {
+    k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+}
+
+
 def run(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=_env())
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=ENV)
 
 
-def _env() -> dict[str, str]:
-    env = dict(os.environ)
-    # Keep the hook environments out of the user's ~/.cache/pre-commit.
-    env.setdefault("PRE_COMMIT_HOME", str(Path(tempfile.gettempdir()) / "erdify-pre-commit"))
-    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
-        env.pop(key, None)
-    return env
+def git(project: Path, *args: str) -> None:
+    result = run(project, "git", *args)
+    if result.returncode != 0:
+        raise SystemExit(f"git {' '.join(args)} failed: {result.stderr}")
 
 
 def hook(project: Path, hook_id: str, *files: str) -> subprocess.CompletedProcess[str]:
@@ -82,10 +86,9 @@ def expect(result: subprocess.CompletedProcess[str], code: int, step: str) -> No
 
 
 def commit(project: Path, message: str) -> None:
-    for args in (("git", "add", "-A"), ("git", "commit", "-q", "--allow-empty", "-m", message)):
-        result = run(project, *args)
-        if result.returncode != 0:
-            raise SystemExit(f"git failed: {result.stderr}")
+    git(project, "add", "-A")
+    # --no-verify: the developer's own git hooks must not run in the sample.
+    git(project, "commit", "-q", "--no-verify", "--allow-empty", "-m", message)
 
 
 def main(argv: list[str]) -> int:
@@ -94,6 +97,8 @@ def main(argv: list[str]) -> int:
         ["git", "rev-parse", ref], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout.strip()
     with tempfile.TemporaryDirectory() as tmp:
+        # Hook environments live here too, not in the user's ~/.cache/pre-commit.
+        ENV["PRE_COMMIT_HOME"] = str(Path(tmp) / "pre-commit-home")
         project = Path(tmp) / "shop"
         (project / "app").mkdir(parents=True)
         shutil.copy(MODELS, project / "app" / "models.py")
@@ -102,12 +107,14 @@ def main(argv: list[str]) -> int:
         config = CONFIG.format(repo=ROOT.as_posix(), rev=rev)
         (project / ".pre-commit-config.yaml").write_text(config, encoding="utf-8")
         for args in (
-            ("git", "init", "-q"),
-            ("git", "config", "user.email", "ci@example.invalid"),
-            ("git", "config", "user.name", "CI"),
-            ("git", "config", "commit.gpgsign", "false"),
+            # No template hooks (e.g. a global pre-commit init-templatedir).
+            ("-c", "init.templateDir=", "init", "-q"),
+            ("config", "core.hooksPath", "/dev/null"),
+            ("config", "user.email", "ci@example.invalid"),
+            ("config", "user.name", "CI"),
+            ("config", "commit.gpgsign", "false"),
         ):
-            run(project, *args)
+            git(project, *args)
         commit(project, "models")
         diagram = project / DIAGRAM
 
