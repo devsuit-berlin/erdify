@@ -56,6 +56,16 @@ emitted keys, the schema and the docs tables in `docs/usage/output-formats.md`
 to agree: a new JSON key updates all three. A source with special options
 (SQL dialect, `--base-classes`) is listed in `render_outputs.py`.
 
+### Docs examples and the pre-commit hooks
+
+`tests/test_docs_examples.py` runs every `docs/examples/<framework>` through
+the CLI with `--check` against `docs/examples/erd.puml` (the "identical
+diagram" the docs promise). The CI job `hooks` runs
+`scripts/check_precommit_hook.py`, which exercises `.pre-commit-hooks.yaml`
+through pre-commit in a sample project pinned to the current commit; a change
+to the hooks or to how `-o` / `--check` write and compare files must keep it
+passing.
+
 ### Ground-truth tests
 
 Golden files only lock in erdify's own output. The ground-truth tests check it

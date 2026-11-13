@@ -153,11 +153,15 @@ models from. Everything else — title, filters, format — can also live in
 
 | id | Behavior | Use it for |
 | --- | --- | --- |
-| `erdify` | Regenerates the diagram. pre-commit fails the commit when the file changed; stage the regenerated diagram and commit again. | Keeping the committed diagram in sync automatically. |
+| `erdify` | Regenerates the diagram. pre-commit fails the commit when the file changed; stage the regenerated diagram and commit again. The first run only creates the file, which pre-commit doesn't flag (it is not tracked yet): add it yourself. | Keeping the committed diagram in sync automatically. |
 | `erdify-check` | Never writes. Exits non-zero when the committed diagram no longer matches the models. | A read-only drift gate, e.g. `pre-commit run erdify-check --all-files` in CI. |
 
 `--check` is part of `erdify-check`'s entry point, so overriding `args` cannot
 accidentally drop it.
+
+The diagram file ends with a newline, and `--check` ignores trailing newlines,
+so the hooks work alongside `end-of-file-fixer` from
+[pre-commit-hooks](https://github.com/pre-commit/pre-commit-hooks).
 
 Both hooks run when a staged file matches `(^|/)models\.py$`, which mirrors
 erdify's default `--include models.py`. Override `files` when your models live

@@ -260,6 +260,23 @@ jobs:
           [[ "$SQLGLOT" != locked ]] && extra+=(--with "sqlglot==$SQLGLOT")
           uv run "${extra[@]}" pytest tests/test_ground_truth_sql.py tests/test_sql.py -rsx
 
+  # pre-commit hooks (#269): scripts/check_precommit_hook.py builds a sample
+  # project whose .pre-commit-config.yaml points at this commit, and runs the
+  # erdify / erdify-check hooks of .pre-commit-hooks.yaml through pre-commit
+  # itself: writing, checking, a model change, a non-model change.
+  hooks:
+    name: pre-commit hooks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "latest-known"
+      - name: Run the hooks in a sample project
+        run: uv run --frozen --with pre-commit==4.7.0 python scripts/check_precommit_hook.py
+
   # Real renderers (#268): every fixture, edge-case catalog module and docs
   # example is written in every format (scripts/render_outputs.py). PlantUML
   # checks the .puml files; the real Mermaid renders the .mmd files and every
@@ -396,7 +413,7 @@ jobs:
   gate:
     name: Tests passed
     if: always()
-    needs: [test, django, sqlalchemy, sql, renderers]
+    needs: [test, django, sqlalchemy, sql, renderers, hooks]
     runs-on: ubuntu-latest
     steps:
       # `badges` holds only bot-written badge payloads. A pull request from it
@@ -419,5 +436,5 @@ jobs:
         if: >-
           needs.test.result != 'success' || needs.django.result != 'success'
           || needs.sqlalchemy.result != 'success' || needs.sql.result != 'success'
-          || needs.renderers.result != 'success'
+          || needs.renderers.result != 'success' || needs.hooks.result != 'success'
         run: exit 1

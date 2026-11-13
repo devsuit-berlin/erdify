@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A diagram file erdify writes (`-o`, PlantUML / Mermaid / JSON) now ends
+  with a newline, and `--check` ignores trailing newlines. Before, pre-commit's
+  `end-of-file-fixer` added the newline erdify left out, after which `--check`
+  (and the `erdify-check` hook) failed on every run
+  ([#269](https://github.com/devsuit-berlin/erdify/issues/269)).
+
 ### Added
 
 - The JSON output's schema is published as a JSON Schema (draft 2020-12),
@@ -15,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CI validates the JSON of every test fixture against it, and checks the
   PlantUML, Mermaid and HTML output with the real renderers
   ([#268](https://github.com/devsuit-berlin/erdify/issues/268)).
+- CI checks that every `docs/examples/<framework>` draws the committed
+  `docs/examples/erd.puml`, and runs the `erdify` / `erdify-check` pre-commit
+  hooks in a sample project
+  ([#269](https://github.com/devsuit-berlin/erdify/issues/269)).
 
 ## [1.5.4] - 2026-11-13
 
