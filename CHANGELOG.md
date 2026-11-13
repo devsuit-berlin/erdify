@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-11-13
+
 ### Fixed
 
 - SQL (`--sql-dialect postgres`): a column typed with a quoted enum name
@@ -19,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Django follows its `ModelBase` instead, and a plain (non-`Model`) mixin adds
   no fields (#272, #280). The Django page said any class in the MRO could hide
   an abstract base's field; only a class earlier in the MRO does.
+
+### Output changes
+
+- PostgreSQL DDL (`--sql-dialect postgres`): a column of a quoted enum type, or
+  of an unquoted one cased differently from its `CREATE TYPE`, now draws the
+  enum block and shows the enum's name as its type. Any quoted user-defined
+  column type is shown without quotes and with its own case (`"MyDomain"` →
+  `MyDomain`). Regenerate the diagram once if you gate CI on `--check`.
 
 ## [1.5.2] - 2026-11-13
 
@@ -1358,7 +1368,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.5.2...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.5.3...HEAD
+[1.5.3]: https://github.com/devsuit-berlin/erdify/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/devsuit-berlin/erdify/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/devsuit-berlin/erdify/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/devsuit-berlin/erdify/compare/v1.4.5...v1.5.0
