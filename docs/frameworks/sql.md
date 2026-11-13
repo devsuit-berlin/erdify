@@ -73,7 +73,7 @@ sql_dialect = "postgres"
 | Foreign keys — `ALTER TABLE … ADD FOREIGN KEY` | ✅ | Two-pass resolution; forward references resolved after all tables are parsed |
 | `NOT NULL` / `NULL` | ✅ | Reflected in the `nullable` field attribute; an explicit `NULL` (or no constraint) is nullable. A primary-key column is always treated as `NOT NULL` (SQL standard), including under `--sql-dialect sqlite`, where a non-`INTEGER` or composite key of a rowid table technically accepts `NULL` (a legacy quirk SQLite documents as a bug) |
 | `DEFAULT` | ✅ | Default expression captured as a string |
-| `CREATE TYPE … AS ENUM` | ✅ | Requires `--sql-dialect postgres`; silently skipped under the generic dialect |
+| `CREATE TYPE … AS ENUM` | ✅ | Requires `--sql-dialect postgres`; silently skipped under the generic dialect. A column of the type links to the enum, also with a quoted (`"order state"`) or differently cased unquoted type name |
 | `CREATE INDEX` | ✅ (JSON only) | Detected and emitted in `--format json`; not drawn in PlantUML or Mermaid diagrams (consistent with the Indexes note in the [feature matrix](../features.md)) |
 | `CREATE UNIQUE INDEX` | ✅ | On one plain column and without `WHERE`, the column is unique like a `UNIQUE` constraint (`UK`, 1:1 for a foreign key). A composite, partial or expression unique index doesn't make a column unique |
 | Identifier case | ✅ | Names are resolved the way the dialect folds them: unquoted names are case-insensitive (`REFERENCES Customer(ID)` is `customer.id`), and with `--sql-dialect postgres` a quoted `"Account"` stays apart from `account`. A name that still matches nothing exactly is matched case-insensitively when that is unambiguous |
@@ -120,6 +120,8 @@ The following constructs are intentionally out of scope for v1:
 | `CREATE VIRTUAL TABLE` (SQLite FTS, R*Tree, …) | Not supported (skipped) |
 | `CHECK` constraints | Not supported |
 | Generated columns with `STORED` / `VIRTUAL` without `--sql-dialect` | sqlglot's generic dialect can't parse them: that `CREATE TABLE` is skipped with a parse error. Pass `--sql-dialect` (e.g. `postgres`, `mysql`, `sqlite`) |
+| Enum types in several schemas | The schema is not part of an enum's name: `a.mood` and `b.mood` are one enum `mood` |
+| Enum names containing a dot (`CREATE TYPE "billing.state"`) | The enum is not drawn ([#336](https://github.com/devsuit-berlin/erdify/issues/336)) |
 | Triggers / stored procedures | Not supported |
 | Live database introspection | Not supported (no connection required by design) |
 
