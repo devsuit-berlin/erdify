@@ -44,6 +44,63 @@ class _ERGenerator:
         self.enums = enums or {}
         self.title = title
         self.include_relationships = include_relationships
+        self._ids: Dict[Tuple[str, str], str] | None = None
+
+    # -- Names in the diagram source (#288) ---------------------------------
+    #
+    # Entity and enum names come from the model source, and a SQL table can be
+    # called anything (``"Order Items"``). Each format turns a name into an
+    # identifier its grammar accepts (``_identifier``, made unique across
+    # entities and enums) and writes references to it (``_render_ref``) and
+    # quoted labels (``_label``) its own way. The IR and JSON keep real names.
+
+    def _identifier(self, name: str) -> str:
+        """The bare diagram identifier for an entity or enum ``name``."""
+        return name
+
+    def _render_ref(self, identifier: str) -> str:
+        """How a reference to ``identifier`` is written (e.g. quoted)."""
+        return identifier
+
+    def _label(self, text: str) -> str:
+        """A quoted relationship label."""
+        return f'"{text}"'
+
+    def _diagram_ids(self) -> Dict[Tuple[str, str], str]:
+        """``("entity" | "enum", name)`` -> unique diagram identifier.
+
+        A name the format accepts as it is keeps it; an encoded name that
+        collides with another one gets a ``_2``, ``_3``, ... suffix. Entities
+        are numbered before enums, each in diagram order.
+        """
+        if self._ids is None:
+            keys = [("entity", name) for name in self.entities]
+            keys += [("enum", name) for name in sorted(self._get_used_enums())]
+            encoded = {key: self._identifier(key[1]) for key in keys}
+            ids: Dict[Tuple[str, str], str] = {}
+            taken: set[str] = set()
+            for key in keys:
+                if encoded[key] == key[1] and key[1] not in taken:
+                    ids[key] = key[1]
+                    taken.add(key[1])
+            for key in keys:
+                if key in ids:
+                    continue
+                candidate, n = encoded[key], 2
+                while candidate in taken:
+                    candidate, n = f"{encoded[key]}_{n}", n + 1
+                ids[key] = candidate
+                taken.add(candidate)
+            self._ids = ids
+        return self._ids
+
+    def _ref(self, entity_name: str, kind: str = "entity") -> str:
+        """The diagram reference to an entity (or enum) called ``entity_name``."""
+        return self._render_ref(self._diagram_ids()[(kind, entity_name)])
+
+    def _edge(self, left: str, glyph: str, right: str, label: str) -> str:
+        """One relationship line between the entities ``left`` and ``right``."""
+        return f"{self._ref(left)} {glyph} {self._ref(right)} : {self._label(label)}"
 
     def _get_used_enums(self) -> "set[str]":
         """Get set of enum names used by entity fields."""
@@ -137,7 +194,7 @@ class _ERGenerator:
                         break
                 if target_entity:
                     glyph = self._fk_glyph(field, sole_pk=single_pk and field.is_primary_key)
-                    lines.append(f'{entity.name} {glyph} {target_entity.name} : "{field.name}"')
+                    lines.append(self._edge(entity.name, glyph, target_entity.name, field.name))
         return lines
 
     def _generate_link_table_relationships(self, link_entity: EntityInfo) -> List[str]:
@@ -169,11 +226,11 @@ class _ERGenerator:
             if len(entities_to_link) == 2:
                 entity1, fk1_name = entities_to_link[0]
                 entity2, fk2_name = entities_to_link[1]
-                lines.append(f'{entity1.name} ||--o{{ {link_entity.name} : "{fk1_name}"')
-                lines.append(f'{link_entity.name} }}o--|| {entity2.name} : "{fk2_name}"')
+                lines.append(self._edge(entity1.name, "||--o{", link_entity.name, fk1_name))
+                lines.append(self._edge(link_entity.name, "}o--||", entity2.name, fk2_name))
         else:  # three or more FK columns -> star of edges from each parent
             for parent, fk_name in entities_to_link:
-                lines.append(f'{parent.name} ||--o{{ {link_entity.name} : "{fk_name}"')
+                lines.append(self._edge(parent.name, "||--o{", link_entity.name, fk_name))
 
         return lines
 
@@ -213,7 +270,8 @@ class _ERGenerator:
     def _declared_line(self, entity: EntityInfo, target: str, rel_type: str, attr: str) -> str:
         """The edge for one declared relationship of ``entity``, other side undeclared."""
         source = self._DEFAULT_SOURCE_END.get(rel_type, self._DEFAULT_SOURCE_END["one"])
-        return f'{entity.name} {source}--{self._end(entity, rel_type, attr)} {target} : "{attr}"'
+        glyph = f"{source}--{self._end(entity, rel_type, attr)}"
+        return self._edge(entity.name, glyph, target, attr)
 
     def _declared_relationship_lines(
         self, fk_pairs: "set[frozenset[str]]", link_pairs: "set[frozenset[str]]"
@@ -391,7 +449,7 @@ class _ERGenerator:
         other, _, other_kind, other_attr = folded
         left = self._mirror(self._end(other, other_kind, other_attr))
         right = self._end(entity, kind, attr)
-        return f'{entity.name} {left}--{right} {target} : "{attr}"'
+        return self._edge(entity.name, f"{left}--{right}", target, attr)
 
     def _relationship_lines(self) -> List[str]:
         """Resolve every relationship line, de-duplicated and ordered.
@@ -450,6 +508,19 @@ class PlantUMLGenerator(_ERGenerator):
             whole ``' Relationships`` section).
     """
 
+    def _identifier(self, name: str) -> str:
+        """One word: other characters become ``_`` (``Order Items`` -> ``Order_Items``)."""
+        return re.sub(r"\W+", "_", name) or "_"
+
+    @staticmethod
+    def _text(text: str) -> str:
+        """Text for a label: ``"`` and ``<`` (markup) as the entities ``&#34;``, ``&#60;``."""
+        return text.replace('"', "&#34;").replace("<", "&#60;")
+
+    def _label(self, text: str) -> str:
+        """A quoted relationship label."""
+        return f'"{self._text(text)}"'
+
     def generate(self) -> str:
         """Render the diagram.
 
@@ -501,12 +572,11 @@ class PlantUMLGenerator(_ERGenerator):
     def _generate_entity(self, entity: EntityInfo) -> List[str]:
         """Generate PlantUML entity definition."""
         lines = []
+        head = f'entity "{self._text(entity.table_name)}" as {self._ref(entity.name)}'
         if entity.is_link_table:
-            lines.append(
-                f'entity "{entity.table_name}" as {entity.name} << (L, #AAFFAA) link >> {{'
-            )
+            lines.append(f"{head} << (L, #AAFFAA) link >> {{")
         else:
-            lines.append(f'entity "{entity.table_name}" as {entity.name} {{')
+            lines.append(f"{head} {{")
 
         if entity.fields:
             for field in entity.fields:
@@ -519,7 +589,9 @@ class PlantUMLGenerator(_ERGenerator):
 
     def _generate_enum(self, enum_info: EnumInfo) -> List[str]:
         """Generate PlantUML enum definition."""
-        lines = [f"enum {enum_info.name} << (E,#FFCC00) >> {{"]
+        alias = self._ref(enum_info.name, "enum")
+        head = alias if alias == enum_info.name else f'"{self._text(enum_info.name)}" as {alias}'
+        lines = [f"enum {head} << (E,#FFCC00) >> {{"]
         for value in enum_info.values:
             lines.append(f"  {value}")
         lines.append("}")
@@ -542,16 +614,20 @@ class PlantUMLGenerator(_ERGenerator):
             default_val = field.default_value
             if "." in default_val:
                 default_val = default_val.split(".")[-1]
-            default = f" = {default_val}"
+            default = f" = {self._text(default_val)}"
 
         unique = " UK" if field.is_unique and not field.is_primary_key else ""
+        name = field.name
+        if any(c in name for c in ',()"<'):
+            # A macro argument: quoted, it may hold a comma or parenthesis.
+            name = f'"{self._text(name)}"'
 
         # Omit the type suffix entirely when the type is unknown (e.g. an
         # untyped Core Column on a synthesized link table) to avoid a dangling ":".
         if not type_str:
-            return f"{prefix}({field.name}){unique}"
+            return f"{prefix}({name}){unique}"
 
-        return f"{prefix}({field.name}) : {type_str}{nullable}{default}{unique}"
+        return f"{prefix}({name}) : {type_str}{nullable}{default}{unique}"
 
 
 class MermaidGenerator(_ERGenerator):
@@ -565,6 +641,77 @@ class MermaidGenerator(_ERGenerator):
         title: Accepted for a uniform API; Mermaid ``erDiagram`` has no title.
         include_relationships: Draw relationship lines.
     """
+
+    # The grammar these mirror is Mermaid 11's ``erDiagram`` lexer. Its
+    # character classes are ASCII plus everything from U+00C0 (attributes) or
+    # U+0080 (entities) up, and its ``\b`` is ASCII-only, hence ``_NOT_WORD``.
+    _NOT_WORD = r"(?![0-9A-Za-z_])"
+    #: An entity name Mermaid reads unquoted ...
+    _BARE_ENTITY = re.compile(r"[0-9A-Za-z_\u0080-\U0010ffff][-0-9A-Za-z_\u0080-\U0010ffff]*")
+    #: ... unless it starts with a keyword (``one``, ``to``, ``class``, ...).
+    _ENTITY_KEYWORD = re.compile(
+        r"(?:erdiagram|style|classdef|class|one|many|to|u|1|acctitle|accdescr)" + _NOT_WORD,
+        re.IGNORECASE,
+    )
+    #: An attribute name or type, which must not start with a key (``PK``).
+    _ATTRIBUTE_CHARS = r"-*0-9A-Za-z_\[\]()\u00c0-\U0010ffff"
+    _ATTRIBUTE_WORD = re.compile(rf"[*A-Za-z_\u00c0-\U0010ffff][{_ATTRIBUTE_CHARS}]*")
+    _ATTRIBUTE_KEY = re.compile(r"(?:pk|fk|uk)" + _NOT_WORD, re.IGNORECASE)
+    #: Characters quoted text writes as Mermaid entity codes, which it decodes
+    #: when drawing: a quote or ``%`` / backslash (not allowed in a quoted
+    #: entity name), markup, ``#`` (starts a code) and ``~`` (a generic type
+    #: inside an entity block, even within quotes).
+    _CODES = {
+        "#": "#35;",
+        '"': "#quot;",
+        "%": "#37;",
+        "\\": "#92;",
+        "&": "#38;",
+        "<": "#lt;",
+        ">": "#gt;",
+        "~": "#126;",
+    }
+    #: A layout statement Mermaid finds anywhere on a line, even inside quotes.
+    _DIRECTION = re.compile(r"(direction)\s+(?=(?:tb|bt|rl|lr))", re.IGNORECASE)
+
+    def _identifier(self, name: str) -> str:
+        """The entity name as quoted text (:meth:`_text`)."""
+        return self._text(name) or "_"
+
+    def _render_ref(self, identifier: str) -> str:
+        """Unquoted when Mermaid reads the name as one word, quoted otherwise."""
+        if self._BARE_ENTITY.fullmatch(identifier) and not self._ENTITY_KEYWORD.match(identifier):
+            return identifier
+        return f'"{identifier}"'
+
+    def _label(self, text: str) -> str:
+        """A quoted relationship label."""
+        return f'"{self._text(text)}"'
+
+    @classmethod
+    def _text(cls, text: str) -> str:
+        """Text for inside double quotes, drawn as it is: ``R&D "x"`` -> ``R#38;D #quot;x#quot;``.
+
+        A control character (line break) becomes a space, and the space in
+        ``direction TB`` (``LR``, ...) the code ``#32;``.
+        """
+        text = re.sub(r"[\x00-\x1f\x7f]", " ", text)
+        text = "".join(cls._CODES.get(c, c) for c in text)
+        return cls._DIRECTION.sub(r"\1#32;", text)
+
+    @classmethod
+    def _attribute_word(cls, name: str) -> str:
+        """``name`` as an attribute word: ``Author Key`` -> ``Author_Key``, ``1st`` -> ``_1st``.
+
+        Characters Mermaid doesn't allow become ``_``; a name starting with a
+        digit or hyphen, or with a key (``pk``), gets a leading ``_``.
+        """
+        if cls._ATTRIBUTE_WORD.fullmatch(name) and not cls._ATTRIBUTE_KEY.match(name):
+            return name
+        word = re.sub(rf"[^{cls._ATTRIBUTE_CHARS}]+", "_", name)
+        if not cls._ATTRIBUTE_WORD.fullmatch(word) or cls._ATTRIBUTE_KEY.match(word):
+            word = "_" + word
+        return word
 
     def generate(self) -> str:
         """Render the diagram.
@@ -590,7 +737,7 @@ class MermaidGenerator(_ERGenerator):
 
     def _generate_entity(self, entity: EntityInfo) -> List[str]:
         """Generate a Mermaid entity block."""
-        lines = [f"    {entity.name} {{"]
+        lines = [f"    {self._ref(entity.name)} {{"]
         for field in entity.fields:
             lines.append(f"        {self._format_attr(field)}")
         lines.append("    }")
@@ -598,9 +745,11 @@ class MermaidGenerator(_ERGenerator):
 
     def _generate_enum(self, enum_info: EnumInfo) -> List[str]:
         """Render an enum as a Mermaid entity block listing its values."""
-        lines = [f"    {enum_info.name} {{"]
+        lines = [f"    {self._ref(enum_info.name, 'enum')} {{"]
         for value in enum_info.values:
-            lines.append(f"        enum {value}")
+            word = self._attribute_word(value)
+            comment = "" if word == value else f' "{self._text(value)}"'
+            lines.append(f"        enum {word}{comment}")
         lines.append("    }")
         return lines
 
@@ -617,7 +766,8 @@ class MermaidGenerator(_ERGenerator):
             keys.append("UK")
         key_str = ",".join(keys)
 
-        comment_parts = []
+        name = self._attribute_word(field.name)
+        comment_parts = [] if name == field.name else [field.name]
         if field.is_nullable:
             comment_parts.append("nullable")
         if field.default_value is not None:
@@ -626,12 +776,12 @@ class MermaidGenerator(_ERGenerator):
                 default_val = default_val.split(".")[-1]
             comment_parts.append(f"default {default_val}")
 
-        parts = [type_token, field.name]
+        parts = [type_token, name]
         if key_str:
             parts.append(key_str)
         line = " ".join(parts)
         if comment_parts:
-            line += f' "{", ".join(comment_parts)}"'
+            line += f' "{self._text(", ".join(comment_parts))}"'
         return line
 
     @staticmethod
@@ -643,7 +793,7 @@ class MermaidGenerator(_ERGenerator):
         """
         cleaned = type_str.split(".")[-1]
         token = re.sub(r"[^0-9A-Za-z_]+", "_", cleaned).strip("_")
-        return token or "unknown"
+        return MermaidGenerator._attribute_word(token or "unknown")
 
 
 def generate_plantuml(
@@ -799,7 +949,9 @@ def generate_html(
     Render a self-contained HTML page that draws the ERD with Mermaid.
 
     The page loads Mermaid from a pinned CDN (``MERMAID_CDN``), so it needs
-    internet access to render. Open it in a browser to view the diagram.
+    internet access to render. Open it in a browser to view the diagram. The
+    diagram source is HTML-escaped (a name may hold ``<`` or ``&``); Mermaid
+    decodes it before parsing.
 
     Args:
         entities: Dictionary of entity name to EntityInfo
@@ -833,7 +985,7 @@ def generate_html(
         "<body>\n"
         f"  <h1>{safe_title}</h1>\n"
         '  <pre class="mermaid">\n'
-        f"{diagram}\n"
+        f"{html.escape(diagram, quote=False)}\n"
         "  </pre>\n"
         "  <script>mermaid.initialize({ startOnLoad: true });</script>\n"
         "</body>\n"

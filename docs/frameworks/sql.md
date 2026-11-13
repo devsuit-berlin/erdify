@@ -73,6 +73,7 @@ sql_dialect = "postgres"
 | `CREATE INDEX` | ✅ (JSON only) | Detected and emitted in `--format json`; not drawn in PlantUML or Mermaid diagrams (consistent with the Indexes note in the [feature matrix](../features.md)) |
 | `CREATE UNIQUE INDEX` | ✅ | On one plain column and without `WHERE`, the column is unique like a `UNIQUE` constraint (`UK`, 1:1 for a foreign key). A composite, partial or expression unique index doesn't make a column unique |
 | Identifier case | ✅ | Names are resolved the way the dialect folds them: unquoted names are case-insensitive (`REFERENCES Customer(ID)` is `customer.id`), and with `--sql-dialect postgres` a quoted `"Account"` stays apart from `account`. A name that still matches nothing exactly is matched case-insensitively when that is unambiguous |
+| Quoted names with spaces or punctuation (`"Order Items"`) | ✅ | Kept in the IR and JSON; each diagram format encodes what its syntax can't take ([Names with spaces or special characters](../usage/output-formats.md#names-with-spaces-or-special-characters)) |
 
 > **NOTE:** Functional/expression indexes (e.g. `CREATE INDEX ... ON t(lower(col))`) are not mapped
 > to a column — only plain-column indexes set the JSON `index` flag. Expression indexes are silently

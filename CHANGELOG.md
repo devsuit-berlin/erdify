@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Mermaid / HTML / PlantUML: a table, column, enum or relationship name the
+  diagram syntax can't take as it is produced a diagram the renderer rejects:
+  a SQL quoted identifier (`"Order Items"`, `"1st"`, `"a,b"`), a Django
+  `db_column` with spaces, a column named `pk` / `fk` / `uk`, or a model named
+  like a Mermaid keyword (`Class`, `Style`, `One`, `To`). Each format now
+  encodes such names and shows the real one where its syntax allows; JSON is
+  unchanged ([Output formats](https://erdify.devsuit.io/usage/output-formats/#names-with-spaces-or-special-characters), #288).
+- `--format html`: the Mermaid source is HTML-escaped in the page, so a `<` or
+  `&` in a name no longer becomes markup.
+
+### Output changes
+
+- Only diagrams with such names change. Mermaid: an entity name that isn't one
+  plain word or starts with a keyword is quoted, an invalid column name or enum
+  value is replaced by a valid word with the real name leading its comment
+  (`int Item_Key PK "Item Key"`), and `"`, `#`, `%`, `\`, `&`, `<`, `>`, `~`
+  in quoted text are written as Mermaid entity codes (`#quot;`, ...).
+  PlantUML: an entity or enum alias is one word (`as Order_Items`), a column
+  name with `,`, `(`, `)`, `"` or `<` is quoted in its macro, and `"` / `<` in
+  text are written `&#34;` / `&#60;`.
+
 ## [1.5.0] - 2026-11-12
 
 ### Changed

@@ -99,6 +99,31 @@ Notes:
   listing its values; the referencing column keeps the enum name as its type.
 - Attribute types are reduced to a single Mermaid-safe token (e.g. `list[str]`
   becomes `list_str`).
+- Names with spaces or special characters are encoded, see below.
+
+## Names with spaces or special characters
+
+A SQL quoted identifier (`"Order Items"`), a Django `db_column` or a class
+named like a Mermaid keyword (`Class`, `Style`, `One`, `To`) is not valid
+diagram syntax as it is. erdify encodes such names so every format parses,
+and shows the real name wherever the syntax allows it. JSON always keeps the
+real names.
+
+| Name in | Mermaid / HTML | PlantUML |
+| ------- | -------------- | -------- |
+| Entity / table, enum | Quoted (`"Order Items" {`) when it isn't one plain word or starts with a keyword | Real name as the display name, one-word alias (`entity "Order Items" as Order_Items`) |
+| Column | Invalid characters become `_`, a leading digit or key (`pk`, `fk`, `uk`) gets a `_` prefix, and the real name leads the comment: `int Item_Key PK "Item Key"` | Real name; quoted in the macro when it holds `,`, `(`, `)`, `"` or `<` (`column("a,b")`) |
+| Enum value | Same as a column: `enum in_progress "in progress"` | Real value |
+| Relationship label, comment, default | Real text; `"`, `#`, `%`, `\`, `&`, `<`, `>` and `~` are written as Mermaid entity codes (`#quot;`, `#lt;`, ...), which Mermaid draws as the character | Real text; `"` and `<` as `&#34;` / `&#60;` |
+
+- An encoded name that collides with another one (`"a b"` and `a_b` both
+  become the PlantUML alias `a_b`, or an entity and an enum share a name) gets
+  a `_2`, `_3`, ... suffix. A name that is valid as it is keeps it.
+- Mermaid reads `direction TB` (`BT`, `LR`, `RL`) as a layout statement
+  anywhere on a line, even inside quotes, so the space is written `#32;`.
+- `--format html` HTML-escapes the Mermaid source in the page.
+- PlantUML reads a backslash followed by `n` as a line break in any text; a
+  name containing `\n` is drawn on two lines.
 
 ## JSON
 
