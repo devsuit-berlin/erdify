@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "mermaid": "11.17.2",
-    "puppeteer": "25.16.0"
+    "puppeteer": "25.17.0"
   }
 }
