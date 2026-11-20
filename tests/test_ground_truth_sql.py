@@ -111,6 +111,10 @@ NO_ALTER_CONSTRAINT = "SQLite has no ALTER TABLE ... ADD CONSTRAINT"
 SCHEMAS = "same-name tables in several schemas (#353); SQLite has no schemas"
 EXPECTED_REJECTED = {
     "test_schema_identity.py::TestSqlTables"
+    ".test_a_bare_name_excludes_the_table_in_every_schema": SCHEMAS,
+    "test_schema_identity.py::TestMixedSources"
+    ".test_sql_reference_to_a_python_models_schema_in_another_case": SCHEMAS,
+    "test_schema_identity.py::TestSqlTables"
     ".test_a_redefined_table_takes_the_foreign_keys_of_its_later_definition.entities": (
         "one table defined twice, for the redefinition; SQLite refuses the second"
     ),

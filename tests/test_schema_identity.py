@@ -251,6 +251,19 @@ class TestSqlTables:
         assert list(entities) == ["core.Customer"]
         assert "2 SQL tables are named 'core.Customer'" in capsys.readouterr().err
 
+    def test_a_bare_name_excludes_the_table_in_every_schema(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        path = tmp_path / "schema.sql"
+        path.write_text(
+            "CREATE TABLE customer (id INT PRIMARY KEY);\n"
+            "CREATE TABLE core.customer (id INT PRIMARY KEY);\n",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(path, exclude_patterns=["customer"])
+
+        assert list(entities) == []
+
     def test_a_qualified_name_can_be_excluded(self, tmp_path: Path) -> None:
         pytest.importorskip("sqlglot")
         path = tmp_path / "schema.sql"
@@ -488,6 +501,30 @@ class Customer(Base):
 
         # The table in the schema the reference names, not the Python model.
         assert _edges(dict(entities)) == [("orders", "customer", "cid")]
+
+    def test_sql_reference_to_a_python_models_schema_in_another_case(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class Customer(Base):
+    __tablename__ = "customer"
+    __table_args__ = {"schema": "core"}
+    id: Mapped[int] = mapped_column(primary_key=True)
+""",
+            encoding="utf-8",
+        )
+        (tmp_path / "schema.sql").write_text(
+            "CREATE TABLE orders (id INT PRIMARY KEY, cid INT REFERENCES CORE.customer(id));\n",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(
+            tmp_path, include_patterns=["models.py", "*.sql"], sql_dialect="postgres"
+        )
+
+        assert _edges(dict(entities)) == [("orders", "Customer", "cid")]
 
     def test_sql_reference_to_a_python_model_without_a_schema(self, tmp_path: Path) -> None:
         pytest.importorskip("sqlglot")

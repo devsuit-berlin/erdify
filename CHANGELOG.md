@@ -17,15 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `schema.table`; a table name used in one schema only keeps its short name.
   `REFERENCES`, `ALTER TABLE` and `CREATE INDEX` find the table in the schema
   they name, never one in another schema; an unqualified name prefers the
-  referencing table's schema, then a table without a schema
+  referencing table's schema, then a table without a schema. Two tables that
+  still share a name (PostgreSQL `"Customer"` and `Customer` in one schema)
+  are reported on stderr
   ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 - A foreign key that names a schema (SQLAlchemy
   `ForeignKey("core.customer.id")`) drew no edge; it is now drawn to the table
   of that name in that schema
   ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
-- Two model classes of the same name in different modules are still drawn as
-  one, but erdify now warns about it on stderr instead of dropping one
-  silently ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
+- Of two model classes of the same name in different modules, only the class
+  scanned last is drawn (none if it is not a model); erdify now warns about
+  it on stderr instead of dropping the other silently
+  ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
 
 ### Output changes
 
@@ -34,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   box `schema.table` when the entities drawing its table name are in more than
   one schema, no schema counting as one (SQL and SQLAlchemy / SQLModel).
 - SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` now draws its edge.
+- SQL DDL: a foreign key naming a schema that has no table of that name
+  (`REFERENCES core.customer` with only `staging.customer` scanned) no longer
+  draws an edge to the same-name table in another schema.
+- SQL DDL: an unqualified `REFERENCES`, `ALTER TABLE` or `CREATE INDEX` naming
+  a table that exists in several schemas, none of them the referencing
+  table's, is ambiguous and ignored (it used to apply to the merged entity).
 - `--format json`: a SQL DDL foreign key to a table in a schema has
   `foreign_table` `schema.table.column` (was `table.column`).
 - Python models together with SQL DDL: a SQL foreign key that names a schema

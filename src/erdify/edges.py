@@ -218,7 +218,8 @@ class _EdgeBuilder:
         """The entity the foreign-key column ``field`` of ``entity`` references.
 
         ``foreign_table`` is ``table.column`` or ``schema.table.column``. With
-        a schema, the table of that name in that schema is meant (#353). When
+        a schema, the table of that name in that schema is meant (#353), the
+        schema compared exactly, else without regard to case. When
         that schema has none, a table of that name without a schema from
         another source (a Python model a SQL ``REFERENCES public.t``
         names); never one of the same source, which resolved its own names
@@ -237,9 +238,13 @@ class _EdgeBuilder:
             schema, _, table = target.rpartition(".")
             schema = schema.rpartition(".")[2]  # a database part is not compared
             same_table = self._by_table.get(table, [])
-            found = [e for e in same_table if e.schema == schema] or [
-                e for e in same_table if e.schema is None and e.source != entity.source
-            ]
+            found = (
+                [e for e in same_table if e.schema == schema]
+                # Written in another case (`CORE.customer` in SQL for a model in
+                # `core`): a SQL name the parser could not resolve itself.
+                or [e for e in same_table if e.schema and e.schema.lower() == schema.lower()]
+                or [e for e in same_table if e.schema is None and e.source != entity.source]
+            )
             return found[0] if found else None
         if len(candidates) <= 1:
             return candidates[0] if candidates else None
