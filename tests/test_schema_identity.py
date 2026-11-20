@@ -599,6 +599,65 @@ class Order(Base):
         assert _fk_targets(dict(entities))["Order"] == ["customer.id"]
         assert _edges(dict(entities)) == [("Order", "plain_customer", "cid")]
 
+    def test_single_table_subclass_columns_resolve_in_their_tables_metadata(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "models.py").write_text(
+            """
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, String, Table
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+other = MetaData()
+
+
+class Base(DeclarativeBase):
+    metadata = MetaData(schema="core")
+
+
+class Customer(Base):
+    __tablename__ = "customer"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+plain_customer = Table("customer", other, Column("id", Integer, primary_key=True))
+
+
+class Order(Base):
+    __table__ = Table(
+        "orders",
+        other,
+        Column("id", Integer, primary_key=True),
+        Column("kind", String),
+    )
+    __mapper_args__ = {"polymorphic_on": "kind"}
+
+
+class SpecialOrder(Order):
+    __mapper_args__ = {"polymorphic_identity": "special"}
+    cid: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=True)
+
+
+class Invoice(Base):
+    __tablename__ = "invoice"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str]
+    __mapper_args__ = {"polymorphic_on": "kind"}
+
+
+class CreditNote(Invoice):
+    __mapper_args__ = {"polymorphic_identity": "credit"}
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=True)
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+        targets = _fk_targets(dict(entities))
+
+        # The Core table's metadata has no schema; the base's has "core".
+        assert targets["Order"] == ["customer.id"]
+        assert targets["Invoice"] == ["core.customer.id"]
+
     def test_a_target_whose_schema_is_not_read_keeps_its_edge(self, tmp_path: Path) -> None:
         (tmp_path / "models.py").write_text(
             """

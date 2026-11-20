@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SQLAlchemy: an unqualified `ForeignKey("customer.id")` on a table whose
   metadata has a default schema (`MetaData(schema="core")`) targets that
-  schema, as in SQLAlchemy (`foreign_table` `core.customer.id`); a renamed
+  schema, as in SQLAlchemy (`foreign_table` `core.customer.id`), when erdify
+  reads that table's schema (see Limitations); a renamed
   column key and a `ForeignKey`-only Core column's type are also resolved for
   a schema-qualified target
   ([#370](https://github.com/devsuit-berlin/erdify/issues/370)).

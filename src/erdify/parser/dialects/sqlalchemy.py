@@ -160,7 +160,9 @@ class TableDialect(AnnotatedDialect):
         self._note_default_schema(entity.fields, self._metadata_schema(self._mro_names(class_node)))
 
     def finalize(self, entities: Mapping[str, EntityInfo]) -> None:
-        """Point foreign keys written against a column key at the column's name.
+        """Qualify foreign keys with their metadata's default schema, mark
+        optional reverse references, and point foreign keys written against
+        a column key at the column's name.
 
         SQLAlchemy resolves ``ForeignKey("account.id")`` through the column
         key, so with ``mapped_column("account_id", key="id")`` it references
@@ -664,13 +666,11 @@ class SQLAlchemyDialect(TableDialect):
             return
         entity.fields = core_table_fields(mapped.table)
         self._note_core_table(entity, mapped.table)
+        self._add_single_table_columns(entity, class_node)
+        # A single-table subclass's columns are appended to the mapped Core
+        # table, so they resolve in that table's metadata too.
         tree = self._table_trees().get(id(mapped.table), self.ctx.tree_of(class_node))
         self._note_default_schema(entity.fields, self._core_metadata_schema(mapped.table, tree))
-        table_fields = {id(f) for f in entity.fields}
-        self._add_single_table_columns(entity, class_node)
-        # A single-table subclass's own columns are on its class's metadata.
-        added = [f for f in entity.fields if id(f) not in table_fields]
-        self._note_default_schema(added, self._metadata_schema(self._mro_names(class_node)))
         if mapped.properties is not None:
             self._properties[entity.name] = mapped.properties
 
@@ -691,7 +691,8 @@ class SQLAlchemyDialect(TableDialect):
         return entities
 
     def finalize(self, entities: Mapping[str, EntityInfo]) -> None:
-        """Rename keys, type ``ForeignKey``-only Core columns, add imperative relationships."""
+        """Qualify and rename foreign keys (:meth:`TableDialect.finalize`), type
+        ``ForeignKey``-only Core columns, add imperative relationships."""
         super().finalize(entities)
         # SQLModel and SQLAlchemy keep separate metadata: a foreign key only
         # references a table of its own kind (a Core table on SQLModel.metadata
