@@ -56,6 +56,10 @@ MODULES = {
 
 EDGE_CASES_DIR = FIXTURES / "sqlalchemy_edge_cases"
 EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
+# Multi-module sources (#380): a directory of packages, imported for real.
+EDGE_PACKAGES = sorted(
+    p for p in EDGE_CASES_DIR.iterdir() if p.is_dir() and not p.name.startswith("__")
+)
 
 # Test helpers that prepend a module-level header to the bodies they get.
 SNIPPET_HEADERS = {
@@ -365,9 +369,23 @@ def test_snippet_matches_sqlalchemy(snippet: Snippet, tmp_path: Path) -> None:
     _check(snippet.id, snippet.source, tmp_path)
 
 
+@pytest.mark.parametrize("path", [_param(p.name, p) for p in EDGE_PACKAGES])
+def test_edge_case_package_matches_sqlalchemy(path: Path) -> None:
+    """A source of several modules: same-name classes keyed ``module.Class`` (#367)."""
+    expected = sqlalchemy_ref.load_package(path)
+    _assert_checks(path.name, expected, ())
+    actual = from_erdify(path, SOURCES, relationships=True, schema=True, include=["**/*.py"])
+    _assert_same(actual, expected)
+
+
 def test_known_lists_name_existing_sources() -> None:
     """A renamed or deleted test must not leave a stale entry behind."""
-    names = {s.id for s in SNIPPETS} | {p.stem for p in EDGE_CASES} | set(MODULES)
+    names = (
+        {s.id for s in SNIPPETS}
+        | {p.stem for p in EDGE_CASES}
+        | {p.name for p in EDGE_PACKAGES}
+        | set(MODULES)
+    )
     listed = (
         set(KNOWN_DIFFERENCES)
         | set(SQLMODEL_DIFFERENCES)

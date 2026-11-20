@@ -21,16 +21,19 @@ import ast
 import collections.abc
 import dataclasses
 import enum
+import importlib
 import inspect
 import sys
 import types
 import typing
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from pathlib import Path
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin
 
 import pydantic
 from pydantic.errors import PydanticUserError
 
+from .packages import entity_keys, importable
 from .schema import Column, Relationship, Schema, Table
 
 # A top-level name: a relative import in a source fails (it is not
@@ -87,27 +90,49 @@ def load(source: str) -> Schema:
         except (PydanticUserError, TypeError, ValueError, SyntaxError) as exc:
             # SyntaxError: a string annotation that is no expression ("User |").
             raise Rejected(f"{type(exc).__name__}: {exc}") from exc
-        classes = list(_classes(module))
-        entities = {cls for cls in classes if _is_model(cls)}
-        tables = {cls.__name__: _table(cls, module, entities) for cls in entities}
-        enums = {
-            cls.__name__: tuple(cls.__members__)
-            for cls in classes
-            # A base without members (a project's own enum base) has nothing to draw.
-            if issubclass(cls, enum.Enum) and cls.__members__
-        }
-        return Schema(tables=tables, enums=enums)
+        return _schema(list(_classes([module], {MODULE})))
     finally:
         del sys.modules[MODULE]
 
 
-def _classes(module: types.ModuleType) -> Iterator[type]:
-    """Classes defined in the source, including ones nested in a class body."""
+def load_package(root: Path) -> Schema:
+    """Import the packages under ``root`` and normalise their models (#380).
+
+    A source of several modules: models of the same name in two of them are
+    keyed ``module.Class``, as erdify names them (#367).
+    """
+    with importable(root) as names:
+        try:
+            modules = [importlib.import_module(name) for name in names]
+        except (NameError, ImportError) as exc:
+            raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
+        except (PydanticUserError, TypeError, ValueError, SyntaxError) as exc:
+            raise Rejected(f"{type(exc).__name__}: {exc}") from exc
+        return _schema(list(_classes(modules, set(names))))
+
+
+def _schema(classes: list[type]) -> Schema:
+    entities = {cls for cls in classes if _is_model(cls)}
+    keys = entity_keys(entities)
+    tables = {
+        keys[cls]: _table(cls, sys.modules[cls.__module__], entities, keys) for cls in entities
+    }
+    enums = {
+        cls.__name__: tuple(cls.__members__)
+        for cls in classes
+        # A base without members (a project's own enum base) has nothing to draw.
+        if issubclass(cls, enum.Enum) and cls.__members__
+    }
+    return Schema(tables=tables, enums=enums)
+
+
+def _classes(modules: list[types.ModuleType], names: set[str]) -> Iterator[type]:
+    """Classes defined in the source's modules, including ones nested in a class body."""
     seen: set[type] = set()
-    pending = list(vars(module).values())
+    pending = [value for module in modules for value in vars(module).values()]
     while pending:
         value = pending.pop()
-        if isinstance(value, type) and value.__module__ == MODULE and value not in seen:
+        if isinstance(value, type) and value.__module__ in names and value not in seen:
             seen.add(value)
             yield value
             pending.extend(vars(value).values())
@@ -154,11 +179,13 @@ def _dataclass_field_type(cls: type, field: dataclasses.Field[Any]) -> Any:
     return typing.get_type_hints(owner, include_extras=True)[field.name]
 
 
-def _table(cls: type, module: types.ModuleType, entities: set[type]) -> Table:
+def _table(
+    cls: type, module: types.ModuleType, entities: set[type], keys: Mapping[type, str]
+) -> Table:
     columns: dict[str, Column] = {}
     relationships: dict[str, Relationship] = {}
     for name, tp in _field_types(cls, module).items():
-        ref = _reference(tp, entities)
+        ref = _reference(tp, entities, keys)
         if ref is None:
             columns[name] = Column(nullable=_admits_none(tp))
         else:
@@ -197,7 +224,9 @@ def _admits_none(tp: Any) -> bool:
     return False
 
 
-def _reference(tp: Any, entities: set[type], many: bool = False) -> tuple[str, bool, bool] | None:
+def _reference(
+    tp: Any, entities: set[type], keys: Mapping[type, str], many: bool = False
+) -> tuple[str, bool, bool] | None:
     """``(target, many, nullable)`` when ``tp`` names exactly one model of the source.
 
     A model, optionally ``None``-able, inside ``Annotated``, or the items of a
@@ -207,11 +236,11 @@ def _reference(tp: Any, entities: set[type], many: bool = False) -> tuple[str, b
     """
     tp = _unwrap(tp)
     if isinstance(tp, type) and tp in entities:
-        return tp.__name__, many, False
+        return keys[tp], many, False
     if _is_union(tp):
         args = get_args(tp)
         rest = [arg for arg in args if not _is_none(arg)]
-        refs = [_reference(arg, entities, many) for arg in rest]
+        refs = [_reference(arg, entities, keys, many) for arg in rest]
         if not refs or any(ref is None for ref in refs):
             return None
         resolved = [ref for ref in refs if ref is not None]
@@ -224,10 +253,10 @@ def _reference(tp: Any, entities: set[type], many: bool = False) -> tuple[str, b
         return None
     if origin is tuple:
         if len(args) == 2 and args[1] is Ellipsis:
-            return _reference(args[0], entities, True)
+            return _reference(args[0], entities, keys, True)
         return None
     if issubclass(origin, collections.abc.Mapping):
-        return _reference(args[1], entities, True) if len(args) == 2 else None
+        return _reference(args[1], entities, keys, True) if len(args) == 2 else None
     if issubclass(origin, collections.abc.Iterable) and not issubclass(origin, (str, bytes)):
-        return _reference(args[0], entities, True) if len(args) == 1 else None
+        return _reference(args[0], entities, keys, True) if len(args) == 1 else None
     return None

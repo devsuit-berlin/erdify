@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import ast
 import enum
+import importlib
 import types
 from unittest import mock
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ from django.core.exceptions import FieldError
 from django.db import models
 from django.test.utils import isolate_apps, override_settings
 
+from .packages import entity_keys, importable
 from .schema import Column, Schema, Table
 
 APP = "tests.ground_truth.django_app"
@@ -155,13 +157,64 @@ def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps, labels: l
         raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
     except (FieldError, TypeError) as exc:
         raise Rejected(f"{type(exc).__name__}: {exc}") from exc
+    name = namespace["__name__"]
+    return _collect(registry, {name}, list(_classes(namespace.values(), {name})), labels)
+
+
+def load_package(root: Path) -> Schema:
+    """Import the Django apps under ``root`` and normalise their models (#380).
+
+    Each top-level package with a ``models`` module is an installed app,
+    labelled by its package name. Its models are imported inside the
+    isolated registry (an app config on a stand-in module, so Django imports
+    nothing itself), and same-name models of two apps are keyed
+    ``module.Class``, as erdify names them (#367).
+    """
+    _setup()
+    with importable(root) as names:
+        apps = sorted({n.rpartition(".")[0] for n in names if n.endswith(".models")})
+        configs = [_package_config(app, root.joinpath(*app.split("."))) for app in apps]
+        with isolate_apps(*CONTRIB.values(), *configs) as registry:
+            for label in CONTRIB:
+                for model in global_apps.get_app_config(label).get_models(
+                    include_auto_created=True
+                ):
+                    registry.all_models[label][model._meta.model_name] = model
+            # A model finds its app in the global registry (ModelBase), which
+            # doesn't hold these apps: look it up in the isolated one.
+            containing = mock.patch("django.db.models.base.apps", registry)
+            try:
+                try:
+                    with containing:
+                        modules = [importlib.import_module(name) for name in names]
+                except (NameError, ImportError) as exc:
+                    raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
+                except (FieldError, TypeError) as exc:
+                    raise Rejected(f"{type(exc).__name__}: {exc}") from exc
+                values = [value for module in modules for value in vars(module).values()]
+                labels = [config.label for config in configs]
+                return _collect(registry, set(names), list(_classes(values, set(names))), labels)
+            finally:
+                global_apps.clear_cache()
+
+
+def _package_config(name: str, path: Path) -> AppConfig:
+    """An installed app for the package ``name``, on a stand-in module (nothing imported)."""
+    module = types.ModuleType(f"erdify_ground_truth_app_{name.replace('.', '_')}")
+    module.__path__ = [str(path)]
+    config_class = type("SourceAppConfig", (AppConfig,), {"label": name.rpartition(".")[2]})
+    return config_class(name, module)
+
+
+def _collect(registry: Apps, modules: set[str], classes: list[type], labels: list[str]) -> Schema:
+    """The schema of the models defined in ``modules`` (see :func:`load`)."""
     # all_models, not get_models(): a model with Meta.app_label naming an
     # app that isn't installed is registered but not listed by get_models().
     defined = [
         m
         for models_by_name in registry.all_models.values()
         for m in models_by_name.values()
-        if m.__module__ == namespace["__name__"]
+        if m.__module__ in modules
     ]
     concrete = [
         m
@@ -172,14 +225,15 @@ def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps, labels: l
         for f in model._meta.get_fields(include_hidden=True):
             if f.is_relation and isinstance(f.related_model, str):
                 raise Unloadable(f"unresolved relation {model.__name__}.{f.name}")
+    keys = entity_keys(concrete)
     try:
-        tables = {m.__name__: _table(m) for m in concrete}
+        tables = {keys[m]: _table(m, keys) for m in concrete}
         checks = _system_checks(registry, labels)
     except FieldError as exc:
         raise Rejected(f"FieldError: {exc}") from exc
     enums = {
         cls.__name__: members
-        for cls in _classes(namespace.values(), namespace["__name__"])
+        for cls in classes
         if issubclass(cls, enum.Enum)
         # A base without members (a project's own choices base) has nothing to draw.
         and (members := tuple(m for m in cls.__members__ if m != "__empty__"))
@@ -319,7 +373,7 @@ def _user_model(tree: ast.Module) -> str | None:
     return users[0] if len(users) == 1 else None
 
 
-def _classes(values: Iterable[object], module: str) -> Iterator[type]:
+def _classes(values: Iterable[object], modules: set[str]) -> Iterator[type]:
     """Every class defined in the source, including ones nested in a class body.
 
     Enums count whether they are ``models.Choices`` (often nested in the model,
@@ -331,7 +385,7 @@ def _classes(values: Iterable[object], module: str) -> Iterator[type]:
     pending = list(values)
     while pending:
         value = pending.pop()
-        if isinstance(value, type) and value.__module__ == module and value not in seen:
+        if isinstance(value, type) and value.__module__ in modules and value not in seen:
             seen.add(value)  # class attributes may refer back (``Node.alias = Node``)
             yield value
             pending.extend(vars(value).values())
@@ -342,12 +396,14 @@ def table_name(model: type[models.Model]) -> str:
     return str(model._meta.db_table)
 
 
-def _model_ref(model: type[models.Model]) -> str:
+def _model_ref(model: type[models.Model], keys: Mapping[type, str]) -> str:
     """How erdify names a relation target: the class, qualified outside the source's app.
 
     A contrib model (``auth.Group``) is never drawn, so erdify keeps its app
     label and a project model with the same class name can't take its edges.
     """
+    if model in keys:  # a model of the source (module.Class for a shared name)
+        return keys[model]
     meta = model._meta
     return (
         meta.object_name if meta.app_label == APP_LABEL else f"{meta.app_label}.{meta.object_name}"
@@ -375,7 +431,7 @@ def _meta_unique(model: type[models.Model]) -> set[Any]:
     return {meta.get_field(name) for name in names}
 
 
-def _table(model: type[models.Model]) -> Table:
+def _table(model: type[models.Model], keys: Mapping[type, str]) -> Table:
     meta = model._meta
     # pk_fields covers a CompositePrimaryKey (Django 5.2+), whose columns
     # don't set primary_key themselves.
@@ -398,7 +454,7 @@ def _table(model: type[models.Model]) -> Table:
             fk=fk,
         )
     m2m = frozenset(
-        (f.name, _model_ref(f.related_model._meta.concrete_model))
+        (f.name, _model_ref(f.related_model._meta.concrete_model, keys))
         for f in meta.local_many_to_many
         if f.remote_field.through._meta.auto_created
     )

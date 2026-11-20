@@ -63,7 +63,8 @@ class Table:
 
 @dataclass
 class Schema:
-    """Entities keyed by class name, plus enums keyed by name (member names).
+    """Entities keyed by class name (``module.Class`` for a name several share,
+    #367), plus enums keyed by name (member names).
 
     ``checks`` holds the ids of the errors the framework's own validation
     reports for the source (Django's system checks), empty for erdify. It is
@@ -83,6 +84,7 @@ def from_erdify(
     sql_dialect: str | None = None,
     schema: bool = False,
     app: bool = False,
+    include: list[str] | None = None,
 ) -> Schema:
     """Parse ``path`` with erdify and normalise the entities of ``source``.
 
@@ -90,10 +92,13 @@ def from_erdify(
     of them; ``relationships`` also normalises the declared relationships,
     ``schema`` the database schema and ``app`` the Django app label.
     ``path`` may be a single file (a ``.sql`` file is parsed with
-    ``sql_dialect``).
+    ``sql_dialect``); ``include`` selects the files of a directory (default
+    ``models.py``), e.g. ``["**/*.py"]`` for a source of several modules.
     """
     sources = {source} if isinstance(source, str) else set(source)
-    entities, enums = parse_models_directory(path, sql_dialect=sql_dialect)
+    entities, enums = parse_models_directory(
+        path, sql_dialect=sql_dialect, include_patterns=include
+    )
     return Schema(
         tables={
             name: _table(entity, relationships, schema=schema, app=app)

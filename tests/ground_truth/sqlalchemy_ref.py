@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import ast
 import enum
+import importlib
 import sys
 import types
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -26,6 +28,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapper, RelationshipDirection, RelationshipProperty, registry
 from sqlmodel import SQLModel
 
+from .packages import entity_keys, importable
 from .schema import Column, Relationship, Schema, Table as SchemaTable
 
 # A top-level name: a relative import in a source fails (it is not
@@ -93,26 +96,67 @@ def load(source: str) -> Schema:
                 if _caused_by_name_error(exc):
                     raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
                 raise Rejected(f"{type(exc).__name__}: {exc}") from exc
-            classes = list(_classes(module))
+            classes = list(_classes([module], {MODULE}))
             # The registries of the mapped classes, and of declarative bases
             # with no mapped class (their metadata may hold Core tables).
             registries |= {sa_inspect(c).registry for c in classes if _is_mapped(c)}
             registries |= {
                 c.registry for c in classes if isinstance(vars(c).get("registry"), registry)
             }
-            return _schema(module, classes, registries)
+            return _schema([module], classes, registries)
     finally:
         # Also when the source failed partway: classes it mapped already must
         # not stay in a live registry.
         registries |= {
-            c.registry for c in _classes(module) if isinstance(vars(c).get("registry"), registry)
+            c.registry
+            for c in _classes([module], {MODULE})
+            if isinstance(vars(c).get("registry"), registry)
         }
         for reg in registries:
             reg.dispose()
         del sys.modules[MODULE]
 
 
-def _schema(module: types.ModuleType, classes: list[type], registries: set[registry]) -> Schema:
+def load_package(root: Path) -> Schema:
+    """Import the packages under ``root`` and normalise their tables (#380).
+
+    A source of several modules: mapped classes of the same name in two of
+    them are keyed ``module.Class``, as erdify names them (#367).
+    """
+    sqlmodel_registry = registry()
+    swap = mock.patch.multiple(
+        SQLModel, _sa_registry=sqlmodel_registry, metadata=sqlmodel_registry.metadata
+    )
+    registries: set[registry] = {sqlmodel_registry}
+    modules: list[types.ModuleType] = []
+    with importable(root) as names:
+        try:
+            with swap, mock.patch.object(sqlmodel.main, "default_registry", sqlmodel_registry):
+                try:
+                    modules = [importlib.import_module(name) for name in names]
+                except (NameError, ImportError) as exc:
+                    raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
+                except (sa_exc.ArgumentError, sa_exc.InvalidRequestError, TypeError) as exc:
+                    raise Rejected(f"{type(exc).__name__}: {exc}") from exc
+                classes = list(_classes(modules, set(names)))
+                registries |= {sa_inspect(c).registry for c in classes if _is_mapped(c)}
+                registries |= {
+                    c.registry for c in classes if isinstance(vars(c).get("registry"), registry)
+                }
+                return _schema(modules, classes, registries)
+        finally:
+            registries |= {
+                c.registry
+                for c in _classes(modules, set(names))
+                if isinstance(vars(c).get("registry"), registry)
+            }
+            for reg in registries:
+                reg.dispose()
+
+
+def _schema(
+    modules: list[types.ModuleType], classes: list[type], registries: set[registry]
+) -> Schema:
     checks: list[str] = []
     for reg in registries:
         try:
@@ -125,22 +169,27 @@ def _schema(module: types.ModuleType, classes: list[type], registries: set[regis
             if _caused_by_name_error(exc):
                 raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
             checks.append(type(exc).__name__)
+    own = {module.__name__ for module in modules}
     mappers = [
         m
         for reg in registries
         for m in reg.mappers
-        if m.class_.__module__ == MODULE and _has_own_table(m)
+        if m.class_.__module__ in own and _has_own_table(m)
     ]
+    values = [(k, v) for module in modules for k, v in vars(module).items()]
     # Every MetaData the source can reach: the registries', module-level ones,
     # and the one of each module-level Table (also an inline MetaData()).
     metadatas = (
         {reg.metadata for reg in registries}
-        | {v for v in vars(module).values() if isinstance(v, MetaData)}
-        | {v.metadata for v in vars(module).values() if isinstance(v, Table)}
+        | {v for _, v in values if isinstance(v, MetaData)}
+        | {v.metadata for _, v in values if isinstance(v, Table)}
     )
-    tables = {m.class_.__name__: _table(m.local_table, m if not checks else None) for m in mappers}
+    keys = entity_keys(m.class_ for m in mappers)
+    tables = {
+        keys[m.class_]: _table(m.local_table, m if not checks else None, keys) for m in mappers
+    }
     mapped_tables = {m.local_table for m in mappers}
-    names = {id(v): k for k, v in vars(module).items() if isinstance(v, Table)}
+    names = {id(v): k for k, v in values if isinstance(v, Table)}
     for metadata in metadatas:
         for table in metadata.tables.values():
             if table in mapped_tables:
@@ -210,13 +259,13 @@ def _has_own_table(mapper: Mapper[Any]) -> bool:
     return mapper.inherits is None or mapper.local_table is not mapper.inherits.local_table
 
 
-def _classes(module: types.ModuleType) -> Iterator[type]:
-    """Classes defined in the source, including ones nested in a class body."""
+def _classes(modules: list[types.ModuleType], names: set[str]) -> Iterator[type]:
+    """Classes defined in the source's modules, including ones nested in a class body."""
     seen: set[type] = set()
-    pending = list(vars(module).values())
+    pending = [value for module in modules for value in vars(module).values()]
     while pending:
         value = pending.pop()
-        if isinstance(value, type) and value.__module__ == MODULE and value not in seen:
+        if isinstance(value, type) and value.__module__ in names and value not in seen:
             seen.add(value)
             yield value
             pending.extend(vars(value).values())
@@ -264,7 +313,9 @@ def _fk(column: Any) -> str | None:
     return sorted(targets)[0]
 
 
-def _table(table: Table, mapper: Mapper[Any] | None) -> SchemaTable:
+def _table(
+    table: Table, mapper: Mapper[Any] | None, keys: Mapping[type, str] | None = None
+) -> SchemaTable:
     unique = _unique_columns(table)
     # Only a sole primary key is unique by the key; a composite member keeps
     # its own unique (#331).
@@ -278,13 +329,13 @@ def _table(table: Table, mapper: Mapper[Any] | None) -> SchemaTable:
         )
         for c in table.columns
     }
-    relationships = {} if mapper is None else _relationships(mapper)
+    relationships = {} if mapper is None else _relationships(mapper, keys or {})
     return SchemaTable(
         table=table.name, columns=columns, relationships=relationships, schema=table.schema
     )
 
 
-def _relationships(mapper: Mapper[Any]) -> dict[str, Relationship]:
+def _relationships(mapper: Mapper[Any], keys: Mapping[type, str]) -> dict[str, Relationship]:
     """The relationships the class declares, as erdify must draw them.
 
     Left out: one going through a ``secondary`` table (the association table
@@ -297,7 +348,7 @@ def _relationships(mapper: Mapper[Any]) -> dict[str, Relationship]:
         if rel.parent is not mapper or rel.secondary is not None or _from_backref(rel):
             continue
         found[rel.key] = Relationship(
-            target=rel.mapper.class_.__name__,
+            target=keys.get(rel.mapper.class_, rel.mapper.class_.__name__),
             kind="many" if rel.uselist else "one",
             nullable=_nullable(rel),
             # SQLAlchemy sets back_populates on a side declared with backref=

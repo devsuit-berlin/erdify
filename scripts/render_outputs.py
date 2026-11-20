@@ -82,6 +82,15 @@ def sources() -> Iterator[Source]:
                     # The dialect keys are SQL file stems: Python modules get none.
                     sql_dialect=SQL_DIALECTS.get(module.stem) if is_sql else None,
                 )
+            # A catalog source of several modules or apps (#380): a directory.
+            for package in sorted(p for p in directory.iterdir() if p.is_dir()):
+                if package.name.startswith("__"):
+                    continue
+                yield Source(
+                    id=f"fixtures/{name}/{package.name}",
+                    path=package,
+                    include_patterns=["**/*.py"],
+                )
         else:
             key = f"fixtures/{name}"
             include = ["**/*.sql"] if any(directory.glob("*.sql")) else None
