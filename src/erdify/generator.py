@@ -898,7 +898,8 @@ def generate_json(
     """
     Serialize the parsed model as JSON (a stable, documented schema).
 
-    Shape: ``{schema_version, title, entities: [{name, table_name, source, is_link_table,
+    Shape: ``{schema_version, title, entities: [{name, table_name, schema, source, module, app,
+    is_link_table,
     fields: [{name, type, primary_key, foreign_key, nullable, foreign_table,
     index, unique, default}], relationships: [{target, type, attribute, nullable,
     inverse}]}],
@@ -927,7 +928,10 @@ def generate_json(
             {
                 "name": entity.name,
                 "table_name": entity.table_name,
+                "schema": entity.schema,
                 "source": entity.source,
+                "module": entity.module,
+                "app": entity.app,
                 "is_link_table": entity.is_link_table,
                 "fields": [
                     {

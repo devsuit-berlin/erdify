@@ -60,6 +60,7 @@ EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
 # Test helpers that prepend a module-level header to the bodies they get.
 SNIPPET_HEADERS = {
     "test_annotated_metadata.py": "HEADER",
+    "test_entity_origin.py": "HEADER",
     "test_sqlalchemy_inheritance.py": "HEADER",
 }
 
@@ -95,13 +96,16 @@ SQLMODEL_DIFFERENCES = {
 LIMITATIONS = {
     "classic_columns": "limitations.md: classic Column() attributes are not read",
     "composite_foreign_key": "limitations.md: composite foreign keys are not read",
-    "schema_qualified": "limitations.md: schema= is ignored",
-    # SQLALCHEMY_TABLE_ARGS puts one model in a schema ("app").
-    "test_cardinality.py::SQLALCHEMY_TABLE_ARGS": "limitations.md: schema= is ignored",
-    "test_cardinality.py::TestNullableForeignKey.test_explicit_nullable_overrides_annotation"
-    ".src": "limitations.md: schema= is ignored",
-    "test_cardinality.py::TestNullableForeignKey.test_nullable_none_keeps_annotation.src": (
-        "limitations.md: schema= is ignored"
+    "test_entity_origin.py::TestSqlAlchemySchema"
+    ".test_unreadable_declared_attr_table_args_give_no_schema.body": (
+        "limitations.md: a declared_attr __table_args__ needs a single return"
+    ),
+    "test_entity_origin.py::TestSqlAlchemySchema"
+    ".test_table_args_ending_in_a_variable_give_none.body": (
+        "limitations.md: a non-literal schema gives none"
+    ),
+    "test_entity_origin.py::TestSqlAlchemySchema.test_non_literal_schema_gives_none.body": (
+        "limitations.md: a non-literal schema gives none"
     ),
     "bare_relationship": "limitations.md: relationships need an annotation",
     "test_declared_attr.py::TestDeclaredAttr.test_unreadable_methods_are_ignored.entities": (
@@ -273,7 +277,7 @@ def _assert_same(actual: Schema, expected: Schema) -> None:
 
 def _erdify(source: str, tmp_path: Path, *, relationships: bool = True) -> Schema:
     (tmp_path / "models.py").write_text(source, encoding="utf-8")
-    return from_erdify(tmp_path, SOURCES, relationships=relationships)
+    return from_erdify(tmp_path, SOURCES, relationships=relationships, schema=True)
 
 
 def _assert_checks(name: str, expected: Schema, allowed: tuple[str, ...], reason: str = "") -> None:

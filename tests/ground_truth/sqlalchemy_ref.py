@@ -279,7 +279,9 @@ def _table(table: Table, mapper: Mapper[Any] | None) -> SchemaTable:
         for c in table.columns
     }
     relationships = {} if mapper is None else _relationships(mapper)
-    return SchemaTable(table=table.fullname, columns=columns, relationships=relationships)
+    return SchemaTable(
+        table=table.name, columns=columns, relationships=relationships, schema=table.schema
+    )
 
 
 def _relationships(mapper: Mapper[Any]) -> dict[str, Relationship]:

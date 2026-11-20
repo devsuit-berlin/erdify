@@ -315,6 +315,8 @@ sql_entities, sql_enums = SqlSchemaParser([Path("schema.sql")], dialect="postgre
 # Access entity details
 for name, entity in entities.items():
     print(f"Table: {entity.table_name}")
+    # Where it comes from: database schema, Python module, Django app (or None)
+    print(f"  schema={entity.schema} module={entity.module} app={entity.app}")
     for field in entity.fields:
         if field.is_primary_key:
             print(f"  PK: {field.name}")

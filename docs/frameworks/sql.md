@@ -65,7 +65,7 @@ sql_dialect = "postgres"
 
 | Construct | Support | Notes |
 |-----------|---------|-------|
-| `CREATE TABLE` | ✅ | Table name becomes the entity name; schema-qualified names (`schema.table`) are normalised to the table name part. Trailing table options sqlglot doesn't know (SQLite's `WITHOUT ROWID`) are ignored |
+| `CREATE TABLE` | ✅ | Table name becomes the entity name; schema-qualified names (`schema.table`) are normalised to the table name part, and the schema is kept as the entity's `schema` (API and [JSON](../usage/output-formats.md#json); a database / catalog part, `db.schema.table`, is dropped). Same-name tables in different schemas are one entity ([#353](https://github.com/devsuit-berlin/erdify/issues/353)). Trailing table options sqlglot doesn't know (SQLite's `WITHOUT ROWID`) are ignored |
 | Primary keys — inline (`col INT PRIMARY KEY`) | ✅ | |
 | Primary keys — table constraint (`PRIMARY KEY (col, …)`) | ✅ | Composite PKs supported |
 | Foreign keys — inline (`col INT REFERENCES other(id)`) | ✅ | Without a column list (`REFERENCES other`), the key references `other`'s primary key, paired in key order for a composite key |

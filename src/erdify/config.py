@@ -74,6 +74,17 @@ class EntityInfo:
             other side's relationship it pairs with, when the source names it
             (SQLAlchemy / SQLModel ``back_populates=``). Both sides are then
             drawn as one edge.
+        schema: The database schema the table is in: a schema-qualified SQL
+            table (``core.customer``), SQLAlchemy / SQLModel
+            ``__table_args__ = {"schema": ...}``, a Core ``Table(...,
+            schema=...)`` or a declarative base's ``MetaData(schema=...)``.
+            None when the source names none.
+        module: The dotted Python module the class (or Core table) is
+            defined in, named from its package: the directories above the
+            file with an ``__init__.py`` (``shop/models.py`` in package
+            ``shop`` -> ``shop.models``). None for SQL DDL.
+        app: The Django app label (``Meta.app_label``, else the app's
+            ``AppConfig`` or package). None for every other source.
     """
 
     name: str
@@ -87,6 +98,9 @@ class EntityInfo:
     source: str = "sqlmodel"
     nullable_relationships: List[str] = field(default_factory=list)
     inverse_relationships: Dict[str, str] = field(default_factory=dict)
+    schema: str | None = None
+    module: str | None = None
+    app: str | None = None
 
 
 def normalize_key_uniqueness(fields: List[FieldInfo]) -> None:

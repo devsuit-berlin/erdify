@@ -402,4 +402,4 @@ def _table(model: type[models.Model]) -> Table:
         for f in meta.local_many_to_many
         if f.remote_field.through._meta.auto_created
     )
-    return Table(table=table_name(model), columns=columns, m2m=m2m)
+    return Table(table=table_name(model), columns=columns, m2m=m2m, app=meta.app_label)

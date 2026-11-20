@@ -27,7 +27,10 @@ class TestJsonFormat:
         assert set(post) == {
             "name",
             "table_name",
+            "schema",
             "source",
+            "module",
+            "app",
             "is_link_table",
             "fields",
             "relationships",

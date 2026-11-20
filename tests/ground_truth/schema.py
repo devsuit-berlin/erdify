@@ -48,12 +48,17 @@ class Table:
     relationships drawn as a direct edge (no join-table entity).
     ``relationships`` maps attribute names to declared ORM relationships; only
     reference loaders that compare them (SQLAlchemy / SQLModel) fill it.
+    ``schema`` is the database schema (SQLAlchemy ``Table.schema``) and
+    ``app`` the Django app label (``_meta.app_label``); only the loaders whose
+    library has them fill them.
     """
 
     table: str
     columns: dict[str, Column]
     m2m: frozenset[tuple[str, str]] = frozenset()
     relationships: dict[str, Relationship] = field(default_factory=dict)
+    schema: str | None = None
+    app: str | None = None
 
 
 @dataclass
@@ -76,11 +81,14 @@ def from_erdify(
     *,
     relationships: bool = False,
     sql_dialect: str | None = None,
+    schema: bool = False,
+    app: bool = False,
 ) -> Schema:
     """Parse ``path`` with erdify and normalise the entities of ``source``.
 
     ``source`` is one of erdify's model sources (``"sql"`` for DDL) or several
-    of them; ``relationships`` also normalises the declared relationships.
+    of them; ``relationships`` also normalises the declared relationships,
+    ``schema`` the database schema and ``app`` the Django app label.
     ``path`` may be a single file (a ``.sql`` file is parsed with
     ``sql_dialect``).
     """
@@ -88,7 +96,7 @@ def from_erdify(
     entities, enums = parse_models_directory(path, sql_dialect=sql_dialect)
     return Schema(
         tables={
-            name: _table(entity, relationships)
+            name: _table(entity, relationships, schema=schema, app=app)
             for name, entity in entities.items()
             if entity.source in sources
         },
@@ -96,7 +104,9 @@ def from_erdify(
     )
 
 
-def _table(entity: EntityInfo, relationships: bool = False) -> Table:
+def _table(
+    entity: EntityInfo, relationships: bool = False, *, schema: bool = False, app: bool = False
+) -> Table:
     columns = {
         f.name: Column(
             pk=f.is_primary_key,
@@ -122,4 +132,11 @@ def _table(entity: EntityInfo, relationships: bool = False) -> Table:
         if relationships
         else {}
     )
-    return Table(table=entity.table_name, columns=columns, m2m=m2m, relationships=rels)
+    return Table(
+        table=entity.table_name,
+        columns=columns,
+        m2m=m2m,
+        relationships=rels,
+        schema=entity.schema if schema else None,
+        app=entity.app if app else None,
+    )

@@ -150,7 +150,7 @@ def _erdify(source: str, tmp_path: Path) -> Schema:
     app = tmp_path / django_ref.APP_LABEL
     app.mkdir()
     (app / "models.py").write_text(source, encoding="utf-8")
-    return from_erdify(app, "django")
+    return from_erdify(app, "django", app=True)
 
 
 @pytest.mark.parametrize("name", sorted(MODULES))

@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Mapping, Tuple
 
 from ..config import EntityInfo, EnumInfo, is_structural_link_table, normalize_key_uniqueness
 from .aliases import AliasResolver
-from .common import is_enum_class
+from .common import is_enum_class, module_name
 from .dialects import DIALECTS, ParseContext
 from .discovery import discover_model_files
 from .inheritance import ClassIndex
@@ -179,9 +179,11 @@ class ASTDatabaseParser:
         for dialect in self._ctx.all_dialects():
             if self.sources is not None and dialect.kind not in self.sources:
                 continue
-            for entity in dialect.extra_entities(self._file_trees.values()):
-                if entity.name not in self._entities:
-                    self._entities[entity.name] = entity
+            for model_file, tree in self._file_trees.items():
+                for entity in dialect.extra_entities([tree]):
+                    if entity.name not in self._entities:
+                        entity.module = module_name(model_file)
+                        self._entities[entity.name] = entity
 
         # Cross-entity adjustments, once every entity is built, Core tables
         # included (e.g. renamed columns that foreign keys elsewhere point at,
@@ -439,11 +441,15 @@ class ASTDatabaseParser:
             if isinstance(base, ast.Name):
                 base_classes.append(self._shadowed.get(base.id, base.id))
 
+        model_file = self._class_files.get(id(class_node))
         entity = EntityInfo(
             name=class_node.name,
             table_name=table_name,
             base_classes=base_classes,
             source=source,
+            schema=dialect.schema(class_node),
+            module=module_name(model_file) if model_file is not None else None,
+            app=dialect.app_label(class_node),
         )
 
         # Collect fields from this class and all base classes (recursively)

@@ -193,7 +193,8 @@ uv run --with "django~=6.1.0" pytest tests/test_ground_truth_django.py
 SQLModel: every source (the SQLAlchemy / SQLModel fixtures,
 `docs/examples/sqlalchemy` and `docs/examples/sqlmodel`, the edge-case catalog
 in `tests/fixtures/sqlalchemy_edge_cases/`, and every inline snippet) is
-executed, its mappers are configured, and `MetaData.tables` plus
+executed, its mappers are configured, and `MetaData.tables` (with each
+table's `schema`) plus
 `sqlalchemy.inspect(Model).relationships` are compared with erdify's parse,
 relationships included (cardinality, optionality, `back_populates`). A snippet
 built as `HEADER + """..."""` is folded into one source; a body that a test
