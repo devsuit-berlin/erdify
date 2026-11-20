@@ -162,6 +162,18 @@ EXPECTED_UNLOADABLE = {
         )
     },
     **{
+        f"test_namespaces.py::TestReviewCases.{test}": (
+            "one file of a multi-file source (#367): same-name classes in other files"
+        )
+        for test in (
+            "test_imported_module_alias",
+            "test_names_imported_from_unscanned_modules_are_not_reported",
+            "test_default_values_show_the_display_name",
+            "test_a_same_module_key_wins_among_same_table_models",
+            "test_a_same_module_key_wins_among_same_table_models[2]",
+        )
+    },
+    **{
         f"{REFS}[{annotation}]": QUALIFIED
         for annotation in ("schemas.User", '"schemas.User"', "Optional[schemas.User]")
     },

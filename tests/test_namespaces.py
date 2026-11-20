@@ -284,3 +284,171 @@ def test_original_class_name() -> None:
     assert original_class_name("Address__erdify12") == "Address"
     assert original_class_name("Address") == "Address"
     assert original_class_name("My__erdifyThing") == "My__erdifyThing"
+
+
+class TestReviewCases:
+    """Cases a review found (#367)."""
+
+    @pytest.fixture
+    def root(self, tmp_path: Path) -> Path:
+        _packages(tmp_path, "billing", "shipping", "orders")
+        _write(tmp_path, ADDRESS)
+        return tmp_path
+
+    def test_imported_module_alias(self, root: Path) -> None:
+        _write(
+            root,
+            {
+                "orders/models.py": "from pydantic import BaseModel\n"
+                "from billing import models as bm\nfrom ..shipping import models\n\n\n"
+                "class Order(BaseModel):\n    billing: bm.Address\n    shipping: models.Address\n"
+            },
+        )
+
+        entities, _ = parse_models_directory(root)
+
+        assert _edges(dict(entities)) == [
+            ("Order", "billing.models.Address", "billing"),
+            ("Order", "shipping.models.Address", "shipping"),
+        ]
+
+    def test_names_imported_from_unscanned_modules_are_not_reported(
+        self, root: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write(
+            root,
+            {
+                "orders/models.py": "from pydantic import BaseModel\n"
+                "from vendor.geo import Address\n\n\n"
+                "class Order(BaseModel):\n    address: Address\n"
+            },
+        )
+
+        parse_models_directory(root)
+
+        assert "refers to" not in capsys.readouterr().err
+
+    def test_an_earlier_same_file_definition_leaves_no_entity(self, root: Path) -> None:
+        _write(
+            root,
+            {
+                "billing/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Address(BaseModel):\n    old: str\n\n\n" + ADDRESS["billing/models.py"]
+            },
+        )
+
+        entities, _ = parse_models_directory(root)
+
+        assert sorted(entities) == ["billing.models.Address", "shipping.models.Address"]
+        assert [f.name for f in entities["billing.models.Address"].fields] == ["street"]
+
+    def test_default_values_show_the_display_name(self, root: Path) -> None:
+        _write(
+            root,
+            {
+                "billing/models.py": "from pydantic import Field\n"
+                + ADDRESS["billing/models.py"]
+                + "    KIND: str = 'home'\n\n\n"
+                "class Invoice(BaseModel):\n    kind: str = Field(default=Address.KIND)\n"
+            },
+        )
+
+        entities, _ = parse_models_directory(root)
+
+        kind = next(f for f in entities["Invoice"].fields if f.name == "kind")
+        assert kind.default_value == "billing.models.Address.KIND"
+
+    def test_a_same_module_key_wins_among_same_table_models(self, root: Path) -> None:
+        _write(
+            root,
+            {
+                "billing/models.py": ADDRESS["billing/models.py"] + "\n\n"
+                "class Invoice(BaseModel):\n    id: int\n    address_id: int\n",
+                "shipping/models.py": ADDRESS["shipping/models.py"] + "\n\n"
+                "class Parcel(BaseModel):\n    id: int\n    address_id: int\n",
+            },
+        )
+
+        entities, _ = parse_models_directory(root, infer_keys=True)
+
+        assert _edges(dict(entities)) == [
+            ("Invoice", "billing.models.Address", "address_id"),
+            ("Parcel", "shipping.models.Address", "address_id"),
+        ]
+
+    def test_base_classes_defined_in_two_modules(self, tmp_path: Path) -> None:
+        _packages(tmp_path, "a", "b")
+        schema = "class Schema:\n    pass\n\n\n"
+        _write(
+            tmp_path,
+            {
+                "a/models.py": schema + "class Address(Schema):\n    street: str\n",
+                "b/models.py": schema + "class Parcel(Schema):\n    weight: int\n",
+            },
+        )
+
+        entities, _ = parse_models_directory(tmp_path, base_classes=["Schema"])
+
+        assert {"Address", "Parcel"} <= set(entities)
+
+    def test_sources_decide_what_collides(self, tmp_path: Path) -> None:
+        _packages(tmp_path, "a", "b")
+        _write(
+            tmp_path,
+            {
+                "a/models.py": "from django.db import models\n\n\n"
+                "class Address(models.Model):\n    street = models.CharField(max_length=9)\n",
+                "b/models.py": ADDRESS["shipping/models.py"],
+            },
+        )
+
+        entities, _ = parse_models_directory(tmp_path, sources=["django"])
+
+        assert list(entities) == ["Address"]
+
+    def test_a_python_model_still_wins_over_a_sql_table_of_its_name(self, root: Path) -> None:
+        pytest.importorskip("sqlglot")
+        _write(root, {"schema.sql": "CREATE TABLE Address (id INT PRIMARY KEY);\n"})
+
+        entities, _ = parse_models_directory(root, include_patterns=["models.py", "*.sql"])
+
+        assert sorted(entities) == ["billing.models.Address", "shipping.models.Address"]
+
+    def test_django_model_names_in_any_case(self, tmp_path: Path) -> None:
+        _packages(tmp_path, "billing", "shipping")
+        profile = (
+            "from django.db import models\n\n\n"
+            "class Profile(models.Model):\n    name = models.CharField(max_length=9)\n"
+        )
+        _write(
+            tmp_path,
+            {
+                "billing/models.py": profile + "\n\nclass Invoice(models.Model):\n"
+                '    own = models.ForeignKey("profile", on_delete=models.CASCADE)\n'
+                "    other = models.ForeignKey(\n"
+                '        "shipping.profile", on_delete=models.CASCADE, related_name="+"\n    )\n',
+                "shipping/models.py": profile,
+            },
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert _edges(dict(entities)) == [
+            ("Invoice", "billing.models.Profile", "own_id"),
+            ("Invoice", "shipping.models.Profile", "other_id"),
+        ]
+
+    def test_a_symlink_out_of_the_scan_keeps_working(self, tmp_path: Path) -> None:
+        outside = tmp_path / "outside"
+        root = tmp_path / "root"
+        _write(outside, {"models.py": ADDRESS["shipping/models.py"]})
+        _write(root, {"a/models.py": ADDRESS["billing/models.py"]})
+        (root / "b").mkdir()
+        try:
+            (root / "b" / "models.py").symlink_to(outside / "models.py")
+        except OSError:
+            pytest.skip("no symlinks here")
+
+        entities, _ = parse_models_directory(root)
+
+        assert len(entities) == 2

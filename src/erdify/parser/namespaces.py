@@ -48,8 +48,8 @@ class Namespaced:
     Attributes:
         display: Internal class name -> the entity name to draw
             (``billing.models.Address``).
-        unresolved: ``(file, name)`` of each reference to a colliding name
-            that no definition could be chosen for.
+        unresolved: ``(file, name, candidate files)`` of each reference to a
+            colliding name that no definition could be chosen for.
     """
 
     display: Dict[str, str] = field(default_factory=dict)
@@ -103,15 +103,40 @@ def namespace_models(
 
     for path, tree in trees.items():
         _Rewriter(path, tree, candidates, result).rewrite()
-    for group in candidates.values():
+    for name, group in candidates.items():
         for candidate in group:
+            # Every module-level definition of the name in that file (an
+            # earlier one it replaces, one under `if`) takes its internal name,
+            # so none is left under the bare name.
+            for node in _module_level_classes(trees[candidate.file]):
+                if node.name == name:
+                    node.name = candidate.internal
             candidate.node.name = candidate.internal
     return result
 
 
+def _module_level_classes(tree: ast.Module) -> List[ast.ClassDef]:
+    """The classes a module defines at its top level, also under ``if`` / ``try`` / ``with``."""
+    found: List[ast.ClassDef] = []
+    pending: List[ast.stmt] = list(tree.body)
+    while pending:
+        stmt = pending.pop(0)
+        if isinstance(stmt, ast.ClassDef):
+            found.append(stmt)
+        elif not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for child in ast.iter_child_nodes(stmt):
+                if isinstance(child, ast.stmt):
+                    pending.append(child)
+    return found
+
+
 def _relative_module(path: Path, base: Path) -> str:
-    """``a/models.py`` under ``base`` -> ``a.models`` (a scanned file is under ``base``)."""
-    parts = list(path.resolve().relative_to(base.resolve()).with_suffix("").parts)
+    """``a/models.py`` under ``base`` -> ``a.models``."""
+    try:
+        rel = path.relative_to(base)
+    except ValueError:  # a symlink resolved outside the scanned directory
+        rel = Path(path.name)
+    parts = list(rel.with_suffix("").parts)
     if parts and parts[-1] == "__init__":
         parts.pop()
     return ".".join(parts)
@@ -133,8 +158,12 @@ class _Rewriter:
         self.result = result
         #: Name bound in this file -> internal name it means.
         self.bindings: Dict[str, str] = {}
-        #: Module alias (``import billing.models as bm``) -> dotted module.
+        #: Module alias (``import billing.models as bm``, ``from billing import
+        #: models``) -> dotted module.
         self.module_aliases: Dict[str, str] = {}
+        #: Names imported from a module that isn't scanned: not a reference to
+        #: a scanned class, so never reported.
+        self.elsewhere: set[str] = set()
         self._reported: set[str] = set()
 
     def rewrite(self) -> None:
@@ -157,22 +186,30 @@ class _Rewriter:
 
     def _bind_from(self, node: ast.ImportFrom) -> None:
         source = (node.level, node.module or "")
+        everyone = [c for group in self.candidates.values() for c in group]
         for alias in node.names:
+            if alias.name != "*":
+                # `from billing import models [as bm]`: a module of candidates.
+                sub = (node.level, ".".join(p for p in (node.module, alias.name) if p))
+                modules = {c.module for c in everyone if is_module_file(c.file, self.path, sub)}
+                if len(modules) == 1:
+                    self.module_aliases[alias.asname or alias.name] = modules.pop()
             names = list(self.candidates) if alias.name == "*" else [alias.name]
             for name in names:
                 group = self.candidates.get(name)
                 if group is None:
                     continue
-                found = [c for c in group if is_module_file(c.file, self.path, source)]
-                if len(found) != 1:
-                    continue
                 bound = name if alias.name == "*" else (alias.asname or name)
-                self.bindings[bound] = found[0].internal
+                found = [c for c in group if is_module_file(c.file, self.path, source)]
+                if len(found) == 1:
+                    self.bindings[bound] = found[0].internal
+                elif not found and alias.name != "*":
+                    self.elsewhere.add(bound)
 
     def name(self, name: str) -> str | None:
         """The internal name ``name`` means here, or None (reported) if it can't tell."""
         internal = self.bindings.get(name)
-        if internal is None and name in self.candidates:
+        if internal is None and name in self.candidates and name not in self.elsewhere:
             self._report(name)
         return internal
 
@@ -196,19 +233,37 @@ class _Rewriter:
         return None
 
     def string(self, value: str, *, django: bool) -> str | None:
-        """A string reference rewritten, or None when it names no colliding class."""
-        if "." in value:
-            return self.dotted(value) if value.rpartition(".")[2] in self.candidates else None
-        if value not in self.candidates:
+        """A string reference rewritten, or None when it names no colliding class.
+
+        Django matches a model name without regard to case
+        (``"billing.address"``) and resolves a bare one in the referencing
+        model's app first, as Django does.
+        """
+        module, dot, last = value.rpartition(".")
+        name = self._candidate(last, django)
+        if name is None:
             return None
-        internal = self.bindings.get(value)
-        if internal is None and django:  # Django: a model of the same app
+        if dot:
+            return self.dotted(f"{module}.{name}")
+        if django:
             app = _app(self.path)
-            found = [c for c in self.candidates[value] if _app(c.file) == app]
-            internal = found[0].internal if len(found) == 1 else None
+            found = [c for c in self.candidates[name] if _app(c.file) == app]
+            if len(found) == 1:
+                return found[0].internal
+        internal = self.bindings.get(name)
         if internal is None:
-            self._report(value)
+            self._report(name)
         return internal
+
+    def _candidate(self, name: str, django: bool) -> str | None:
+        """The colliding class name ``name`` names (Django: also in another case)."""
+        if name in self.candidates:
+            return name
+        if django:
+            found = [n for n in self.candidates if n.lower() == name.lower()]
+            if len(found) == 1:
+                return found[0]
+        return None
 
     def _report(self, name: str) -> None:
         if name not in self._reported:

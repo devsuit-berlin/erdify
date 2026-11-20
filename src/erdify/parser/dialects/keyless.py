@@ -10,7 +10,7 @@ from typing import Dict, FrozenSet, List, Set, Tuple
 
 from ...config import FieldInfo
 from ..annotations import is_non_field
-from ..common import _ClassMembers, _Rel
+from ..common import _ClassMembers, _Rel, original_class_name
 from ..inheritance import merge_members
 from .annotated import AnnotatedDialect
 from .base import ParseContext
@@ -54,7 +54,9 @@ class _FieldMergeDialect(AnnotatedDialect):
         """
         name = class_node.name
         if name not in self._owns_cache:  # detect() walks the ancestors: memoize
-            self._owns_cache[name] = self.detect(class_node) or name in self.ctx.base_classes
+            self._owns_cache[name] = (
+                self.detect(class_node) or original_class_name(name) in self.ctx.base_classes
+            )
         return self._owns_cache[name]
 
     def _body(self, name: str) -> Tuple[Set[str], Set[str], Set[str]]:
@@ -263,7 +265,7 @@ class PydanticDialect(_FieldMergeDialect):
 
         for base in class_node.bases:
             if isinstance(base, ast.Name):
-                if base.id == "BaseModel" or base.id in self.ctx.base_classes:
+                if base.id == "BaseModel" or original_class_name(base.id) in self.ctx.base_classes:
                     return True
                 ancestor = self.classes.all.get(base.id)
                 if ancestor is not None and self._inherits_basemodel(ancestor, visited):

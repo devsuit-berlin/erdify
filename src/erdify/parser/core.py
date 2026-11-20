@@ -3,6 +3,7 @@
 import ast
 import copy
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Callable, Dict, List, Mapping, Tuple
 
 from ..config import EntityInfo, EnumInfo, is_structural_link_table, normalize_key_uniqueness
 from .aliases import AliasResolver
-from .common import is_enum_class, is_module_file, module_name
+from .common import is_enum_class, is_module_file, module_name, original_class_name
 from .dialects import DIALECTS, ParseContext
 from .discovery import discover_model_files
 from .namespaces import display_text, namespace_models
@@ -256,10 +257,22 @@ class ASTDatabaseParser:
         self._collect_classes(definitions)
 
     def _apply_display_names(self) -> None:
-        """Name same-name model classes ``module.Class``, in entities and references."""
+        """Name same-name model classes ``module.Class``, in entities and references.
+
+        Only a class name that more than one built entity has is qualified: a
+        namesake left out by ``--sources`` or skipped leaves the other its
+        plain name.
+        """
         if not self._display:
             return
-        display = self._display
+        built = Counter(original_class_name(key) for key in self._entities if key in self._display)
+        display = {
+            internal: shown
+            if built[original_class_name(internal)] > 1
+            else original_class_name(internal)
+            for internal, shown in self._display.items()
+        }
+        self._display = display
 
         def shown(name: str) -> str:
             return display.get(name, name)
@@ -273,6 +286,8 @@ class ASTDatabaseParser:
             entity.base_classes = [shown(base) for base in entity.base_classes]
             for f in entity.fields:
                 f.type_str = display_text(f.type_str, display)
+                if f.default_value is not None:
+                    f.default_value = display_text(f.default_value, display)
             renamed[shown(key)] = entity
         self._entities = renamed
 
@@ -289,9 +304,10 @@ class ASTDatabaseParser:
         Same-name model classes are kept apart (:meth:`_namespace_models`,
         #367); what remains is a model replaced by a same-name class that is
         not a top-level model (a plain class, a nested one), reported on
-        stderr instead of happening silently (#353). A table model extending
-        a same-named table model (``class Item(Item)``) is not: drawing only
-        the extending class is documented behaviour.
+        stderr instead of happening silently (#353), and same-name models when
+        one of them extends a namesake (``class Item(Item)``), which are not
+        namespaced. A table model extending a same-named table model is not
+        reported: drawing only the extending class is documented behaviour.
         """
         hidden: Dict[str, List[ast.ClassDef]] = {}
         for replaced, kept in self._replaced:
@@ -714,8 +730,12 @@ def parse_models_directory(
         )
         sql_entities, sql_enums = sql_parser.parse()
         parse_errors.extend(sql_parser._parse_errors)
+        # A Python model drawn as module.Class (#367) still wins over a SQL
+        # table of its class name.
+        namespaced = {name.rpartition(".")[2] for name in parser._display.values()}
         for name, entity in sql_entities.items():
-            entities.setdefault(name, entity)
+            if name not in namespaced:
+                entities.setdefault(name, entity)
         for name, enum in sql_enums.items():
             enums.setdefault(name, enum)
 

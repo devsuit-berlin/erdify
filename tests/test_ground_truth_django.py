@@ -120,6 +120,9 @@ EXPECTED_UNLOADABLE = {
         )
         for n in ("", "[2]")
     },
+    "test_namespaces.py::TestReviewCases.test_django_model_names_in_any_case": (
+        "one file of a multi-file source (#367): relations to another app's model"
+    ),
     "test_django.py::TestDjangoContribAuth"
     ".test_another_modules_contrib_import_does_not_leak.entities[2]": (
         "imports Group from a module outside the source"

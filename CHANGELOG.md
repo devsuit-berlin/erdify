@@ -19,14 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Model classes of the same name in different modules (a Pydantic `Address`
   in `billing` and `shipping`, a Django `Profile` in two apps) are separate
-  entities, named `module.Class` (`billing.models.Address`); they used to be
-  one entity, the class scanned last. Each reference goes to the class its
-  file defines or imports (`from ... import X [as Y]`, a star import,
-  `module.X`, a quoted name, `relationship("billing.models.X")`, Django
-  `"app.Model"` or a bare name of the same app). A reference none of these
-  resolves is not drawn and is reported on stderr. `--exclude X` still
-  matches each of them. Projects without same-name model classes are
-  unchanged ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
+  entities, named `module.Class` (`billing.models.Address`) when more than
+  one of them is drawn; they used to be one entity, the class scanned last.
+  Each reference goes to the class its file defines or imports (`from ...
+  import X [as Y]`, `from pkg import module`, a star import, `module.X`, a
+  quoted name, `relationship("billing.models.X")`); a Django string by its
+  app label (`"app.Model"`, any case) or, bare, the referencing model's app.
+  A reference none of these resolves is not drawn and is reported on stderr.
+  `--exclude X` still matches each of them, and a Python model still wins
+  over a SQL table of its class name. Projects without same-name model
+  classes are unchanged
+  ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
 
 ### Output changes
 

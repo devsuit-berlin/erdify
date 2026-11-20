@@ -91,7 +91,9 @@ Entities appear, but the diagram has no lines.
    `Address` are drawn as `billing.models.Address` and
    `shipping.models.Address`. A reference to `Address` in a file that neither
    defines nor imports one of them can't be told apart: it is not drawn, and
-   erdify names the candidates on stderr. Import the class you mean.
+   erdify names the candidates on stderr. Import the class you mean. A model
+   replaced by a same-name class that is not a model is reported on stderr
+   too.
 7. **Pydantic or dataclass models?** They have no keys until you pass
    `--infer-keys` (next section).
 

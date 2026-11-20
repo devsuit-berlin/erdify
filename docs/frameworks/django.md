@@ -194,7 +194,11 @@ class Settings(Left, Right):         # id PK, owner_id UK -> account (Left's cop
 ## Relationship targets
 
 Relationship targets are resolved by class name, including `"self"` and
-`"app.Model"` string references. A `ManyToManyField(through=LinkModel)` is drawn
+`"app.Model"` string references (the model name in any case, as Django
+matches it). When two apps have a model of the same name, the app label of
+`"app.Model"` decides, and a bare `"Model"` means the referencing model's own
+app; the two models are drawn as `module.Class`
+([#367](https://github.com/devsuit-berlin/erdify/issues/367)). A `ManyToManyField(through=LinkModel)` is drawn
 through the link model's own foreign keys (no spurious direct edge), exactly like
 SQLAlchemy `secondary=`.
 
