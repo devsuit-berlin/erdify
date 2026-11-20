@@ -62,6 +62,10 @@ DEGENERATE = {
 # why. Every other source must pass the checks (#287), and the fixture app,
 # the docs example and the edge-case catalog always must.
 EXPECTED_CHECK_ERRORS = {
+    "test_namespaces.py::TestFrameworks.test_django_app_labels_and_same_app_strings": (
+        ("fields.E304",),
+        "two apps' models.py (#367), loaded as one app: the two Profile models clash",
+    ),
     "test_ground_truth_django.py::OUTSIDE_LABELS": (
         ("models.E028",),
         "the harness's own test of cross-model checks for other app labels",
@@ -110,6 +114,12 @@ EXPECTED_REJECTED = {
 # Sources that are not a self-contained Django module, so there is nothing to
 # load them into. Each is a deliberate test of erdify on partial input.
 EXPECTED_UNLOADABLE = {
+    **{
+        f"test_namespaces.py::TestFrameworks.test_django_strings_from_another_file_of_the_app{n}": (
+            "one file of a multi-file source (#367): relations to another file's model"
+        )
+        for n in ("", "[2]")
+    },
     "test_django.py::TestDjangoContribAuth"
     ".test_another_modules_contrib_import_does_not_leak.entities[2]": (
         "imports Group from a module outside the source"

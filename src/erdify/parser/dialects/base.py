@@ -7,7 +7,7 @@ from typing import Callable, ClassVar, Dict, Iterable, List, Mapping, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import is_call_to, is_kw_only
-from ..common import _ClassMembers, _Rel, to_snake_case
+from ..common import _ClassMembers, _Rel, original_class_name, to_snake_case
 from ..inheritance import ClassIndex, merge_members, reorder
 
 
@@ -146,7 +146,7 @@ class Dialect:
 
     def default_table_name(self, class_node: ast.ClassDef) -> str:
         """The table name of a class that declares none; the snake_case class name."""
-        return to_snake_case(class_node.name)
+        return to_snake_case(original_class_name(class_node.name))
 
     def schema(self, class_node: ast.ClassDef) -> str | None:
         """The database schema the class's table is in, if the source names one."""

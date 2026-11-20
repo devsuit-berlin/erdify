@@ -232,6 +232,11 @@ parser/    ──►  config.py (IR)  ──►  generator.py
     Python names (bindings, imports into scanned files, derived aliases).
   - `annotations.py`: pure helpers that read annotations from the syntax tree
     (model references, column type and nullability).
+  - `namespaces.py`: same-name model classes in different modules (#367).
+    Each gets an internal name and every reference is rewritten to the class
+    its file defines or imports; the dialects stay keyed by name, read the
+    original name for default table names (`original_class_name`), and the
+    entities are named `module.Class` once built. No collision, no change.
 
   Link tables are detected **structurally** (a composite PK made up entirely of
   FKs, with no payload columns — two FKs or more), not by name.

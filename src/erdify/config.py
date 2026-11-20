@@ -62,7 +62,8 @@ class EntityInfo:
         name: Class name (or table name for SQL DDL); the key in the entities
             dict. Same-name SQL tables in different schemas are each named
             ``schema.table``; one declared without a schema keeps its bare
-            name (#353).
+            name (#353). Same-name model classes in different modules are
+            each named ``module.Class`` (``billing.models.Address``, #367).
         table_name: Database table name.
         fields: Columns, in declaration order.
         relationships: ``(target, type, attribute)`` tuples, where ``target`` is

@@ -10,9 +10,10 @@ from typing import Callable, Dict, List, Mapping, Tuple
 
 from ..config import EntityInfo, EnumInfo, is_structural_link_table, normalize_key_uniqueness
 from .aliases import AliasResolver
-from .common import is_enum_class, module_name
+from .common import is_enum_class, is_module_file, module_name
 from .dialects import DIALECTS, ParseContext
 from .discovery import discover_model_files
+from .namespaces import display_text, namespace_models
 from .inheritance import ClassIndex
 
 
@@ -123,6 +124,8 @@ class ASTDatabaseParser:
         self._renamed: Dict[int, str] = {}
         #: (replaced, kept) definitions of one class name in different files.
         self._replaced: List[Tuple[ast.ClassDef, ast.ClassDef]] = []
+        #: Internal name of a same-name model class -> its entity name (#367).
+        self._display: Dict[str, str] = {}
         #: Classes and dialects (with their caches); renewed for each parse run.
         self._ctx = self._new_context()
 
@@ -130,7 +133,8 @@ class ASTDatabaseParser:
         """Parse all model files under ``database_path``.
 
         Returns:
-            Tuple of (entities, enums), both keyed by class name.
+            Tuple of (entities, enums), both keyed by name: the class name, or
+            ``module.Class`` for same-name model classes in several modules (#367).
 
         Raises:
             ModelParseError: ``strict`` is set and at least one file failed to
@@ -159,6 +163,7 @@ class ASTDatabaseParser:
         if self.strict and self._parse_errors:
             raise ModelParseError(self._parse_errors)
         self._collect_classes(definitions)
+        self._namespace_models(definitions)
 
         # Second pass: process enum and model classes. Dialects (and their
         # caches) are fresh for each run.
@@ -173,7 +178,7 @@ class ASTDatabaseParser:
             if source is not None and (self.sources is None or source in self.sources):
                 reason = self._ctx.dialect(source).skip_reason(class_node)
                 if reason is not None:
-                    print(reason, file=sys.stderr)
+                    print(display_text(reason, self._display), file=sys.stderr)
                     continue
                 self._parse_table_class(class_node, source)
 
@@ -195,20 +200,98 @@ class ASTDatabaseParser:
         for entity in self._entities.values():
             normalize_key_uniqueness(entity.fields)
 
+        self._apply_display_names()
+
         # Third pass: apply exclude patterns
         self._apply_exclude_patterns()
         self._warn_replaced_models()
 
         return self._entities, self._enums
 
-    def _warn_replaced_models(self) -> None:
-        """Warn about a drawn model that hides a same-name model in another file.
+    def _namespace_models(self, definitions: List[Tuple[ast.ClassDef, Path]]) -> None:
+        """Keep same-name model classes of different files apart (#367).
 
-        Classes are keyed by name, so of two model classes of one name in
-        different modules only the one scanned last is drawn (#367). This
-        is reported on stderr instead of happening silently (#353). A table
-        model extending a same-named table model (``class Item(Item)``) is
-        not: drawing only the extending class is documented behaviour.
+        A name defined at the top level of two or more files as a model
+        (a class one of the dialects draws, not an enum) is namespaced (see
+        :mod:`erdify.parser.namespaces`) and the classes indexed again. A
+        class extending a namesake (``class Item(Item)``, #300) keeps its own
+        handling. Without such a name nothing changes.
+        """
+        ctx = self._new_context()
+        top_level = {
+            id(stmt)
+            for tree in self._file_trees.values()
+            for stmt in tree.body
+            if isinstance(stmt, ast.ClassDef)
+        }
+        by_name: Dict[str, Dict[Path, ast.ClassDef]] = {}
+        for node, model_file in definitions:
+            if id(node) in top_level:
+                by_name.setdefault(node.name, {})[model_file] = node  # the file's last one
+        groups: Dict[str, List[Tuple[ast.ClassDef, Path]]] = {}
+        for name, per_file in by_name.items():
+            if len(per_file) < 2 or any(_extends_namesake(node) for node in per_file.values()):
+                continue
+            models = [
+                (node, model_file)
+                for model_file, node in per_file.items()
+                if not is_enum_class(node, self._all_classes) and ctx.classify(node) is not None
+            ]
+            if len(models) >= 2:
+                groups[name] = models
+        if not groups:
+            return
+        done = namespace_models(
+            groups, self._file_trees, list(self._all_classes), self.database_path
+        )
+        self._display = done.display
+        for model_file, name, files in done.unresolved:
+            where = " and ".join(self._relative(path) for path in files)
+            print(
+                f"Warning: {self._relative(model_file)} refers to {name!r}, which is defined in "
+                f"{where}; it can't tell which one, so the reference is not drawn. Import it "
+                "from one of them.",
+                file=sys.stderr,
+            )
+        self._collect_classes(definitions)
+
+    def _apply_display_names(self) -> None:
+        """Name same-name model classes ``module.Class``, in entities and references."""
+        if not self._display:
+            return
+        display = self._display
+
+        def shown(name: str) -> str:
+            return display.get(name, name)
+
+        renamed: Dict[str, EntityInfo] = {}
+        for key, entity in self._entities.items():
+            entity.name = shown(entity.name)
+            entity.relationships = [
+                (shown(t), kind, attr) for t, kind, attr in entity.relationships
+            ]
+            entity.base_classes = [shown(base) for base in entity.base_classes]
+            for f in entity.fields:
+                f.type_str = display_text(f.type_str, display)
+            renamed[shown(key)] = entity
+        self._entities = renamed
+
+    def _relative(self, path: Path) -> str:
+        """``path`` relative to the scanned directory, if it is under it."""
+        try:
+            return path.relative_to(self.database_path).as_posix()
+        except ValueError:
+            return path.as_posix()
+
+    def _warn_replaced_models(self) -> None:
+        """Warn about a model hidden by a same-name class erdify keeps instead.
+
+        Same-name model classes are kept apart (:meth:`_namespace_models`,
+        #367); what remains is a model replaced by a same-name class that is
+        not a top-level model (a plain class, a nested one), reported on
+        stderr instead of happening silently (#353). A table model extending
+        a same-named table model (``class Item(Item)``) is not: drawing only
+        the extending class is documented behaviour.
         """
         hidden: Dict[str, List[ast.ClassDef]] = {}
         for replaced, kept in self._replaced:
@@ -226,15 +309,14 @@ class ASTDatabaseParser:
                     continue  # a model left out on purpose (--exclude)
                 print(
                     f"Warning: model class {name!r} in {files} is not drawn: the class of "
-                    f"that name in {drawn} replaces it. Same-name classes in different "
-                    "modules are not told apart yet (#367).",
+                    f"that name in {drawn}, which is not a model, replaces it. Rename one "
+                    "of them.",
                     file=sys.stderr,
                 )
                 continue
             print(
                 f"Warning: model class {name!r} is defined in {files} and in {drawn}; "
-                f"only the one in {drawn} is drawn. Same-name classes in different "
-                "modules are not told apart yet (#367).",
+                f"only the one in {drawn} is drawn. Rename one of them.",
                 file=sys.stderr,
             )
 
@@ -358,7 +440,7 @@ class ASTDatabaseParser:
             return None
         found: List[ast.ClassDef] = []
         for other_file, tree in self._file_trees.items():
-            if other_file == model_file or not _is_module_file(other_file, model_file, imported):
+            if other_file == model_file or not is_module_file(other_file, model_file, imported):
                 continue
             top = [
                 stmt
@@ -404,11 +486,13 @@ class ASTDatabaseParser:
         if not self.exclude_patterns:
             return
 
+        namespaced = set(self._display.values())
+
         def is_excluded(entity: EntityInfo) -> bool:
-            return any(
-                fnmatchcase(entity.name, pattern) or fnmatchcase(entity.table_name, pattern)
-                for pattern in self.exclude_patterns
-            )
+            names = [entity.name, entity.table_name]
+            if entity.name in namespaced:  # module.Class: the class name matches too (#367)
+                names.append(entity.name.rpartition(".")[2])
+            return any(fnmatchcase(n, p) for n in names for p in self.exclude_patterns)
 
         excluded_names = {name for name, e in self._entities.items() if is_excluded(e)}
 
@@ -519,20 +603,6 @@ class ASTDatabaseParser:
         self._entities[class_node.name] = entity
 
 
-def _is_module_file(path: Path, importer: Path, source: Tuple[int, str]) -> bool:
-    """Whether ``path`` is the module ``source`` (``(level, module)``) names from ``importer``."""
-    level, module = source
-    parts = [part for part in module.split(".") if part]
-    stem = path.with_suffix("")
-    own = list(stem.parent.parts) if path.name == "__init__.py" else list(stem.parts)
-    if level == 0:
-        return bool(parts) and own[-len(parts) :] == parts
-    package = importer.parent
-    for _ in range(level - 1):
-        package = package.parent
-    return own == list(package.joinpath(*parts).parts)
-
-
 def _extends_namesake(node: ast.ClassDef) -> bool:
     """Whether a class names a base of its own name (``class Item(Item)``)."""
     return any(isinstance(base, ast.Name) and base.id == node.name for base in node.bases)
@@ -567,7 +637,8 @@ def parse_models_directory(
         exclude_patterns: List of case-sensitive glob patterns. An entity is
             excluded if a pattern matches its name (a class name, a Core
             ``Table`` variable name, a SQL table's name, or ``schema.table``
-            for same-name SQL tables in several schemas) or its table name.
+            for same-name SQL tables in several schemas), its table name or,
+            for a same-name model named ``module.Class``, its class name.
         infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
             key from a field named ``id`` and a foreign key from ``<x>_id``.
         sources: Restrict which model kinds become entities (subset of
@@ -596,9 +667,11 @@ def parse_models_directory(
             skipped, and the rest is still returned.
 
     Returns:
-        Tuple of (entities, enums), both keyed by name: a class name, a Core
-        ``Table`` variable name, a SQL table's name, or ``schema.table`` when
-        SQL tables of that name exist in several schemas (#353). Python models
+        Tuple of (entities, enums), both keyed by name: a class name
+        (``module.Class`` for same-name model classes in several modules,
+        #367), a Core ``Table`` variable name, a SQL table's name, or
+        ``schema.table`` when SQL tables of that name exist in several
+        schemas (#353). Python models
         win over SQL tables of the same name.
 
     Raises:

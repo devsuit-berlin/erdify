@@ -108,6 +108,7 @@ erdify/
 │   │   ├── aliases.py       # Column type aliases, resolved per module
 │   │   ├── annotations.py   # Reading type annotations from the syntax tree
 │   │   ├── inheritance.py   # MRO, merge order, member merging (all frameworks)
+│   │   ├── namespaces.py    # Same-name model classes in different modules (#367)
 │   │   ├── common.py        # Shared types and small helpers
 │   │   └── dialects/        # One Dialect class per framework (detection + class bodies)
 │   │       ├── __init__.py      # DIALECTS registry (classification order) + MODEL_SOURCES

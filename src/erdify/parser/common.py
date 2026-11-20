@@ -95,3 +95,26 @@ def module_name(path: Path) -> str:
         parts.append(directory.name)
         directory = directory.parent
     return ".".join(reversed(parts))
+
+
+#: The suffix :mod:`erdify.parser.namespaces` gives a colliding class's name.
+_INTERNAL_SUFFIX = re.compile(r"__erdify\d+$")
+
+
+def original_class_name(name: str) -> str:
+    """A class's name as written: without the suffix a same-name class gets (#367)."""
+    return _INTERNAL_SUFFIX.sub("", name)
+
+
+def is_module_file(path: Path, importer: Path, source: Tuple[int, str]) -> bool:
+    """Whether ``path`` is the module ``source`` (``(level, module)``) names from ``importer``."""
+    level, module = source
+    parts = [part for part in module.split(".") if part]
+    stem = path.with_suffix("")
+    own = list(stem.parent.parts) if path.name == "__init__.py" else list(stem.parts)
+    if level == 0:
+        return bool(parts) and own[-len(parts) :] == parts
+    package = importer.parent
+    for _ in range(level - 1):
+        package = package.parent
+    return own == list(package.joinpath(*parts).parts)

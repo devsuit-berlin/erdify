@@ -873,9 +873,10 @@ class Order(Base):
 
 
 class TestSameNameClasses:
-    def test_a_hidden_model_is_reported(
+    def test_same_name_models_are_both_drawn(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
+        """#367: no longer one entity; each is named after its module."""
         for package, field in (("billing", "street"), ("shipping", "city")):
             (tmp_path / package).mkdir()
             (tmp_path / package / "models.py").write_text(
@@ -886,14 +887,13 @@ class TestSameNameClasses:
 
         entities, _ = parse_models_directory(tmp_path)
 
-        assert list(entities) == ["Address"]
-        err = capsys.readouterr().err
-        assert "model class 'Address' is defined in billing/models.py and in" in err
-        assert "only the one in shipping/models.py is drawn" in err
+        assert {name: [f.name for f in e.fields] for name, e in entities.items()} == {
+            "billing.models.Address": ["street"],
+            "shipping.models.Address": ["city"],
+        }
+        assert "Warning" not in capsys.readouterr().err
 
-    def test_three_definitions_name_the_one_drawn(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_three_definitions_are_three_entities(self, tmp_path: Path) -> None:
         for package in ("a", "b", "c"):
             (tmp_path / package).mkdir()
             (tmp_path / package / "models.py").write_text(
@@ -904,11 +904,7 @@ class TestSameNameClasses:
 
         entities, _ = parse_models_directory(tmp_path)
 
-        assert [f.name for f in entities["Address"].fields] == ["c"]
-        err = capsys.readouterr().err
-        assert err.count("Warning") == 1
-        assert "defined in a/models.py, b/models.py and in c/models.py" in err
-        assert "only the one in c/models.py is drawn" in err
+        assert sorted(entities) == ["a.models.Address", "b.models.Address", "c.models.Address"]
 
     def test_a_hidden_class_of_a_filtered_source_is_not_reported(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -944,9 +940,9 @@ class TestSameNameClasses:
         assert list(entities) == []
         err = capsys.readouterr().err
         assert "model class 'Address' in a/models.py is not drawn" in err
-        assert "the class of that name in b/models.py replaces it" in err
+        assert "the class of that name in b/models.py, which is not a model, replaces it" in err
 
-    def test_an_excluded_class_is_not_reported(
+    def test_the_class_name_excludes_every_same_name_model(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         for package in ("a", "b"):
@@ -956,8 +952,10 @@ class TestSameNameClasses:
                 encoding="utf-8",
             )
 
-        parse_models_directory(tmp_path, exclude_patterns=["Address"])
-
+        assert parse_models_directory(tmp_path, exclude_patterns=["Address"])[0] == {}
+        assert list(parse_models_directory(tmp_path, exclude_patterns=["a.models.*"])[0]) == [
+            "b.models.Address"
+        ]
         assert "Warning" not in capsys.readouterr().err
 
     def test_a_table_model_extending_its_namesake_is_not_reported(

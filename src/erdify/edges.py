@@ -515,7 +515,7 @@ class _EdgeBuilder:
 
     def _class_attr_names(self, name: str) -> "set[str]":
         """Attribute names that refer to class ``name``: ``user``, ``users``, ``categories``."""
-        snake = self._snake_case(name)
+        snake = self._snake_case(name.rpartition(".")[2])
         names = {snake, snake + "s"}
         if snake.endswith("y") and snake[-2:-1] not in ("a", "e", "i", "o", "u", ""):
             names.add(snake[:-1] + "ies")

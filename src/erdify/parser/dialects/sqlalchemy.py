@@ -5,7 +5,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, NamedTuple, Set, Tup
 
 from ...config import EntityInfo, FieldInfo, is_structural_link_table
 from ..annotations import column_type, expr_name, is_call_to, is_mapped_annotation
-from ..common import _Rel
+from ..common import _Rel, original_class_name
 from .annotated import AnnotatedDialect, extract_foreign_key_arg
 from .base import ParseContext, explicit_column_name, single_column_uniques
 
@@ -298,7 +298,7 @@ class SQLModelDialect(TableDialect):
         ``HeroTeam`` -> ``heroteam``, not snake_case; foreign keys written as
         ``foreign_key="heroteam.id"`` must find it.
         """
-        return class_node.name.lower()
+        return original_class_name(class_node.name).lower()
 
     def member_nodes(self, class_node: ast.ClassDef) -> List[ast.AnnAssign]:
         """Annotated attributes, with a ``Field()`` from ``Annotated`` metadata applied (#295)."""

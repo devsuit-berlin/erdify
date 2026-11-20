@@ -187,6 +187,16 @@ OTHER_FILE = "an alias from another file of the test"
 COMPLETED = "a source the test completes with a parameter"
 TEMPLATE = "a str.format template"
 EXPECTED_UNLOADABLE = {
+    **{
+        f"test_namespaces.py::TestFrameworks.{test}": (
+            "one file of a multi-file source (#367): it imports from the other files"
+        )
+        for test in (
+            "test_sqlmodel_default_table_names_and_schema_edges[2]",
+            "test_sqlalchemy_relationship_string_with_module_path[2]",
+            "test_sqlalchemy_relationship_string_with_module_path[3]",
+        )
+    },
     "test_schema_identity.py::TestSameNameClasses"
     ".test_a_table_model_extending_its_namesake_is_not_reported[2]": (
         "one file of a multi-file source: its base class is in another file"

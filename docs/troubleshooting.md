@@ -85,10 +85,14 @@ Entities appear, but the diagram has no lines.
    ambiguous and draws none either. See
    [Schemas in references](frameworks/sql.md#supported-ddl-subset) and the
    [`__table_args__` schema note](frameworks/limitations.md#__table_args__-is-mostly-not-read). erdify warns on
-   stderr when a model class is hidden by a same-name class in another module,
-   or when two SQL tables differ only in quoting; a SQL table hidden by a Python
-   model of the same name is dropped without a warning.
-6. **Pydantic or dataclass models?** They have no keys until you pass
+   stderr when two SQL tables differ only in quoting; a SQL table hidden by a
+   Python model of the same name is dropped without a warning.
+6. **Same-name classes in several modules?** Two model classes called
+   `Address` are drawn as `billing.models.Address` and
+   `shipping.models.Address`. A reference to `Address` in a file that neither
+   defines nor imports one of them can't be told apart: it is not drawn, and
+   erdify names the candidates on stderr. Import the class you mean.
+7. **Pydantic or dataclass models?** They have no keys until you pass
    `--infer-keys` (next section).
 
 ## No keys on my Pydantic / dataclass models
