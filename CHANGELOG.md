@@ -41,8 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`REFERENCES core.customer` with only `staging.customer` scanned) no longer
   draws an edge to the same-name table in another schema.
 - SQL DDL: an unqualified `REFERENCES`, `ALTER TABLE` or `CREATE INDEX` naming
-  a table that exists in several schemas, none of them the referencing
-  table's, is ambiguous and ignored (it used to apply to the merged entity).
+  a table that exists in several schemas is ambiguous and ignored (it used to
+  apply to the merged entity), unless one of them has no schema or, for
+  `REFERENCES`, is in the referencing table's schema.
 - `--format json`: a SQL DDL foreign key to a table in a schema has
   `foreign_table` `schema.table.column` (was `table.column`).
 - Python models together with SQL DDL: a SQL foreign key that names a schema

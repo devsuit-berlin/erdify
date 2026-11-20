@@ -158,6 +158,19 @@ class TestSqlTables:
         assert [f.name for f in entities["CUSTOMER"].fields] == ["id", "email"]  # type: ignore[attr-defined]
         assert len(entities) == 1
 
+    def test_a_schema_matching_two_tables_case_insensitively_draws_no_edge(
+        self, tmp_path: Path
+    ) -> None:
+        entities = _sql(
+            tmp_path,
+            'CREATE TABLE "Core".customer (id INT PRIMARY KEY);\n'
+            'CREATE TABLE "CORE".customer (id INT PRIMARY KEY);\n'
+            "CREATE TABLE orders (id INT PRIMARY KEY, cid INT REFERENCES core.customer(id));\n",
+            "postgres",
+        )
+
+        assert _edges(entities) == []
+
     def test_a_redefined_table_takes_the_foreign_keys_of_its_later_definition(
         self, tmp_path: Path
     ) -> None:

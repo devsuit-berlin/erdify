@@ -137,6 +137,7 @@ EXPECTED_REJECTED = {
             "names_that_collide_only_as_written_stay_apart",
             "names_that_still_collide_are_reported",
             "a_schema_matches_its_table_case_insensitively",
+            "a_schema_matching_two_tables_case_insensitively_draws_no_edge",
             "a_schema_never_finds_a_table_in_another_schema",
             "a_table_without_a_schema_keeps_the_short_name",
             "unqualified_reference_prefers_the_referencing_tables_schema",
