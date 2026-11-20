@@ -434,6 +434,100 @@ class CoreCustomer(Base):
         # SQLAlchemy resolves an unqualified "customer" to the default schema.
         assert _edges(dict(entities)) == [("CoreCustomer", "Customer", "base_id")]
 
+    def test_sqlmodel_schema_qualified_foreign_key_draws_its_edge(self, tmp_path: Path) -> None:
+        """#373: ``Field(foreign_key="core.customers.id")`` across schemas."""
+        (tmp_path / "models.py").write_text(
+            """
+from sqlmodel import Field, SQLModel
+
+
+class Customer(SQLModel, table=True):
+    __tablename__ = "customers"
+    __table_args__ = {"schema": "core"}
+    id: int = Field(primary_key=True)
+
+
+class Invoice(SQLModel, table=True):
+    __tablename__ = "invoices"
+    __table_args__ = {"schema": "billing"}
+    id: int = Field(primary_key=True)
+    customer_id: int = Field(foreign_key="core.customers.id")
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert _edges(dict(entities)) == [("Invoice", "Customer", "customer_id")]
+
+    def test_unqualified_foreign_key_takes_the_metadata_schema(self, tmp_path: Path) -> None:
+        """#370: SQLAlchemy resolves it in MetaData(schema=...)'s schema."""
+        (tmp_path / "models.py").write_text(
+            """
+from sqlalchemy import ForeignKey, MetaData
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    metadata = MetaData(schema="core")
+
+
+class Customer(Base):
+    __tablename__ = "customer"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = {"schema": "sales"}
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"))
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        # The metadata's schema, not the referencing table's own (sales).
+        assert _fk_targets(dict(entities))["Order"] == ["core.customer.id"]
+        assert _edges(dict(entities)) == [("Order", "Customer", "customer_id")]
+
+    def test_schema_qualified_target_finds_renamed_key_and_core_type(self, tmp_path: Path) -> None:
+        (tmp_path / "models.py").write_text(
+            """
+from sqlalchemy import BigInteger, Column, ForeignKey, MetaData, Table
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    metadata = MetaData(schema="core")
+
+
+class Account(Base):
+    __tablename__ = "account"
+    id: Mapped[int] = mapped_column("account_id", BigInteger, key="id", primary_key=True)
+
+
+class Payment(Base):
+    __tablename__ = "payment"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("core.account.id"))
+
+
+audit = Table("audit", Base.metadata, Column("account_id", ForeignKey("account.id")))
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        # The key "id" is the column "account_id"; the Core column takes its type.
+        assert _fk_targets(dict(entities))["Payment"] == ["core.account.account_id"]
+        audit = dict(entities)["audit"]
+        assert audit.fields[0].foreign_table == "core.account.account_id"
+        account_id = dict(entities)["Account"].fields[0]
+        assert audit.fields[0].type_str == account_id.type_str != ""
+
 
 class TestMixedSources:
     def test_python_model_and_sql_table_of_one_name_keep_their_edge(self, tmp_path: Path) -> None:

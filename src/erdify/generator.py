@@ -7,6 +7,7 @@ from typing import Dict, List, Set, Tuple
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_sole_primary_key
 from .edges import diagram_edges
+from .enums import enum_users
 
 #: Pinned Mermaid CDN major version used by the HTML preview format.
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
@@ -108,14 +109,8 @@ class _ERGenerator:
         return f"{self._ref(left)} {glyph} {self._ref(right)} : {self._label(label)}"
 
     def _get_used_enums(self) -> "set[str]":
-        """Get set of enum names used by entity fields."""
-        used_enums: set[str] = set()
-        for entity in self.entities.values():
-            for field in entity.fields:
-                type_name = field.type_str.split(".")[-1]
-                if type_name in self.enums:
-                    used_enums.add(type_name)
-        return used_enums
+        """The keys of the enums entity fields use (:func:`enum_users`)."""
+        return set(enum_users(self.entities, self.enums))
 
     def _relationship_lines(self) -> List[str]:
         """One line per edge of :func:`diagram_edges`, in its order.

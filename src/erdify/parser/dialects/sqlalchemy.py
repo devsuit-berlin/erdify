@@ -103,6 +103,11 @@ class TableDialect(AnnotatedDialect):
         for kw in call.keywords:
             if kw.arg == "schema" and not _is_none(kw.value):
                 return _literal_str(kw.value)
+        return self._core_metadata_schema(call, tree)
+
+    def _core_metadata_schema(self, call: ast.Call, tree: ast.Module | None) -> str | None:
+        """The default schema of the metadata a Core ``Table(...)`` is on (see
+        :meth:`_core_table_schema`)."""
         metadata = call.args[1] if len(call.args) > 1 else None
         for kw in call.keywords:
             if kw.arg == "metadata":
@@ -148,6 +153,7 @@ class TableDialect(AnnotatedDialect):
             self._renamed_keys[entity.table_name] = renamed
         for f in entity.fields:
             f.name = names.get(f.name, f.name)
+        _qualify_foreign_keys(entity.fields, self._metadata_schema(self._mro_names(class_node)))
 
     def finalize(self, entities: Mapping[str, EntityInfo]) -> None:
         """Point foreign keys written against a column key at the column's name.
@@ -177,7 +183,8 @@ class TableDialect(AnnotatedDialect):
                 if f.foreign_table is None or name_targets.get(id(f)) is f:
                     continue
                 table, _, column = f.foreign_table.rpartition(".")
-                name = renamed.get(table, {}).get(column)
+                # A target in a schema ("core.account.id") names its table last.
+                name = renamed.get(table.rpartition(".")[2], {}).get(column)
                 if name is not None:
                     f.foreign_table = f"{table}.{name}"
 
@@ -624,10 +631,16 @@ class SQLAlchemyDialect(TableDialect):
         if mapped is None:
             super().finish(entity, class_node)
             self._add_single_table_columns(entity, class_node)
+            # Single-table subclass columns are on the same metadata.
+            default = self._metadata_schema(self._mro_names(class_node))
+            _qualify_foreign_keys(entity.fields, default)
             return
         entity.fields = core_table_fields(mapped.table)
         self._note_core_table(entity, mapped.table)
+        tree = self._table_trees().get(id(mapped.table), self.ctx.tree_of(class_node))
+        _qualify_foreign_keys(entity.fields, self._core_metadata_schema(mapped.table, tree))
         self._add_single_table_columns(entity, class_node)
+        _qualify_foreign_keys(entity.fields, self._metadata_schema(self._mro_names(class_node)))
         if mapped.properties is not None:
             self._properties[entity.name] = mapped.properties
 
@@ -642,6 +655,7 @@ class SQLAlchemyDialect(TableDialect):
                 entity = build_core_table_entity(var_name, call)
                 if entity is not None:
                     entity.schema = self._core_table_schema(call, tree)
+                    _qualify_foreign_keys(entity.fields, self._core_metadata_schema(call, tree))
                     self._note_core_table(entity, call)
                     entities.append(entity)
         return entities
@@ -658,9 +672,12 @@ class SQLAlchemyDialect(TableDialect):
         for entity in entities.values():
             kind = self._metadata_kind(entity)
             for f in entity.fields:
-                ref = f"{entity.table_name}.{f.name}"
                 known = columns.setdefault(kind, {})
-                known[ref] = None if ref in known else f
+                refs = [f"{entity.table_name}.{f.name}"]
+                if entity.schema:
+                    refs.append(f"{entity.schema}.{entity.table_name}.{f.name}")
+                for ref in refs:
+                    known[ref] = None if ref in known else f
         # A chain of ForeignKey-only columns takes the type from its end.
         changed = True
         while changed:
@@ -1066,6 +1083,20 @@ def _table_args_schema(value: ast.expr | None) -> Tuple[bool, str | None]:
         if isinstance(key, ast.Constant) and key.value == "schema":
             return (False, None) if _is_none(item) else (True, _literal_str(item))
     return False, None
+
+
+def _qualify_foreign_keys(fields: List[FieldInfo], schema: str | None) -> None:
+    """Qualify each ``table.column`` foreign-key target with the metadata's default schema.
+
+    SQLAlchemy resolves an unqualified ``ForeignKey("customer.id")`` in the
+    default schema of the referencing table's ``MetaData(schema=...)`` (#370).
+    A target that names its schema is kept.
+    """
+    if not schema:
+        return
+    for f in fields:
+        if f.foreign_table and f.foreign_table.count(".") == 1:
+            f.foreign_table = f"{schema}.{f.foreign_table}"
 
 
 def _metadata_call_schema(value: ast.expr | None) -> str | None:

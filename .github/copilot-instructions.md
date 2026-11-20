@@ -254,6 +254,9 @@ parser/    ──►  config.py (IR)  ──►  generator.py
   is the single implementation of edge cardinality and pairing: PlantUML and
   Mermaid render its edges, and `--format json` lists them.
 
+- **`enums.py`** — `enum_users()`: the enums erdify draws (a field's type
+  names them) and the entities using each. The generators draw exactly these.
+
 - **`generator.py`** — `_ERGenerator` base with `PlantUMLGenerator` and
   `MermaidGenerator` subclasses, plus the `generate_plantuml/mermaid/json/html`
   functions. All four formats render from the same IR; relationship lines come

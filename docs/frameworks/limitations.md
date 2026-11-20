@@ -114,6 +114,10 @@ class Match(Base):
   apart in the diagram (PlantUML titles their boxes `schema.table`). A schema
   erdify doesn't read (a non-literal one) draws no edge from a foreign key
   that names it ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
+  An unqualified foreign key (`ForeignKey("customer.id")`) on a table whose
+  metadata has a default schema (`MetaData(schema="core")`) targets that
+  schema, as in SQLAlchemy: `foreign_table` is `core.customer.id`
+  ([#370](https://github.com/devsuit-berlin/erdify/issues/370)).
 
 A Django model's `__table_args__` is ignored, as Django ignores it. Django's
 own single-field `Meta.constraints` / `Meta.unique_together` uniqueness is read

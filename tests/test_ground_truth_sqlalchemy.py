@@ -66,10 +66,6 @@ SNIPPET_HEADERS = {
 
 # erdify output that differs from SQLAlchemy's schema, pending a fix.
 KNOWN_DIFFERENCES = {
-    "test_schema_identity.py::TestMixedSources"
-    ".test_one_table_drawn_twice_in_one_schema_keeps_its_edge": (
-        "#370: an unqualified ForeignKey keeps no MetaData default schema"
-    ),
     "test_model_references.py::TestRedeclaration"
     ".test_unresolvable_redeclaration_shadows_the_inherited_relationship.src": (
         "#319: SQLAlchemy maps a Union[A, B] relationship to its first member"

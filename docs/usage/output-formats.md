@@ -183,7 +183,7 @@ Top level:
 | `title` | string | The diagram title (`--title`). |
 | `entities` | array of entity | One object per table / model. |
 | `edges` | array of edge | The relationship lines the diagram draws, in diagram order: the same edges PlantUML and Mermaid draw. Empty when relationships are disabled (`--no-relationships`). Added in 1.7.0. |
-| `enums` | array of enum | Empty when enums are disabled (`--no-enums`). |
+| `enums` | array of enum | Every parsed enum; the diagrams draw only those a field uses (`enum_users()` in the Python API). Empty when enums are disabled (`--no-enums`). |
 
 Entity:
 
@@ -208,7 +208,7 @@ Field:
 | `primary_key` | boolean | Part of the primary key. |
 | `foreign_key` | boolean | References another table. |
 | `nullable` | boolean | Column accepts `NULL`. |
-| `foreign_table` | string or null | Referenced `table.column` when `foreign_key` is `true`; `schema.table.column` when the source names the schema (SQLAlchemy `ForeignKey("core.customer.id")`) or, for SQL DDL, when the referenced table is in a schema. |
+| `foreign_table` | string or null | Referenced `table.column` when `foreign_key` is `true`; `schema.table.column` when the source names the schema (SQLAlchemy `ForeignKey("core.customer.id")`), when SQLAlchemy resolves an unqualified target in its `MetaData(schema=...)`, or, for SQL DDL, when the referenced table is in a schema. |
 | `index` | boolean | Column is indexed. |
 | `unique` | boolean | Column is unique on its own. Always `false` on a table's only primary-key column, which the key makes unique; `true` on a member of a composite primary key that is unique by itself. |
 | `default` | string or null | Default value as source text, if any. |
