@@ -539,7 +539,7 @@ def generate_json(
     inverse}]}],
     edges: [{from_entity, to_entity, from_end: {optional, many}, to_end, label, kind}],
     enums:
-    [{name, values}]}``. Downstream tools can consume this without re-parsing.
+    [{name, values, used_by}]}``. Downstream tools can consume this without re-parsing.
     ``schema_version`` is :data:`JSON_SCHEMA_VERSION`; consumers should ignore
     keys they do not know. The full schema is documented in
     ``docs/usage/output-formats.md`` and published as a JSON Schema,
@@ -556,6 +556,8 @@ def generate_json(
     Returns:
         The JSON document as an indented string
     """
+    # The entities each drawn enum is used by: the diagrams' own rule (#378).
+    used_by = enum_users(entities, enums)
     model = {
         "schema_version": JSON_SCHEMA_VERSION,
         "title": title,
@@ -615,7 +617,10 @@ def generate_json(
             else []
         ),
         "enums": (
-            [{"name": e.name, "values": e.values} for e in (enums or {}).values()]
+            [
+                {"name": e.name, "values": e.values, "used_by": used_by.get(key, [])}
+                for key, e in (enums or {}).items()
+            ]
             if include_enums
             else []
         ),

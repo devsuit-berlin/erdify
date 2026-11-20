@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--format json`: each enum has `used_by`, the names of the entities with a
+  field of it (as in `edges` endpoints), from the same rule the diagrams use
+  (`enum_users()`). An empty list means the diagrams don't draw the enum, so
+  a tool reading the JSON no longer has to re-implement the rule
+  ([#378](https://github.com/devsuit-berlin/erdify/issues/378)).
+
+### Output changes
+
+- `--format json`: every enum gains the `used_by` key; a committed `.json`
+  file fails `--check` once
+  ([#378](https://github.com/devsuit-berlin/erdify/issues/378)).
+
 ## [1.8.0] - 2026-11-20
 
 ### Added

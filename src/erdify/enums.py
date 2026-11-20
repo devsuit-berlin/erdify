@@ -2,8 +2,9 @@
 
 :func:`enum_users` is the one rule for which enums a diagram includes: an
 enum is drawn when a field's type names it. The PlantUML and Mermaid
-generators use it, so a tool built on erdify gets exactly the enums erdify
-draws, and which entities use each one.
+generators use it, and ``--format json`` gives each enum's entities from it
+(``used_by``), so a tool built on erdify gets exactly the enums erdify draws,
+and which entities use each one.
 """
 
 from typing import Dict, List, Mapping

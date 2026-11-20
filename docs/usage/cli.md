@@ -410,7 +410,8 @@ for edge in diagram_edges(entities):
 `enum_users(entities, enums)` returns the enums erdify draws, each with the
 entities that use it: the same enums PlantUML and Mermaid render. An enum no
 field uses is not drawn, so it is left out (`project.enums`, and the JSON
-`enums` unless `--no-enums`, list every parsed enum).
+`enums` unless `--no-enums`, list every parsed enum; the JSON gives each one's
+entities as `used_by`, empty for an enum that isn't drawn).
 
 ```python
 from pathlib import Path

@@ -163,7 +163,7 @@ point for downstream tools that want erdify's model without re-parsing source.
     {"from_entity": "Order", "to_entity": "User", "label": "user_id", "kind": "foreign_key",
      "from_end": {"optional": true, "many": true}, "to_end": {"optional": false, "many": false}}
   ],
-  "enums": [{"name": "Status", "values": ["DRAFT", "PUBLISHED"]}]
+  "enums": [{"name": "Status", "values": ["DRAFT", "PUBLISHED"], "used_by": ["Order"]}]
 }
 ```
 
@@ -183,7 +183,7 @@ Top level:
 | `title` | string | The diagram title (`--title`). |
 | `entities` | array of entity | One object per table / model. |
 | `edges` | array of edge | The relationship lines the diagram draws, in diagram order: the same edges PlantUML and Mermaid draw. Empty when relationships are disabled (`--no-relationships`). Added in 1.7.0. |
-| `enums` | array of enum | Every parsed enum; the diagrams draw only those a field uses (`enum_users()` in the Python API). Empty when enums are disabled (`--no-enums`). |
+| `enums` | array of enum | Every parsed enum; the diagrams draw only those a field uses, those with a non-empty `used_by` (`enum_users()` in the Python API). Empty when enums are disabled (`--no-enums`). |
 
 Entity:
 
@@ -249,6 +249,7 @@ Enum:
 |---|---|---|
 | `name` | string | Enum class name. |
 | `values` | array of string | Enum members, in declaration order. |
+| `used_by` | array of string | Names of the entities with a field of this enum, in entity order (as in `edges` endpoints); empty when no field uses it, and the diagrams then don't draw it. The same as `enum_users()`. Added in 1.9.0. |
 
 ### Compatibility
 

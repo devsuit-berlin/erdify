@@ -6,11 +6,14 @@ from typing import Any
 
 import pytest
 
+import json
+
 from erdify import (
     EntityInfo,
     EnumInfo,
     FieldInfo,
     enum_users,
+    generate_json,
     generate_mermaid,
     generate_plantuml,
     load_project,
@@ -108,6 +111,39 @@ def test_the_diagrams_draw_exactly_these_enums(source: Any) -> None:
 
     assert "enum " not in generate_plantuml(entities, enums, include_enums=False)
     assert "        enum " not in generate_mermaid(entities, enums, include_enums=False)
+
+
+@pytest.mark.parametrize("source", SOURCES, ids=[s.id for s in SOURCES])
+def test_json_used_by_is_enum_users(source: Any) -> None:
+    """#378: each JSON enum's used_by is enum_users' entities, [] when not drawn."""
+    if source.path.suffix == ".sql" or any(source.path.glob("*.sql")):
+        pytest.importorskip("sqlglot")
+    entities, enums = _drawn_enums(source)
+    users = enum_users(entities, enums)
+
+    document = json.loads(generate_json(entities, enums))
+
+    assert [(e["name"], e["used_by"]) for e in document["enums"]] == [
+        (enum.name, users.get(key, [])) for key, enum in enums.items()
+    ]
+
+
+class TestJsonUsedBy:
+    def test_unused_enum_has_an_empty_list(self) -> None:
+        entities = {"Order": _entity("Order", "Status"), "Invoice": _entity("Invoice", "Status")}
+
+        document = json.loads(generate_json(entities, ENUMS))
+
+        assert {e["name"]: e["used_by"] for e in document["enums"]} == {
+            "Status": ["Order", "Invoice"],
+            "Mood": [],
+            "Unused": [],
+        }
+
+    def test_no_enums_gives_no_enums(self) -> None:
+        entities = {"Order": _entity("Order", "Status")}
+
+        assert json.loads(generate_json(entities, ENUMS, include_enums=False))["enums"] == []
 
 
 def _mermaid_text(name: str) -> str:
