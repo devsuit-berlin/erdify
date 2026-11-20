@@ -3,6 +3,7 @@
 import argparse
 import sys
 from pathlib import Path
+from typing import Any, Dict
 
 from . import __version__
 from .generator import generate_html, generate_json, generate_mermaid, generate_plantuml
@@ -202,6 +203,33 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _overrides(args: argparse.Namespace) -> Dict[str, Any]:
+    """The settings the command line gives, by ``[tool.erdify]`` key; None: not given.
+
+    A ``store_true`` flag that isn't given is None, not False, so the config
+    can still turn it on: flags merge by OR on the command line.
+    """
+    return {
+        "title": args.title,
+        "sources": args.sources,
+        "sql_dialect": args.sql_dialect,
+        "exclude": args.exclude,
+        "exclude_paths": args.exclude_paths,
+        "include": args.include,
+        "base_classes": args.base_classes,
+        "infer_keys": args.infer_keys or None,
+        "django_raw_types": args.django_raw_types or None,
+        "no_enums": args.no_enums or None,
+        "no_relationships": args.no_relationships or None,
+        "no_default_excludes": args.no_default_excludes or None,
+        "allow_empty": args.allow_empty or None,
+        "strict": args.strict or None,
+        "output": args.output,
+        "inject": args.inject,
+        "format": args.format,
+    }
+
+
 def main() -> int:
     """Main entry point for the CLI."""
     parser = build_parser()
@@ -214,30 +242,7 @@ def main() -> int:
 
     # Resolve settings: explicit CLI flag > [tool.erdify] in pyproject.toml > default.
     try:
-        # A store_true flag that isn't given is None ("not given"), so the
-        # config can still turn it on: flags merge by OR on the command line.
-        settings, include_is_default = _resolve(
-            args.input,
-            {
-                "title": args.title,
-                "sources": args.sources,
-                "sql_dialect": args.sql_dialect,
-                "exclude": args.exclude,
-                "exclude_paths": args.exclude_paths,
-                "include": args.include,
-                "base_classes": args.base_classes,
-                "infer_keys": args.infer_keys or None,
-                "django_raw_types": args.django_raw_types or None,
-                "no_enums": args.no_enums or None,
-                "no_relationships": args.no_relationships or None,
-                "no_default_excludes": args.no_default_excludes or None,
-                "allow_empty": args.allow_empty or None,
-                "strict": args.strict or None,
-                "output": args.output,
-                "inject": args.inject,
-                "format": args.format,
-            },
-        )
+        settings, include_is_default = _resolve(args.input, _overrides(args))
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

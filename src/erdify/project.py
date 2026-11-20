@@ -8,10 +8,11 @@ folder) and parses the models. A tool built on erdify reads the same model
 set ``erdify`` would draw for the project.
 """
 
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
 from .config import EntityInfo, EnumInfo
 from .pyproject import ConfigError, load_config
@@ -99,7 +100,7 @@ class Project:
 
 
 def resolve_settings(
-    path: Path,
+    path: "str | os.PathLike[str]",
     *,
     title: str | None = None,
     output: Path | str | None = None,
@@ -129,15 +130,18 @@ def resolve_settings(
     relative to the working directory).
 
     Args:
-        path: Input directory or file, as passed to ``erdify``.
+        path: Input directory or file, as passed to ``erdify`` (a ``str`` or
+            path-like object).
 
     Returns:
         The resolved settings, naming the ``pyproject.toml`` they come from.
 
     Raises:
         FileNotFoundError: ``path`` does not exist.
-        ConfigError: ``[tool.erdify]`` or an override has a value of the
-            wrong type (e.g. a string where a list of strings belongs).
+        ConfigError: ``[tool.erdify]`` or an argument has a value of the
+            wrong type (an argument: a string where a list of strings
+            belongs, a flag that is not a bool; in ``[tool.erdify]`` one
+            string for a list is read as a list of it).
     """
     overrides = {
         "title": title,
@@ -161,12 +165,28 @@ def resolve_settings(
     return _resolve(path, overrides)[0]
 
 
-def _resolve(path: Path, overrides: Mapping[str, Any]) -> Tuple[Settings, bool]:
+_FLAG_KEYS = (
+    "infer_keys",
+    "django_raw_types",
+    "no_enums",
+    "no_relationships",
+    "no_default_excludes",
+    "allow_empty",
+    "strict",
+)
+
+
+def _resolve(path: "str | os.PathLike[str]", overrides: Mapping[str, Any]) -> Tuple[Settings, bool]:
     """The settings, and whether ``include`` was left at its default (the CLI's hint)."""
+    path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Input path does not exist: {path}")
     for key in ("sources", "exclude", "exclude_paths", "include", "base_classes"):
         _check_strings(key, overrides.get(key), "argument")
+    for key in _FLAG_KEYS:
+        value = overrides.get(key)
+        if value is not None and not isinstance(value, bool):
+            raise ConfigError(f"argument '{key}' must be a bool or None, got {value!r}")
     config, base_dir = load_config(path)
 
     def pick(key: str, default: Any) -> Any:
@@ -228,17 +248,15 @@ def _resolve(path: Path, overrides: Mapping[str, Any]) -> Tuple[Settings, bool]:
 
 
 def _check_strings(key: str, value: object, what: str) -> None:
-    """Raise :class:`ConfigError` unless ``value`` is None or a list of strings."""
+    """Raise :class:`ConfigError` unless ``value`` is None or a list / tuple of strings."""
     if value is None:
         return
-    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-        raise ConfigError(f"{what} '{key}' must be a list of strings, got {value!r}")
-    if not all(isinstance(item, str) for item in value):
+    if not isinstance(value, (list, tuple)) or not all(isinstance(i, str) for i in value):
         raise ConfigError(f"{what} '{key}' must be a list of strings, got {value!r}")
 
 
 def load_project(
-    path: Path,
+    path: "str | os.PathLike[str]",
     *,
     title: str | None = None,
     output: Path | str | None = None,

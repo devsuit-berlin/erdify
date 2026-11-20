@@ -123,6 +123,8 @@ strict = true                       # fail if any model/.sql file cannot be pars
 sql_dialect = "postgres"            # required for CREATE TYPE … AS ENUM support
 ```
 
+A list setting may also be one string (`exclude = "audit_log"`).
+
 With that in place, `erdify .` uses these settings. Precedence is **explicit CLI
 flag > `[tool.erdify]` value > built-in default**. (Boolean flags merge by OR: a
 flag enabled in config can be added to on the CLI but not turned off there.)
@@ -323,7 +325,7 @@ for name, entity in project.entities.items():
   `Settings` (list settings as tuples), without parsing.
 - Errors are exceptions: `FileNotFoundError` (no such input), `ConfigError` (a
   `[tool.erdify]` value or an argument of the wrong type, e.g. a string where
-  a list of strings belongs), `SqlDependencyError` (`.sql` files without
+  a list of strings belongs, a flag that isn't a `bool`), `SqlDependencyError` (`.sql` files without
   `erdify[sql]`), `ModelParseError` (`strict` and a file that fails to parse).
   Warnings (an unknown config key or format, a file that fails to parse
   without `strict`) go to stderr, as on the command line; the CLI's hint

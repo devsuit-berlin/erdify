@@ -51,12 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `[tool.erdify]` values of the wrong type are rejected with a clear error
-  (exit 1) instead of misbehaving: `inject` must be a string, `format` a
-  string or a list of strings, and `include`, `exclude`, `exclude_paths`,
-  `sources` and `base_classes` lists of strings. Before, `inject = 42`
-  crashed with a traceback, and `include = "models.py"` was read letter by
-  letter, matching nothing.
+- A `[tool.erdify]` list setting (`include`, `exclude`, `exclude_paths`,
+  `sources`, `base_classes`) given as one string is read as a list of that
+  string: `exclude = "AuditLog"` excludes `AuditLog`. Before, the string was
+  read letter by letter, so it matched nothing. A value of another wrong type
+  (`inject = 42`, `format = 42`, `exclude = [1]`) is reported as
+  `Error: [tool.erdify] '<key>' must be ...` (exit 1) instead of crashing
+  with a traceback.
 
 ## [1.6.0] - 2026-11-13
 

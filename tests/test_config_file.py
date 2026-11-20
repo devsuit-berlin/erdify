@@ -156,7 +156,8 @@ def test_sql_dialect_config_key_recognized(tmp_path):
 
 
 def test_sql_dialect_non_string_rejected(tmp_path):
-    """sql_dialect = 42 is rejected (the CLI exits 1, see test_cli_rejects_a_non_string_value)."""
+    """sql_dialect = 42 is rejected; the CLI exits 1
+    (test_project.py::TestErrors::test_cli_message_and_exit_code)."""
     from erdify.pyproject import load_config
 
     (tmp_path / "pyproject.toml").write_text("[tool.erdify]\nsql_dialect = 42\n")

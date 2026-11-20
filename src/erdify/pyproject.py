@@ -30,8 +30,9 @@ CONFIG_KEYS = frozenset(
 
 
 class ConfigError(ValueError):
-    """An invalid erdify setting: a ``[tool.erdify]`` value of the wrong type,
-    or an unknown setting passed to :func:`erdify.load_project`."""
+    """An invalid erdify setting: a ``[tool.erdify]`` value, or a
+    :func:`erdify.load_project` / :func:`erdify.resolve_settings` argument, of
+    the wrong type."""
 
 
 def load_config(input_path: Path) -> Tuple[Dict[str, Any], Path | None]:
@@ -78,12 +79,13 @@ def _validate(table: Dict[str, Any], source: Path) -> Dict[str, Any]:
     for str_key in ("title", "output", "inject", "sql_dialect"):
         if str_key in clean and not isinstance(clean[str_key], str):
             raise ConfigError(f"[tool.erdify] '{str_key}' must be a string in {source}")
-    list_keys = ("sources", "exclude", "exclude_paths", "include", "base_classes", "format")
-    for list_key in list_keys:
+    # A list setting given as one string means a list of that one string;
+    # anything else must be a list of strings.
+    for list_key in ("sources", "exclude", "exclude_paths", "include", "base_classes", "format"):
         value = clean.get(list_key)
-        if list_key == "format" and isinstance(value, str):
-            continue  # one format may be given as a string
-        if value is not None and not (
+        if isinstance(value, str):
+            clean[list_key] = [value]
+        elif value is not None and not (
             isinstance(value, list) and all(isinstance(item, str) for item in value)
         ):
             raise ConfigError(f"[tool.erdify] '{list_key}' must be a list of strings in {source}")

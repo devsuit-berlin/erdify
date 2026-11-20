@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from erdify import ConfigError, generate_json, load_project, resolve_settings
-from erdify.cli import FORMATS, main
+from erdify.cli import FORMATS, _overrides, build_parser, main
 from erdify.project import FORMAT_NAMES, _resolve
 from erdify.pyproject import CONFIG_KEYS
 from tests.render_outputs_loader import render_outputs
@@ -128,6 +128,12 @@ class TestPrecedence:
 
         # An omitted CLI flag leaves the config's value on.
         assert '"relationships": []' in _cli_json([str(p)], capsys)
+        # Control: the model has a relationship, which the flag alone removes.
+        (p / "pyproject.toml").write_text(
+            '[tool.erdify]\nno_relationships = false\nformat = "json"\n', encoding="utf-8"
+        )
+        assert '"relationships": []' not in _cli_json([str(p)], capsys)
+        assert '"relationships": []' in _cli_json([str(p), "--no-relationships"], capsys)
 
     def test_config_paths_resolve_from_the_pyproject_folder(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -178,6 +184,22 @@ class TestPrecedence:
         assert hash(settings) == hash(resolve_settings(p))
 
 
+def test_config_string_for_a_list_is_a_list_of_it(tmp_path: Path) -> None:
+    """Lenient config: `exclude = "AuditLog"` means ["AuditLog"] (it was read letter by letter)."""
+    p = _project(tmp_path, '[tool.erdify]\nexclude = "AuditLog"\ninclude = "models.py"\n')
+
+    settings = resolve_settings(p)
+
+    assert (settings.exclude, settings.include) == (("AuditLog",), ("models.py",))
+    assert set(load_project(p).entities) == {"User"}
+
+
+def test_path_may_be_a_string(tmp_path: Path) -> None:
+    p = _project(tmp_path, "[tool.erdify]\n")
+
+    assert load_project(str(p)).settings.input == p
+
+
 class TestFormats:
     def test_default_format_follows_inject(self, tmp_path: Path) -> None:
         p = _project(tmp_path, "[tool.erdify]\n")
@@ -197,6 +219,14 @@ class TestFormats:
 
     def test_format_names_match_the_cli(self) -> None:
         assert list(FORMAT_NAMES) == list(FORMATS)
+
+
+def test_cli_passes_every_config_key() -> None:
+    args = build_parser().parse_args(["."])
+
+    assert set(_overrides(args)) == set(CONFIG_KEYS)
+    # Omitted options and flags are "not given".
+    assert set(_overrides(args).values()) == {None}
 
 
 def test_keywords_are_the_config_keys() -> None:
@@ -224,12 +254,21 @@ class TestErrors:
         with pytest.raises(ConfigError, match=f"'{key}' must be a list of strings"):
             load_project(_project(tmp_path), **{key: "models.py"})
 
+    def test_one_shot_iterable_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigError, match="'exclude' must be a list of strings"):
+            load_project(_project(tmp_path), exclude=(p for p in ["User"]))  # type: ignore[arg-type]
+
+    def test_non_bool_flag_argument(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigError, match="'strict' must be a bool or None"):
+            load_project(_project(tmp_path), strict="false")  # type: ignore[arg-type]
+
     @pytest.mark.parametrize(
         ("toml", "message"),
         [
             ("title = 42", "'title' must be a string"),
             ("inject = 42", "'inject' must be a string"),
-            ('include = "models.py"', "'include' must be a list of strings"),
+            ("include = 1", "'include' must be a list of strings"),
+            ("exclude = [1]", "'exclude' must be a list of strings"),
             ("format = 42", "'format' must be a list of strings"),
             ('format = ["json", 1]', "'format' must be a list of strings"),
         ],
