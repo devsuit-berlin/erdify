@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A table defined again (`CREATE OR REPLACE`) kept the foreign keys of its
+  first definition; it now has those of the definition that is drawn
+  ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 - Same-name SQL tables in different schemas (`core.customer`, `mart.customer`)
   are no longer merged into one entity. Each is its own entity named
   `schema.table`; a table name used in one schema only keeps its short name.
@@ -33,9 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` now draws its edge.
 - `--format json`: a SQL DDL foreign key to a table in a schema has
   `foreign_table` `schema.table.column` (was `table.column`).
+- Python models together with SQL DDL: a SQL foreign key that names a schema
+  (`REFERENCES public.customer(id)`) is drawn to the SQL table in that
+  schema, no longer to a same-name Python model without a schema.
 - SQL DDL: one table declared twice in different case (`CREATE TABLE Customer`
   and later `CREATE TABLE CUSTOMER`, unquoted) is one entity, the later
-  definition, as the database sees it; it used to be two.
+  definition (its columns and foreign keys), as the database sees it; it used
+  to be two.
 
 ## [1.7.0] - 2026-11-20
 

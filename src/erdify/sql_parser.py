@@ -166,6 +166,8 @@ class SqlSchemaParser:
         self._by_lower: dict[str, list[TableId]] = {}
         #: id() of each current table's entity -> its identity.
         self._id_of: dict[int, TableId] = {}
+        #: id() of each CREATE TABLE statement -> the entity it made.
+        self._made_by: dict[int, EntityInfo] = {}
         #: Table -> its primary-key columns, in key order.
         self._primary_keys: dict[TableId, list[str]] = {}
         #: Table -> its column name keys (identifiers as the dialect folds
@@ -208,7 +210,7 @@ class SqlSchemaParser:
 
         statements: list[object] = []
         self._parse_errors = []
-        self._entities, self._tables, self._id_of = {}, {}, {}
+        self._entities, self._tables, self._id_of, self._made_by = {}, {}, {}, {}
         self._by_table, self._by_lower = {}, {}
         self._enums, self._enum_keys, self._typed_fields = {}, {}, []
         self._primary_keys, self._column_keys = {}, {}
@@ -338,6 +340,7 @@ class SqlSchemaParser:
             del self._id_of[id(replaced)]
         self._tables[tid] = entity
         self._id_of[id(entity)] = tid
+        self._made_by[id(create)] = entity
         self._column_keys[tid] = columns
         # Constraint columns name declared columns as the dialect folds names.
         pk_order = [
@@ -521,13 +524,17 @@ class SqlSchemaParser:
         ambiguous and finds nothing.
         """
         schema_key, table_key = self._table_id(node)
-        candidates = self._by_table.get(table_key) or self._by_lower.get(table_key.lower(), [])
         if schema_key:
-            in_schema = [t for t in candidates if t[0] == schema_key] or [
-                t for t in candidates if t[0] and t[0].lower() == schema_key.lower()
+            same_name = self._by_lower.get(table_key.lower(), [])
+            in_schema = [t for t in same_name if t[0] == schema_key] or [
+                t for t in same_name if t[0] and t[0].lower() == schema_key.lower()
             ]
-            found = in_schema or [t for t in candidates if not t[0]]
-            return self._tables[found[0]] if len(found) == 1 else None
+            for pool in (in_schema, [t for t in same_name if not t[0]]):
+                found = [t for t in pool if t[1] == table_key] or pool
+                if pool:
+                    return self._tables[found[0]] if len(found) == 1 else None
+            return None
+        candidates = self._by_table.get(table_key) or self._by_lower.get(table_key.lower(), [])
         if len(candidates) == 1:
             return self._tables[candidates[0]]
         near_id = self._id_of.get(id(near)) if near is not None else None
@@ -575,10 +582,15 @@ class SqlSchemaParser:
                     f.foreign_table = f"{ref_table}.{rc}"
 
     def _table_foreign_keys(self, create: "object", exp: "object") -> None:
-        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses."""
+        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses.
+
+        Only the statement whose table is kept applies them: a table defined
+        again (``CREATE OR REPLACE``, or the same name in another case) takes
+        the foreign keys of its later definition, not of the replaced one.
+        """
         schema = create.this  # type: ignore[attr-defined]
-        entity = self._tables.get(self._table_id(schema.this))
-        if entity is None:
+        entity = self._made_by.get(id(create))
+        if entity is None or self._tables.get(self._table_id(schema.this)) is not entity:
             return
         # Inline REFERENCES on a column definition: exactly one local column.
         for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]

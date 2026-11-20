@@ -158,6 +158,32 @@ class TestSqlTables:
         assert [f.name for f in entities["CUSTOMER"].fields] == ["id", "email"]  # type: ignore[attr-defined]
         assert len(entities) == 1
 
+    def test_a_redefined_table_takes_the_foreign_keys_of_its_later_definition(
+        self, tmp_path: Path
+    ) -> None:
+        entities = _sql(
+            tmp_path,
+            "CREATE TABLE x (id INT PRIMARY KEY);\n"
+            "CREATE TABLE y (id INT PRIMARY KEY);\n"
+            "CREATE TABLE Customer (a INT REFERENCES x(id));\n"
+            "CREATE TABLE CUSTOMER (a INT REFERENCES y(id));\n",
+            "postgres",
+        )
+
+        assert list(entities) == ["x", "y", "CUSTOMER"]
+        assert _fk_targets(entities)["CUSTOMER"] == ["y.id"]
+
+    def test_a_schema_matches_its_table_case_insensitively(self, tmp_path: Path) -> None:
+        entities = _sql(
+            tmp_path,
+            'CREATE TABLE core."Customer" (id INT PRIMARY KEY);\n'
+            "CREATE TABLE mart.customer (id INT PRIMARY KEY,"
+            " core_id INT REFERENCES core.customer(id));\n",
+            "postgres",
+        )
+
+        assert _fk_targets(entities)["customer"] == ["core.Customer.id"]
+
     def test_alter_table_and_index_find_the_schemas_table(self, tmp_path: Path) -> None:
         entities = _sql(
             tmp_path,
@@ -438,6 +464,30 @@ class Customer(Base):
         plantuml = generate_plantuml(dict(entities))
         assert 'entity "customer" as Customer {' in plantuml
         assert 'entity "customer" as customer {' in plantuml
+
+    def test_sql_reference_into_a_schema_prefers_the_sql_table(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class Customer(Base):
+    __tablename__ = "customer"
+    id: Mapped[int] = mapped_column(primary_key=True)
+""",
+            encoding="utf-8",
+        )
+        (tmp_path / "schema.sql").write_text(
+            "CREATE TABLE public.customer (id INT PRIMARY KEY);\n"
+            "CREATE TABLE public.orders (id INT PRIMARY KEY,"
+            " cid INT REFERENCES public.customer(id));\n",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["models.py", "*.sql"])
+
+        # The table in the schema the reference names, not the Python model.
+        assert _edges(dict(entities)) == [("orders", "customer", "cid")]
 
     def test_sql_reference_to_a_python_model_without_a_schema(self, tmp_path: Path) -> None:
         pytest.importorskip("sqlglot")

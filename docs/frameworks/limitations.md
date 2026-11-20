@@ -198,7 +198,8 @@ Not read:
   unless it sets `remote_side=`. `foreign_keys=` and `primaryjoin=` are not
   read, and `properties=` must be a dict literal. Whether a foreign key
   points at the target's table is decided by table name, without its schema
-  (see [`__table_args__`](#__table_args__-is-mostly-not-read)).
+  ([#372](https://github.com/devsuit-berlin/erdify/issues/372); see
+  [`__table_args__`](#__table_args__-is-mostly-not-read)).
 
 ## Column type aliases
 
