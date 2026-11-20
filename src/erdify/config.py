@@ -16,8 +16,10 @@ class FieldInfo:
         is_foreign_key: References another table.
         is_nullable: Column accepts ``NULL``.
         foreign_table: Referenced ``"table.column"`` when ``is_foreign_key``;
-            ``"schema.table.column"`` when the source names the schema (or, for
-            SQL DDL, the referenced table is in a schema).
+            ``"schema.table.column"`` when the source names the schema, when
+            SQLAlchemy resolves an unqualified target in its
+            ``MetaData(schema=...)``, or, for SQL DDL, when the referenced
+            table is in a schema.
         index: Column is indexed.
         default_value: Default value as source text, if any.
         is_unique: Unique on its own (implies a 1:1 relationship when the

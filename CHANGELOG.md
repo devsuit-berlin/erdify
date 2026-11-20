@@ -7,8 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `enum_users(entities, enums, *, include_enums=True)`: the enums erdify
+  draws (a field's type names them), each with the entities that use it, in
+  the public API. The PlantUML and Mermaid generators draw exactly these, so
+  a tool built on erdify no longer has to copy the rule; `include_enums=False`
+  (the `no_enums` setting) gives none
+  ([#369](https://github.com/devsuit-berlin/erdify/issues/369)).
+
 ### Fixed
 
+- SQLAlchemy: an unqualified `ForeignKey("customer.id")` on a table whose
+  metadata has a default schema (`MetaData(schema="core")`) targets that
+  schema, as in SQLAlchemy (`foreign_table` `core.customer.id`), when erdify
+  sees a `customer` table in that schema (see Limitations); a renamed
+  column key and a `ForeignKey`-only Core column's type are also resolved for
+  a schema-qualified target
+  ([#370](https://github.com/devsuit-berlin/erdify/issues/370)).
 - A table defined again (`CREATE OR REPLACE`) kept the foreign keys of its
   first definition; it now has those of the definition that is drawn
   ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
@@ -36,7 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `schema.table` instead of one, and edges to the right one. PlantUML titles a
   box `schema.table` when the entities drawing its table name are in more than
   one schema, no schema counting as one (SQL and SQLAlchemy / SQLModel).
-- SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` now draws its edge.
+- SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` /
+  `Field(foreign_key="core.customers.id")` now draws its edge
+  ([#373](https://github.com/devsuit-berlin/erdify/issues/373)).
+- SQLAlchemy under `MetaData(schema=...)`: an unqualified foreign key has
+  `foreign_table` `schema.table.column` in `--format json`, and its edge goes
+  to the table in that schema (a same-name table without a schema used to
+  win); a `ForeignKey`-only Core column with a schema-qualified target now
+  shows its type in every format
+  ([#370](https://github.com/devsuit-berlin/erdify/issues/370)).
 - SQL DDL: a foreign key naming a schema that has no table of that name
   (`REFERENCES core.customer` with only `staging.customer` scanned) no longer
   draws an edge to the same-name table in another schema.

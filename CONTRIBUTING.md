@@ -97,6 +97,7 @@ erdify/
 │   ├── cli.py           # Command-line interface (argparse + main)
 │   ├── config.py        # Data classes / IR (FieldInfo, EnumInfo, EntityInfo)
 │   ├── edges.py         # Public edge model: the relationship lines every format draws
+│   ├── enums.py         # enum_users(): the enums every format draws, and their entities
 │   ├── generator.py     # PlantUML / Mermaid / JSON / HTML generation
 │   ├── inject.py        # Markdown embedding (--inject)
 │   ├── project.py       # Settings resolution + parsing like the CLI (load_project)

@@ -400,6 +400,32 @@ for edge in diagram_edges(entities):
 - Endpoints are entity names; relationships to an entity that isn't in
   `entities` (excluded, say) give no edge.
 
+### Enums
+
+`enum_users(entities, enums)` returns the enums erdify draws, each with the
+entities that use it: the same enums PlantUML and Mermaid render. An enum no
+field uses is not drawn, so it is left out (`project.enums` and the JSON
+`enums` list every parsed enum).
+
+```python
+from pathlib import Path
+from erdify import enum_users, load_project
+
+project = load_project(Path("."))
+drawn = enum_users(
+    project.entities, project.enums, include_enums=not project.settings.no_enums
+)
+for key, entity_names in drawn.items():  # e.g. "Status ['DRAFT', 'DONE'] ['Order', 'Invoice']"
+    print(key, project.enums[key].values, entity_names)
+```
+
+- A field uses an enum when the last dotted part of its type
+  (`FieldInfo.type_str`) is an enum key.
+- Keys are those of `enums`, sorted; entity names are those of
+  `diagram_edges` endpoints, each once, in entity order.
+- `include_enums=False` (the `no_enums` setting) gives `{}`, as the diagrams
+  then draw no enums.
+
 ## What is public
 
 Everything listed in `erdify.__all__` is the public Python API. Within it:
@@ -412,6 +438,7 @@ Everything listed in `erdify.__all__` is the public Python API. Within it:
 | `PlantUMLGenerator`, `MermaidGenerator` | The constructor (`entities`, `enums` positional, `title` keyword-only) and `generate()`. |
 | `EntityInfo`, `FieldInfo`, `EnumInfo` | The dataclass fields. New fields may be added with defaults. |
 | `diagram_edges` | The function, its `entities` argument, and which edges it returns: a change to the edges is an output change, as it changes the diagrams. |
+| `enum_users` | The function, its `entities` / `enums` arguments and keyword-only `include_enums`, and which enums it returns: a change to them is an output change, as it changes the diagrams. |
 | `Edge`, `EdgeEnd` | The dataclass fields, `Edge.glyph`, `EdgeEnd.left_token` / `right_token`. New fields may be added with defaults; new `Edge.kind` values (`EdgeKind`) may be added in a minor release. |
 | `load_project`, `resolve_settings` | The functions, their `path` argument and keyword-only arguments (the `[tool.erdify]` keys; a new key adds one), and that they resolve settings as the CLI does. |
 | `Project`, `Settings` | The dataclass fields, read-only: build them with `load_project` / `resolve_settings`, not yourself. New fields may be added. |

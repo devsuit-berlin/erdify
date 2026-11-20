@@ -15,6 +15,7 @@ def test_public_api_is_pinned():
             "EdgeEnd",
             "EdgeKind",
             "diagram_edges",
+            "enum_users",
             "ASTDatabaseParser",
             "parse_models_directory",
             "ModelParseError",

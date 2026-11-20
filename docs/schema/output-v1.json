@@ -108,7 +108,7 @@
         "foreign_key": { "description": "References another table.", "type": "boolean" },
         "nullable": { "description": "Column accepts NULL.", "type": "boolean" },
         "foreign_table": {
-          "description": "Referenced table.column when foreign_key is true; schema.table.column when the source names the schema or, for SQL DDL, the referenced table is in a schema.",
+          "description": "Referenced table.column when foreign_key is true; schema.table.column when the source names the schema, when SQLAlchemy resolves an unqualified target in its MetaData(schema=...), or, for SQL DDL, the referenced table is in a schema.",
           "type": ["string", "null"]
         },
         "index": { "description": "Column is indexed.", "type": "boolean" },

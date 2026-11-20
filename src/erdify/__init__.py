@@ -4,6 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .config import EntityInfo, EnumInfo, FieldInfo
 from .edges import Edge, EdgeEnd, EdgeKind, diagram_edges
+from .enums import enum_users
 from .generator import (
     JSON_SCHEMA_VERSION,
     MermaidGenerator,
@@ -33,6 +34,8 @@ __all__ = [
     "EdgeEnd",
     "EdgeKind",
     "diagram_edges",
+    # Enums
+    "enum_users",
     # Parser
     "ASTDatabaseParser",
     "parse_models_directory",

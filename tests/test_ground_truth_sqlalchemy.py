@@ -66,10 +66,6 @@ SNIPPET_HEADERS = {
 
 # erdify output that differs from SQLAlchemy's schema, pending a fix.
 KNOWN_DIFFERENCES = {
-    "test_schema_identity.py::TestMixedSources"
-    ".test_one_table_drawn_twice_in_one_schema_keeps_its_edge": (
-        "#370: an unqualified ForeignKey keeps no MetaData default schema"
-    ),
     "test_model_references.py::TestRedeclaration"
     ".test_unresolvable_redeclaration_shadows_the_inherited_relationship.src": (
         "#319: SQLAlchemy maps a Union[A, B] relationship to its first member"
@@ -98,6 +94,10 @@ SQLMODEL_DIFFERENCES = {
 # Documented in docs/frameworks/limitations.md; strict xfails, so that the
 # page is updated once one is supported.
 LIMITATIONS = {
+    "test_schema_identity.py::TestSqlAlchemy"
+    ".test_a_target_whose_schema_is_not_read_keeps_its_edge": (
+        "limitations.md: a metadata reached as `md = Base.metadata` gives no schema"
+    ),
     "classic_columns": "limitations.md: classic Column() attributes are not read",
     "composite_foreign_key": "limitations.md: composite foreign keys are not read",
     "test_entity_origin.py::TestSqlAlchemySchema"
