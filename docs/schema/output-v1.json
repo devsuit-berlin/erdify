@@ -25,7 +25,7 @@
       "items": { "$ref": "#/$defs/edge" }
     },
     "enums": {
-      "description": "Empty when enums are disabled (--no-enums).",
+      "description": "Every parsed enum, drawn or not (see used_by). Empty when enums are disabled (--no-enums).",
       "type": "array",
       "items": { "$ref": "#/$defs/enum" }
     }
@@ -46,7 +46,7 @@
       ],
       "properties": {
         "name": {
-          "description": "Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named schema.table; one declared without a schema keeps its bare name.",
+          "description": "Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named schema.table; one declared without a schema keeps its bare name. Same-name model classes in different modules are named module.Class when more than one of them is built (before --exclude).",
           "type": "string"
         },
         "table_name": {
@@ -179,11 +179,16 @@
     },
     "enum": {
       "type": "object",
-      "required": ["name", "values"],
+      "required": ["name", "values", "used_by"],
       "properties": {
         "name": { "description": "Enum class name.", "type": "string" },
         "values": {
           "description": "Enum members, in declaration order.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "used_by": {
+          "description": "Names of the entities with a field of this enum, in entity order (as in edge endpoints). The diagrams draw an enum only when this is not empty. Added in 1.9.0.",
           "type": "array",
           "items": { "type": "string" }
         }

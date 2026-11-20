@@ -147,6 +147,56 @@ QUALIFIED = "a class of a `schemas` module the source doesn't define"
 UNDEFINED = "a call to a function the source doesn't define, as a robustness test"
 EXPECTED_UNLOADABLE = {
     **{
+        f"test_namespaces.py::TestReferences.{test}": (
+            "one file of a multi-file source (#367): same-name classes in other files"
+        )
+        for test in (
+            "test_imported_name.edges",
+            "test_aliased_import_and_relative_import.edges",
+            "test_module_attribute_and_quoted_forward_reference.edges",
+            "test_star_import.edges",
+            "test_own_module_wins",
+            "test_unresolved_reference_is_reported_and_not_drawn.edges",
+            "test_module_alias_and_unparseable_annotation_strings.edges",
+            "test_import_matching_two_modules_is_unresolved",
+        )
+    },
+    **{
+        f"test_namespaces.py::TestReviewCases.{test}": (
+            "one file of a multi-file source (#367): same-name classes in other files"
+        )
+        for test in (
+            "test_imported_module_alias",
+            "test_names_imported_from_unscanned_modules_are_not_reported",
+            "test_default_values_show_the_display_name",
+            "test_a_same_module_key_wins_among_same_table_models",
+            "test_a_same_module_key_wins_among_same_table_models[2]",
+        )
+    },
+    **{
+        f"test_namespaces.py::TestSecondReview.{test}": (
+            "one file of a multi-file source (#367): same-name classes in other files"
+        )
+        for test in (
+            "test_a_package_re_export_is_followed",
+            "test_a_reference_to_an_unbuilt_namesake_keeps_its_module[2]",
+        )
+    },
+    "test_namespaces.py::TestSecondReview"
+    ".test_own_non_model_binding_and_unmatched_dotted_strings_are_quiet": (
+        "an annotation naming a module that doesn't exist, on purpose (#367)"
+    ),
+    "test_namespaces.py::test_two_scanned_modules_reaching_no_candidate_are_quiet": (
+        "one file of a multi-file source (#367): imports from another file"
+    ),
+    "test_namespaces.py::TestReExports._layout[2]": (
+        "one file of a multi-file source (#367): imports from another file"
+    ),
+    "test_namespaces.py::TestThirdReview"
+    ".test_a_scanned_module_binding_the_name_otherwise_is_quiet": (
+        "one file of a multi-file source (#367): imports from another file"
+    ),
+    **{
         f"{REFS}[{annotation}]": QUALIFIED
         for annotation in ("schemas.User", '"schemas.User"', "Optional[schemas.User]")
     },

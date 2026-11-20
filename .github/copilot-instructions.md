@@ -211,8 +211,9 @@ parser/    ──►  config.py (IR)  ──►  generator.py
   `erdify` and the CLI use; the package and its submodules are internal (the
   stable surface is `erdify.__all__`).
   - `core.py`: `parse_models_directory()` and `ASTDatabaseParser`, which runs
-    the passes: collect every class, classify it, build entities, add Core
-    tables, apply `--exclude`.
+    the passes: collect every class, keep same-name model classes of
+    different modules apart (`namespaces.py`), classify, build entities, add
+    Core tables, finalize, name them `module.Class`, apply `--exclude`.
   - `discovery.py`: finds model files (glob `include_patterns`, default
     `models.py`; prunes `DEFAULT_EXCLUDE_DIRS` *during* the walk for speed).
   - `dialects/`: one `Dialect` per framework (`base.py` has the interface, its
@@ -232,6 +233,11 @@ parser/    ──►  config.py (IR)  ──►  generator.py
     Python names (bindings, imports into scanned files, derived aliases).
   - `annotations.py`: pure helpers that read annotations from the syntax tree
     (model references, column type and nullability).
+  - `namespaces.py`: same-name model classes in different modules (#367).
+    Each gets an internal name and every reference is rewritten to the class
+    its file defines or imports; the dialects stay keyed by name, read the
+    original name for default table names (`original_class_name`), and the
+    entities are named `module.Class` once built. No collision, no change.
 
   Link tables are detected **structurally** (a composite PK made up entirely of
   FKs, with no payload columns — two FKs or more), not by name.
@@ -256,7 +262,8 @@ parser/    ──►  config.py (IR)  ──►  generator.py
 
 - **`enums.py`** — `enum_users()`: the enums erdify draws (a field's type
   names them) and the entities using each. The PlantUML and Mermaid generators
-  draw exactly these; the JSON lists every parsed enum (unless `--no-enums`).
+  draw exactly these; the JSON lists every parsed enum (unless `--no-enums`)
+  with `used_by` from it.
 
 - **`generator.py`** — `_ERGenerator` base with `PlantUMLGenerator` and
   `MermaidGenerator` subclasses, plus the `generate_plantuml/mermaid/json/html`

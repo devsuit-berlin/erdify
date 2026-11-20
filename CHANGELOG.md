@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--format json`: each enum has `used_by`, the names of the entities with a
+  field of it (as in `edges` endpoints), from the same rule the diagrams use
+  (`enum_users()`). An empty list means the diagrams don't draw the enum, so
+  a tool reading the JSON no longer has to re-implement the rule
+  ([#378](https://github.com/devsuit-berlin/erdify/issues/378)).
+
+### Fixed
+
+- Model classes of the same name in different modules (a Pydantic `Address`
+  in `billing` and `shipping`, a Django `Profile` in two apps) are separate
+  entities, named `module.Class` (`billing.models.Address`) when more than
+  one of them is built (before `--exclude`; `--sources` can leave one); they used to be one entity, the class scanned last.
+  Each reference goes to the class its file defines or imports (`from ...
+  import X [as Y]`, also re-exported by a package's `__init__.py` (`from .x
+  import X` or `from .x import *`), `from pkg
+  import module`, a star import, `module.X`, a quoted name,
+  `relationship("billing.models.X")`); a Django string by its app label
+  (`"app.Model"`, any case, `Meta.app_label` included) or, bare, the
+  referencing model's app (its `Meta.app_label`, else its app).
+  `Literal[...]` values and SQLAlchemy `ForeignKey("table.column")` strings
+  stay as written.
+  A reference several of them could mean is not drawn and is reported on
+  stderr; one that names none of them is not drawn.
+  `--exclude X` still matches each of them, and a Python model still wins
+  over a SQL table of its class name. Projects without same-name model
+  classes are unchanged
+  ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
+
+### Output changes
+
+- Same-name model classes in different modules: one entity per class, named
+  `module.Class`, with the edges to the right one
+  ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
+- `--format json`: every enum gains the `used_by` key; a committed `.json`
+  file fails `--check` once
+  ([#378](https://github.com/devsuit-berlin/erdify/issues/378)).
+
 ## [1.8.0] - 2026-11-20
 
 ### Added

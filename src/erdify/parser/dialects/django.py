@@ -6,7 +6,7 @@ from typing import Dict, Iterable, List, Mapping, Set, Tuple
 
 from ...config import EntityInfo, FieldInfo
 from ..annotations import expr_name
-from ..common import _ClassMembers, _Rel, is_enum_class
+from ..common import _ClassMembers, _Rel, is_enum_class, original_class_name
 from .base import Dialect, ParseContext
 from .django_apps import app_label, app_package
 from .django_contrib import (
@@ -183,7 +183,7 @@ class DjangoDialect(Dialect):
         whose file is unknown) only the model name is returned.
         """
         label = self._app_label(class_node)
-        model_name = class_node.name.lower()
+        model_name = original_class_name(class_node.name).lower()
         return f"{label}_{model_name}" if label else model_name
 
     def app_label(self, class_node: ast.ClassDef) -> str | None:
@@ -454,7 +454,10 @@ class DjangoDialect(Dialect):
                     target = self._resolve_django_relationship_target(call, class_node.name)
                     if target is not None:
                         explicit[target] = attr
-        links = [(parent, explicit.get(parent, f"{parent.lower()}_ptr")) for parent in parents]
+        links = [
+            (parent, explicit.get(parent, f"{original_class_name(parent).lower()}_ptr"))
+            for parent in parents
+        ]
         self._links_cache[class_node.name] = links
         return links
 

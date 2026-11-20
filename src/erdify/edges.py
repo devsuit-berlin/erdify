@@ -230,7 +230,9 @@ class _EdgeBuilder:
         schema, the only table of that name; of several, the (first) one
         declared without a schema, else the (first) one in ``entity``'s
         schema. Several entities drawing one table (a Python model and a SQL
-        table) take the first, as before schemas counted. Anything else is
+        table) take the first, as before schemas counted; same-name model
+        classes of several modules (``module.Class``, #367) the one in the
+        referencing entity's module, else its Django app. Anything else is
         ambiguous: no edge.
         """
         if not field.foreign_table:
@@ -257,6 +259,14 @@ class _EdgeBuilder:
         # Several without a schema (a Python model and a SQL table drawing the
         # same table): the first, the Python model, as before schemas counted.
         unqualified = [e for e in candidates if e.schema is None]
+        namesakes = [e for e in unqualified if "." in e.name]
+        if len(namesakes) > 1 and _namesakes(namesakes):
+            # Same-name models of several modules (#367): the referencing one's.
+            near = [e for e in namesakes if e.module and e.module == entity.module] or [
+                e for e in namesakes if e.app and e.app == entity.app
+            ]
+            if len(near) == 1:
+                return near[0]
         if unqualified:
             return unqualified[0]
         in_schema = [e for e in candidates if e.schema == entity.schema]
@@ -515,7 +525,7 @@ class _EdgeBuilder:
 
     def _class_attr_names(self, name: str) -> "set[str]":
         """Attribute names that refer to class ``name``: ``user``, ``users``, ``categories``."""
-        snake = self._snake_case(name)
+        snake = self._snake_case(name.rpartition(".")[2])
         names = {snake, snake + "s"}
         if snake.endswith("y") and snake[-2:-1] not in ("a", "e", "i", "o", "u", ""):
             names.add(snake[:-1] + "ies")
@@ -530,3 +540,13 @@ class _EdgeBuilder:
         from_end = self._end(other, other_kind, other_attr)
         to_end = self._end(entity, kind, attr)
         return Edge(entity.name, self._name(target), from_end, to_end, attr, "relationship")
+
+
+def _namesakes(entities: List[EntityInfo]) -> bool:
+    """Whether these are same-name model classes drawn as ``module.Class`` (#367)."""
+    names = {e.name for e in entities}
+    return (
+        len(names) == len(entities)
+        and len({n.rpartition(".")[2] for n in names}) == 1
+        and all("." in n for n in names)
+    )

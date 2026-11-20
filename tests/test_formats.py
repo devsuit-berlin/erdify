@@ -53,7 +53,7 @@ class TestJsonFormat:
             "nullable",
             "inverse",
         }
-        assert set(data["enums"][0]) == {"name", "values"}
+        assert set(data["enums"][0]) == {"name", "values", "used_by"}
 
     def test_valid_json_with_entities(self, sample_models_dir: Path):
         entities, enums = parse_models_directory(sample_models_dir)
