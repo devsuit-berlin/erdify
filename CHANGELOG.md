@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-20
+
 ### Added
 
 - `enum_users(entities, enums, *, include_enums=True)`: the enums erdify
@@ -1561,7 +1563,8 @@ open-source maintenance.
 
 - Initial release: generate PlantUML ERD diagrams from SQLModel models via AST.
 
-[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/devsuit-berlin/erdify/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/devsuit-berlin/erdify/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/devsuit-berlin/erdify/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/devsuit-berlin/erdify/compare/v1.5.4...v1.6.0
 [1.5.4]: https://github.com/devsuit-berlin/erdify/compare/v1.5.3...v1.5.4
