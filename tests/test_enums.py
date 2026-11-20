@@ -1,12 +1,11 @@
 """The public enum model: which enums erdify draws, and by which entities (#369)."""
 
+import json
 import re
 from pathlib import Path
 from typing import Any
 
 import pytest
-
-import json
 
 from erdify import (
     EntityInfo,

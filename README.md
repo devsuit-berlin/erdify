@@ -25,7 +25,7 @@
 - 🧜 **4 Output Formats** - `--format` emits PlantUML, Mermaid (renders natively on GitHub), JSON, or a self-contained HTML preview
 - 📝 **Markdown Embed** - `--inject` writes the diagram into a Markdown file between markers
 - ⚙️ **Config File** - Store options under `[tool.erdify]` in `pyproject.toml`
-- 🧩 **Build on it** - `load_project()` reads a project exactly like the CLI, `diagram_edges()` gives the drawn edges, `enum_users()` the drawn enums, and `--format json` carries schema, module and Django app per entity
+- 🧩 **Build on it** - `load_project()` reads a project exactly like the CLI, `diagram_edges()` gives the drawn edges, `enum_users()` the drawn enums, and `--format json` carries schema, module and Django app per entity and the entities using each enum (`used_by`)
 - ✅ **Drift Check** - `--check` fails CI/pre-commit when the committed diagram is stale
 
 See the [full feature matrix](https://erdify.devsuit.io/features/) for everything erdify recognizes.
