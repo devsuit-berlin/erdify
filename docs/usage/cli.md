@@ -390,7 +390,10 @@ for edge in diagram_edges(entities):
     print(edge.from_end.optional, edge.from_end.many, edge.to_end.optional, edge.to_end.many)
 ```
 
-- One edge per foreign-key column, from the entity holding it.
+- One edge per foreign-key column, from the entity holding it. Its target is
+  found by table name and, for a `schema.table.column` target, by schema: a
+  target that is missing, only in another schema than the one named, or
+  ambiguous (in several schemas, none preferred) gives no edge.
 - A detected link table (`is_link_table`) stays an entity: two edges through
   it (`Post ||--o{ post_tag`, `post_tag }o--|| Tag`), or a star from each
   parent for three or more keys. `kind` is `link_table`.
@@ -404,8 +407,8 @@ for edge in diagram_edges(entities):
 
 `enum_users(entities, enums)` returns the enums erdify draws, each with the
 entities that use it: the same enums PlantUML and Mermaid render. An enum no
-field uses is not drawn, so it is left out (`project.enums` and the JSON
-`enums` list every parsed enum).
+field uses is not drawn, so it is left out (`project.enums`, and the JSON
+`enums` unless `--no-enums`, list every parsed enum).
 
 ```python
 from pathlib import Path

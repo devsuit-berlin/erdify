@@ -18,8 +18,9 @@ class FieldInfo:
         foreign_table: Referenced ``"table.column"`` when ``is_foreign_key``;
             ``"schema.table.column"`` when the source names the schema, when
             SQLAlchemy resolves an unqualified target in its
-            ``MetaData(schema=...)``, or, for SQL DDL, when the referenced
-            table is in a schema.
+            ``MetaData(schema=...)``, or, for SQL DDL, when the table the
+            reference resolves to is in a schema (an unresolved reference
+            keeps the schema it names).
         index: Column is indexed.
         default_value: Default value as source text, if any.
         is_unique: Unique on its own (implies a 1:1 relationship when the
@@ -60,7 +61,8 @@ class EntityInfo:
     Attributes:
         name: Class name (or table name for SQL DDL); the key in the entities
             dict. Same-name SQL tables in different schemas are each named
-            ``schema.table`` (#353).
+            ``schema.table``; one declared without a schema keeps its bare
+            name (#353).
         table_name: Database table name.
         fields: Columns, in declaration order.
         relationships: ``(target, type, attribute)`` tuples, where ``target`` is

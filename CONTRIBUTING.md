@@ -97,7 +97,7 @@ erdify/
 │   ├── cli.py           # Command-line interface (argparse + main)
 │   ├── config.py        # Data classes / IR (FieldInfo, EnumInfo, EntityInfo)
 │   ├── edges.py         # Public edge model: the relationship lines every format draws
-│   ├── enums.py         # enum_users(): the enums every format draws, and their entities
+│   ├── enums.py         # enum_users(): the enums PlantUML / Mermaid / HTML draw, and their entities
 │   ├── generator.py     # PlantUML / Mermaid / JSON / HTML generation
 │   ├── inject.py        # Markdown embedding (--inject)
 │   ├── project.py       # Settings resolution + parsing like the CLI (load_project)
@@ -229,7 +229,7 @@ run as written; a source in another dialect is listed in `DIALECTS`, and only
 the statements SQLite rejects are transpiled by sqlglot. Test DDL must pass
 SQLite's foreign-key check (the parent table exists, the parent key is a
 primary key or unique); a deliberate error is listed in `EXPECTED_CHECK_ERRORS`,
-DDL SQLite can't run (`ALTER TABLE ... ADD CONSTRAINT`) in `EXPECTED_REJECTED`.
+DDL SQLite can't run (`ALTER TABLE ... ADD CONSTRAINT`, schema-qualified tables) in `EXPECTED_REJECTED`.
 
 ```bash
 uv run pytest tests/test_ground_truth_sql.py -rsx
