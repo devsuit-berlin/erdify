@@ -255,8 +255,11 @@ class _Rewriter:
             none of them (a module that isn't scanned, or a scanned one that
             binds the name itself: a class, function or assignment of its
             own); :data:`_ABSENT` when the scanned module has no such name;
-            :data:`_AMBIGUOUS` when several candidates or modules could be
-            meant, or it is re-exported in a way erdify doesn't follow.
+            :data:`_AMBIGUOUS` when several candidates could be meant (also
+            through several modules the import matches), or it is re-exported
+            in a way erdify doesn't follow. Bindings in function bodies and
+            ``if TYPE_CHECKING:`` blocks don't count: a star import never
+            exports them.
         """
         group = self.candidates[name]
         found = [c for c in group if is_module_file(c.file, importer, source)]
