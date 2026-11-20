@@ -256,6 +256,16 @@ goes in `KNOWN_DIFFERENCES` with an issue, a documented limitation in
 uv run pytest tests/test_ground_truth_keyless.py -rsx
 ```
 
+A source spread over several modules or apps is a directory of real packages
+in an edge-case catalog (`tests/fixtures/keyless_edge_cases/same_name_modules/`,
+`tests/fixtures/sqlalchemy_edge_cases/same_name_modules/`,
+`tests/fixtures/django_edge_cases/same_name_apps/`). The ground-truth tests
+import it for real (`load_package()`; Django installs one app per package) and
+compare it with erdify. Use such a directory for behaviour across modules, like
+same-name classes in two packages; don't name a package like an installed
+module (the harness refuses it).
+
+
 The supported framework versions are listed in `docs/installation.md`
 ("Supported framework versions"). When you add or drop one, update that table,
 the CI matrix in `.github/workflows/test.yml`, and the changelog together.

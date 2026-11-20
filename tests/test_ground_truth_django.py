@@ -37,6 +37,10 @@ MODULES = {
 
 EDGE_CASES_DIR = ROOT / "tests" / "fixtures" / "django_edge_cases"
 EDGE_CASES = sorted(EDGE_CASES_DIR.glob("*.py"))
+# Multi-app sources (#380): a directory of app packages, imported for real.
+EDGE_PACKAGES = sorted(
+    p for p in EDGE_CASES_DIR.iterdir() if p.is_dir() and not p.name.startswith("__")
+)
 
 # erdify output that differs from Django's schema, pending a fix.
 KNOWN_DIFFERENCES: dict[str, str] = {}
@@ -229,9 +233,20 @@ def test_edge_case_matches_django(path: Path, tmp_path: Path) -> None:
     _check(path.stem, path.read_text(encoding="utf-8"), tmp_path, catalog=True)
 
 
+@pytest.mark.parametrize("path", [_param(p.name, p) for p in EDGE_PACKAGES])
+def test_edge_case_package_matches_django(path: Path) -> None:
+    """Several apps: same-name models keyed ``module.Class`` (#367)."""
+    expected = django_ref.load_package(path)
+    assert expected.tables, "the reference loader found no models"
+    _assert_checks(path.name, expected, ())
+    _assert_same(from_erdify(path, "django", app=True), expected)
+
+
 def test_known_lists_name_existing_snippets() -> None:
     """A renamed or deleted test must not leave a stale entry behind."""
-    names = {s.id for s in SNIPPETS} | {p.stem for p in EDGE_CASES}
+    names = (
+        {s.id for s in SNIPPETS} | {p.stem for p in EDGE_CASES} | {p.name for p in EDGE_PACKAGES}
+    )
     listed = (
         set(KNOWN_DIFFERENCES)
         | set(LIMITATIONS)
@@ -249,6 +264,7 @@ def test_most_sources_are_compared() -> None:
     compared = [s for s in SNIPPETS if s.id not in listed]
     assert len(compared) >= 40
     assert len(EDGE_CASES) >= 15
+    assert EDGE_PACKAGES, "no multi-module catalog source is compared (#380)"
 
 
 def test_reference_reports_system_check_errors() -> None:

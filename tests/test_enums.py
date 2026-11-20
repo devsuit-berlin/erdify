@@ -87,6 +87,7 @@ def _drawn_enums(source: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         include_patterns=source.include_patterns,
         sql_dialect=source.sql_dialect,
         base_classes=source.base_classes,
+        exclude_paths=source.exclude_paths,
         use_default_excludes=False,
     )
     return entities, enums
