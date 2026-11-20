@@ -452,3 +452,147 @@ class TestReviewCases:
         entities, _ = parse_models_directory(root)
 
         assert len(entities) == 2
+
+
+class TestSecondReview:
+    """Cases a second review found (#367)."""
+
+    @pytest.fixture
+    def root(self, tmp_path: Path) -> Path:
+        _packages(tmp_path, "billing", "shipping", "orders")
+        _write(tmp_path, ADDRESS)
+        return tmp_path
+
+    def test_a_package_re_export_is_followed(self, tmp_path: Path) -> None:
+        _packages(tmp_path, "shop", "shop/models", "shipping", "orders")
+        _write(
+            tmp_path,
+            {
+                "shop/models/__init__.py": "from .address import Address\n",
+                "shop/models/address.py": ADDRESS["billing/models.py"],
+                "shipping/models.py": ADDRESS["shipping/models.py"],
+                "orders/models.py": "from pydantic import BaseModel\n"
+                "from shop.models import Address\n\n\n"
+                "class Order(BaseModel):\n    address: Address\n",
+            },
+        )
+
+        entities, _ = parse_models_directory(
+            tmp_path, include_patterns=["models.py", "shop/models/*.py"]
+        )
+
+        assert _edges(dict(entities)) == [("Order", "shop.models.address.Address", "address")]
+
+    def test_literal_values_stay_as_written(
+        self, root: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write(
+            root,
+            {
+                "orders/models.py": "from typing import Annotated, Literal\n"
+                "from pydantic import BaseModel, Field\n\n\n"
+                "class Order(BaseModel):\n"
+                '    kind: Literal["Address"]\n'
+                '    note: Annotated[str, Field(description="Address")]\n'
+            },
+        )
+
+        entities, _ = parse_models_directory(root)
+
+        kind = next(f for f in entities["Order"].fields if f.name == "kind")
+        assert "Address" in kind.type_str and "models" not in kind.type_str
+        assert "refers to" not in capsys.readouterr().err
+
+    def test_own_non_model_binding_and_unmatched_dotted_strings_are_quiet(
+        self, root: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write(
+            root,
+            {
+                "orders/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Address:\n    pass\n\n\n"
+                "class Order(BaseModel):\n    note: str\n\n\n"
+                "def make() -> Address:\n    return Address()\n"
+            },
+        )
+
+        parse_models_directory(root)
+
+        assert "refers to" not in capsys.readouterr().err
+
+    def test_sqlalchemy_foreign_key_strings_are_never_rewritten(self, tmp_path: Path) -> None:
+        header = (
+            "from sqlalchemy import ForeignKey\n"
+            "from sqlalchemy.orm import Mapped, mapped_column\nfrom base import Base\n\n\n"
+        )
+        _packages(tmp_path, "a", "b")
+        _write(
+            tmp_path,
+            {
+                "base.py": "from sqlalchemy.orm import DeclarativeBase\n\n\n"
+                "class Base(DeclarativeBase):\n    pass\n",
+                "a/models.py": header + "class Account(Base):\n    __tablename__ = 'account'\n"
+                "    id: Mapped[int] = mapped_column(primary_key=True)\n",
+                "b/models.py": header + "class Account(Base):\n"
+                "    __tablename__ = 'b_account'\n"
+                "    id: Mapped[int] = mapped_column(primary_key=True)\n"
+                "    a_id: Mapped[int] = mapped_column(ForeignKey('a.account'))\n",
+            },
+        )
+
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+
+        a_id = next(f for f in entities["b.models.Account"].fields if f.name == "a_id")
+        assert a_id.foreign_table == "a.account"
+
+    def test_django_meta_app_label(self, tmp_path: Path) -> None:
+        _packages(tmp_path, "billing", "shipping")
+        _write(
+            tmp_path,
+            {
+                "billing/models.py": "from django.db import models\n\n\n"
+                "class Profile(models.Model):\n    name = models.CharField(max_length=9)\n\n"
+                "    class Meta:\n        app_label = 'invoicing'\n",
+                "shipping/models.py": "from django.db import models\n\n\n"
+                "class Profile(models.Model):\n    name = models.CharField(max_length=9)\n\n\n"
+                "class Parcel(models.Model):\n"
+                '    owner = models.ForeignKey("invoicing.Profile", on_delete=models.CASCADE)\n',
+            },
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert _edges(dict(entities)) == [("Parcel", "billing.models.Profile", "owner_id")]
+
+    def test_a_reference_to_an_unbuilt_namesake_keeps_its_module(self, root: Path) -> None:
+        _write(
+            root,
+            {
+                "shipping/models.py": "from dataclasses import dataclass\n\n\n"
+                "@dataclass\nclass Address:\n    city: str\n",
+                "orders/models.py": "from pydantic import BaseModel\n"
+                "from shipping.models import Address\n\n\n"
+                "class Order(BaseModel):\n    address: Address\n",
+            },
+        )
+
+        entities, _ = parse_models_directory(root, sources=["pydantic"])
+
+        assert sorted(entities) == ["Address", "Order"]  # billing's, the only one built
+        assert entities["Order"].relationships[0][0] == "shipping.models.Address"
+
+
+def test_same_module_preference_is_only_for_namesakes() -> None:
+    from erdify.config import FieldInfo
+
+    def entity(name: str, module: str, fields: list[FieldInfo] | None = None) -> EntityInfo:
+        return EntityInfo(name=name, table_name="article", module=module, fields=fields or [])
+
+    fk = FieldInfo("article_id", "int", is_foreign_key=True, foreign_table="article.id")
+    entities = {
+        "Article": entity("Article", "blog.models"),
+        "ArticleStats": entity("ArticleStats", "reports.models"),
+        "Flag": EntityInfo(name="Flag", table_name="flag", module="reports.models", fields=[fk]),
+    }
+
+    assert _edges(entities) == [("Flag", "Article", "article_id")]

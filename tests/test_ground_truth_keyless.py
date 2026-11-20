@@ -174,6 +174,15 @@ EXPECTED_UNLOADABLE = {
         )
     },
     **{
+        f"test_namespaces.py::TestSecondReview.{test}": (
+            "one file of a multi-file source (#367): same-name classes in other files"
+        )
+        for test in (
+            "test_a_package_re_export_is_followed",
+            "test_a_reference_to_an_unbuilt_namesake_keeps_its_module[2]",
+        )
+    },
+    **{
         f"{REFS}[{annotation}]": QUALIFIED
         for annotation in ("schemas.User", '"schemas.User"', "Optional[schemas.User]")
     },

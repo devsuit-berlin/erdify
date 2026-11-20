@@ -11,13 +11,19 @@ name (:func:`~erdify.parser.common.original_class_name`), and the entities are
 renamed to ``module.Class`` (``billing.models.Address``) once they are built.
 
 A reference means the definition in its own file, else the one its imports
-name: ``from billing.models import Address [as A]``, a star import, or an
-attribute (``models.Address``, ``billing.models.Address``) whose module path
-ends a candidate's module. A string reference (``"Address"``,
-``relationship("billing.models.Address")``, Django's ``"billing.Address"`` /
-``ForeignKey("Address")``) is resolved the same way, a Django app label by
-the candidates' apps. A reference none of this resolves is left unresolved
-(no edge) and reported on stderr.
+name: ``from billing.models import Address [as A]`` (also re-exported by a
+package's ``__init__.py``), a star import, or an attribute
+(``models.Address`` after ``from billing import models``,
+``billing.models.Address``) whose module path ends a candidate's module. A
+string reference (``"Address"``, ``relationship("billing.models.Address")``,
+Django's ``"billing.Address"`` / ``ForeignKey("Address")``, model names in
+any case) is resolved the same way, a Django app label by the candidates'
+``Meta.app_label`` or app, a bare Django name in the referencing file's app
+first. ``Literal[...]`` values, ``Annotated`` metadata and ``ForeignKey``
+strings outside Django files (SQLAlchemy's ``"table.column"``) are not
+references. A reference several definitions could mean is left unresolved
+(no edge) and reported on stderr; a name imported from a module that isn't
+scanned, or bound by the file itself, is not a reference to them.
 """
 
 import ast
@@ -63,6 +69,23 @@ class _Candidate:
     internal: str
     module: str
 
+    @property
+    def app(self) -> str:
+        """The Django app label: ``Meta.app_label``, else the file's app."""
+        for stmt in self.node.body:
+            if isinstance(stmt, ast.ClassDef) and stmt.name == "Meta":
+                for item in stmt.body:
+                    if (
+                        isinstance(item, ast.Assign)
+                        and any(
+                            isinstance(t, ast.Name) and t.id == "app_label" for t in item.targets
+                        )
+                        and isinstance(item.value, ast.Constant)
+                        and isinstance(item.value.value, str)
+                    ):
+                        return item.value.value
+        return _app(self.file)
+
 
 def namespace_models(
     groups: Mapping[str, Sequence[Tuple[ast.ClassDef, Path]]],
@@ -102,7 +125,7 @@ def namespace_models(
             result.display[internal] = f"{module}.{name}"
 
     for path, tree in trees.items():
-        _Rewriter(path, tree, candidates, result).rewrite()
+        _Rewriter(path, tree, candidates, result, trees).rewrite()
     for name, group in candidates.items():
         for candidate in group:
             # Every module-level definition of the name in that file (an
@@ -151,9 +174,20 @@ class _Rewriter:
         tree: ast.Module,
         candidates: Mapping[str, List[_Candidate]],
         result: Namespaced,
+        trees: Mapping[Path, ast.Module],
     ):
         self.path = path
         self.tree = tree
+        self.trees = trees
+        #: A file that imports from Django: its ForeignKey strings are model
+        #: references (SQLAlchemy's are ``table.column``).
+        self.django = any(
+            (isinstance(n, ast.ImportFrom) and (n.module or "").split(".")[0] == "django")
+            or (
+                isinstance(n, ast.Import) and any(a.name.split(".")[0] == "django" for a in n.names)
+            )
+            for n in ast.walk(tree)
+        )
         self.candidates = candidates
         self.result = result
         #: Name bound in this file -> internal name it means.
@@ -183,6 +217,17 @@ class _Rewriter:
             own = [c for c in group if c.file == self.path]
             if own:
                 self.bindings[name] = own[-1].internal
+        # A name this file binds itself otherwise (a plain class, an
+        # assignment): its references mean that, not a scanned model.
+        for stmt in self.tree.body:
+            targets: List[str] = []
+            if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                targets = [stmt.name]
+            elif isinstance(stmt, ast.Assign):
+                targets = [t.id for t in stmt.targets if isinstance(t, ast.Name)]
+            for target in targets:
+                if target in self.candidates and target not in self.bindings:
+                    self.elsewhere.add(target)
 
     def _bind_from(self, node: ast.ImportFrom) -> None:
         source = (node.level, node.module or "")
@@ -200,11 +245,39 @@ class _Rewriter:
                 if group is None:
                     continue
                 bound = name if alias.name == "*" else (alias.asname or name)
-                found = [c for c in group if is_module_file(c.file, self.path, source)]
-                if len(found) == 1:
-                    self.bindings[bound] = found[0].internal
-                elif not found and alias.name != "*":
-                    self.elsewhere.add(bound)
+                internal = self._imported(name, self.path, source, depth=0)
+                if internal is not None:
+                    self.bindings[bound] = internal
+                elif alias.name != "*" and not any(
+                    is_module_file(path, self.path, source) for path in self.trees
+                ):
+                    self.elsewhere.add(bound)  # from a module that isn't scanned
+
+    def _imported(
+        self, name: str, importer: Path, source: Tuple[int, str], depth: int
+    ) -> str | None:
+        """The candidate ``from <source> import name`` means, following re-exports.
+
+        ``from shop.models import Address``, where ``shop/models/__init__.py``
+        does ``from .address import Address``, means the class in
+        ``shop/models/address.py``.
+        """
+        group = self.candidates[name]
+        found = [c for c in group if is_module_file(c.file, importer, source)]
+        if len(found) == 1:
+            return found[0].internal
+        if found or depth > 4:
+            return None
+        modules = [path for path in self.trees if is_module_file(path, importer, source)]
+        if len(modules) != 1:
+            return None
+        for stmt in self.trees[modules[0]].body:
+            if isinstance(stmt, ast.ImportFrom) and any(
+                alias.name == name and alias.asname in (None, name) for alias in stmt.names
+            ):
+                inner = (stmt.level, stmt.module or "")
+                return self._imported(name, modules[0], inner, depth + 1)
+        return None
 
     def name(self, name: str) -> str | None:
         """The internal name ``name`` means here, or None (reported) if it can't tell."""
@@ -223,13 +296,12 @@ class _Rewriter:
         if head in self.module_aliases:
             module = ".".join(p for p in (self.module_aliases[head], rest) if p)
         found = [c for c in group if c.module == module or c.module.endswith("." + module)]
+        if not found:
+            found = [c for c in group if c.app == module]  # Django "app.Model"
         if len(found) == 1:
             return found[0].internal
-        if not found:
-            found = [c for c in group if _app(c.file) == module]  # Django "app.Model"
-            if len(found) == 1:
-                return found[0].internal
-        self._report(name)
+        if found:  # several match: can't tell
+            self._report(name)
         return None
 
     def string(self, value: str, *, django: bool) -> str | None:
@@ -247,7 +319,7 @@ class _Rewriter:
             return self.dotted(f"{module}.{name}")
         if django:
             app = _app(self.path)
-            found = [c for c in self.candidates[name] if _app(c.file) == app]
+            found = [c for c in self.candidates[name] if c.app == app]
             if len(found) == 1:
                 return found[0].internal
         internal = self.bindings.get(name)
@@ -316,6 +388,8 @@ class _Transformer(ast.NodeTransformer):
         self.generic_visit(node)
         if name in _REFERENCE_CALLS:
             django = name != "relationship" and name != "Relationship"
+            if django and not self.r.django:
+                return node  # SQLAlchemy ForeignKey("table.column")
             if node.args:
                 node.args[0] = self._string(node.args[0], django=django)
             for kw in node.keywords:
@@ -338,10 +412,24 @@ class _Transformer(ast.NodeTransformer):
 
 
 class _StringAnnotations(ast.NodeTransformer):
-    """Rewrites quoted forward references (``"Address"``, ``"list[Address]"``)."""
+    """Rewrites quoted forward references (``"Address"``, ``"list[Address]"``).
+
+    ``Literal[...]`` values and ``Annotated[...]`` metadata are text, not
+    references, and stay as written.
+    """
 
     def __init__(self, outer: _Transformer):
         self.outer = outer
+
+    def visit_Subscript(self, node: ast.Subscript) -> ast.AST:
+        kind = _call_name(node.value)
+        if kind == "Literal":
+            return node
+        if kind == "Annotated" and isinstance(node.slice, ast.Tuple) and node.slice.elts:
+            node.slice.elts[0] = self.visit(node.slice.elts[0])
+            return node
+        self.generic_visit(node)
+        return node
 
     def visit_Constant(self, node: ast.Constant) -> ast.AST:
         if not isinstance(node.value, str):

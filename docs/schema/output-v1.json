@@ -46,7 +46,7 @@
       ],
       "properties": {
         "name": {
-          "description": "Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named schema.table; one declared without a schema keeps its bare name. Same-name model classes in different modules are named module.Class when more than one of them is drawn.",
+          "description": "Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named schema.table; one declared without a schema keeps its bare name. Same-name model classes in different modules are named module.Class when more than one of them is built (before --exclude).",
           "type": "string"
         },
         "table_name": {

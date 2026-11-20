@@ -940,7 +940,10 @@ class TestSameNameClasses:
         assert list(entities) == []
         err = capsys.readouterr().err
         assert "model class 'Address' in a/models.py is not drawn" in err
-        assert "the class of that name in b/models.py, which is not a model, replaces it" in err
+        assert (
+            "the class of that name in b/models.py, which is not drawn as a model, replaces it"
+            in err
+        )
 
     def test_the_class_name_excludes_every_same_name_model(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

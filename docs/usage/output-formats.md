@@ -189,7 +189,7 @@ Entity:
 
 | Key | Type | Description |
 |---|---|---|
-| `name` | string | Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named `schema.table` (`core.customer`); one declared without a schema keeps its bare name. Same-name model classes in different modules are named `module.Class` (`billing.models.Address`; the path from the scanned folder when the modules are named alike), only when more than one of them is drawn. Edges refer to entities by it. |
+| `name` | string | Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named `schema.table` (`core.customer`); one declared without a schema keeps its bare name. Same-name model classes in different modules are named `module.Class` (`billing.models.Address`; the path from the scanned folder when the modules are named alike), only when more than one of them is built (before `--exclude`; `--sources` leaves out the others). Edges refer to entities by it. |
 | `table_name` | string | Database table name. |
 | `schema` | string or null | The database schema the table is in: a schema-qualified SQL table (`core.customer` → `core`; a database / catalog part before it is not included), SQLAlchemy / SQLModel `__table_args__ = {"schema": ...}` (also from a mixin or abstract base), a Core `Table(..., schema=...)`, or a declarative base's `metadata = MetaData(schema=...)`. `null` when the source names none. Added in 1.7.0. |
 | `source` | string | One of `sqlmodel`, `sqlalchemy`, `django`, `dataclass`, `pydantic`, `sql`. |

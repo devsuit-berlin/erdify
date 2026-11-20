@@ -197,6 +197,12 @@ EXPECTED_UNLOADABLE = {
             "test_sqlalchemy_relationship_string_with_module_path[3]",
         )
     },
+    **{
+        f"test_namespaces.py::TestSecondReview.test_sqlalchemy_foreign_key_strings{n}": (
+            "one file of a multi-file source (#367): its Base is in another file"
+        )
+        for n in ("_are_never_rewritten[2]", "_are_never_rewritten[3]")
+    },
     "test_schema_identity.py::TestSameNameClasses"
     ".test_a_table_model_extending_its_namesake_is_not_reported[2]": (
         "one file of a multi-file source: its base class is in another file"

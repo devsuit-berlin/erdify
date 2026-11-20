@@ -259,17 +259,21 @@ class ASTDatabaseParser:
     def _apply_display_names(self) -> None:
         """Name same-name model classes ``module.Class``, in entities and references.
 
-        Only a class name that more than one built entity has is qualified: a
-        namesake left out by ``--sources`` or skipped leaves the other its
-        plain name.
+        Only a class name that more than one built entity has is qualified
+        (counted before ``--exclude``): a namesake left out by ``--sources`` or
+        skipped leaves the built one its plain name. A reference to a namesake
+        that isn't built keeps its ``module.Class`` name.
         """
         if not self._display:
             return
-        built = Counter(original_class_name(key) for key in self._entities if key in self._display)
+        built_keys = [key for key in self._entities if key in self._display]
+        built = Counter(original_class_name(key) for key in built_keys)
         display = {
-            internal: shown
-            if built[original_class_name(internal)] > 1
-            else original_class_name(internal)
+            internal: (
+                original_class_name(internal)
+                if internal in built_keys and built[original_class_name(internal)] == 1
+                else shown
+            )
             for internal, shown in self._display.items()
         }
         self._display = display
@@ -325,8 +329,8 @@ class ASTDatabaseParser:
                     continue  # a model left out on purpose (--exclude)
                 print(
                     f"Warning: model class {name!r} in {files} is not drawn: the class of "
-                    f"that name in {drawn}, which is not a model, replaces it. Rename one "
-                    "of them.",
+                    f"that name in {drawn}, which is not drawn as a model, replaces it. "
+                    "Rename one of them.",
                     file=sys.stderr,
                 )
                 continue
