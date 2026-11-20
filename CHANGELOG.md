@@ -7,14 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--exclude` (and `exclude` in `[tool.erdify]`) also matches `schema.table`
+  for a table in a database schema, so `--exclude 'staging.*'` drops a whole
+  schema ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
+
 ### Fixed
 
 - Same-name SQL tables in different schemas (`core.customer`, `mart.customer`)
   are no longer merged into one entity. Each is its own entity named
   `schema.table`; a table name used in one schema only keeps its short name.
   `REFERENCES`, `ALTER TABLE` and `CREATE INDEX` find the table in the schema
-  they name; an unqualified name prefers the referencing table's schema, then
-  a table without a schema
+  they name, never one in another schema; an unqualified name prefers the
+  referencing table's schema, then a table without a schema
   ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 - A foreign key that names a schema (SQLAlchemy
   `ForeignKey("core.customer.id")`) drew no edge; it is now drawn to the table
@@ -33,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` now draws its edge.
 - `--format json`: a SQL DDL foreign key to a table in a schema has
   `foreign_table` `schema.table.column` (was `table.column`).
+- An `--exclude` pattern that matches `schema.table` of a table in a schema
+  (`*.audit*`) now excludes it.
 
 ## [1.7.0] - 2026-11-20
 

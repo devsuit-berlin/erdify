@@ -174,6 +174,16 @@ class TestSqlTables:
         assert [f.name for f in mart.fields if f.is_unique] == []  # type: ignore[attr-defined]
         assert _fk_targets(entities)["mart.customer"] == ["core.customer.id"]
 
+    def test_names_collide_as_the_dialect_folds_them(self, tmp_path: Path) -> None:
+        entities = _sql(
+            tmp_path,
+            "CREATE TABLE core.customer (id INT PRIMARY KEY);\n"
+            "CREATE TABLE MART.CUSTOMER (id INT PRIMARY KEY);\n",
+            "snowflake",
+        )
+
+        assert list(entities) == ["core.customer", "MART.CUSTOMER"]
+
     def test_a_qualified_name_can_be_excluded(self, tmp_path: Path) -> None:
         pytest.importorskip("sqlglot")
         path = tmp_path / "schema.sql"
@@ -184,6 +194,7 @@ class TestSqlTables:
         )
 
         assert list(entities) == ["CORE.CUSTOMER"]
+        assert 'entity "CORE.CUSTOMER" as CORE_CUSTOMER' in generate_plantuml(entities)
 
     def test_a_whole_schema_can_be_excluded(self, tmp_path: Path) -> None:
         pytest.importorskip("sqlglot")
@@ -339,6 +350,61 @@ class Order(Base):
 
         assert list(entities) == ["Order"]
 
+    def test_unqualified_foreign_key_prefers_the_table_without_a_schema(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class Customer(Base):
+    __tablename__ = "customer"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class CoreCustomer(Base):
+    __tablename__ = "customer"
+    __table_args__ = {"schema": "core"}
+    id: Mapped[int] = mapped_column(primary_key=True)
+    base_id: Mapped[int] = mapped_column(ForeignKey("customer.id"))
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        # SQLAlchemy resolves an unqualified "customer" to the default schema.
+        assert _edges(dict(entities)) == [("CoreCustomer", "Customer", "base_id")]
+
+
+class TestMixedSources:
+    def test_python_model_and_sql_table_of_one_name_keep_their_edge(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Post(Base):
+    __tablename__ = "posts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+""",
+            encoding="utf-8",
+        )
+        (tmp_path / "schema.sql").write_text(
+            "CREATE TABLE users (id INT PRIMARY KEY);\n", encoding="utf-8"
+        )
+
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["models.py", "*.sql"])
+
+        assert set(entities) == {"User", "Post", "users"}
+        assert _edges(dict(entities)) == [("Post", "User", "user_id")]
+
 
 class TestSameNameClasses:
     def test_a_hidden_model_is_reported(
@@ -393,6 +459,20 @@ class TestSameNameClasses:
         )
 
         parse_models_directory(tmp_path, sources=["dataclass"])
+
+        assert "Warning" not in capsys.readouterr().err
+
+    def test_an_excluded_class_is_not_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        for package in ("a", "b"):
+            (tmp_path / package).mkdir()
+            (tmp_path / package / "models.py").write_text(
+                "from pydantic import BaseModel\n\n\nclass Address(BaseModel):\n    city: str\n",
+                encoding="utf-8",
+            )
+
+        parse_models_directory(tmp_path, exclude_patterns=["Address"])
 
         assert "Warning" not in capsys.readouterr().err
 

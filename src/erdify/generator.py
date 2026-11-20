@@ -169,6 +169,7 @@ class PlantUMLGenerator(_ERGenerator):
             PlantUML source, from ``@startuml`` to ``@enduml``.
         """
         self._ids = None  # the entities may have changed since the last call
+        self._table_counts = None
         lines = [
             f"@startuml {self.title}",
             '!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>',
@@ -214,12 +215,18 @@ class PlantUMLGenerator(_ERGenerator):
     def _title(self, entity: EntityInfo) -> str:
         """The box title: the table name, ``schema.table`` when the name is in several schemas.
 
-        Same-name tables in different schemas are told apart (#353).
+        Same-name tables in different schemas are told apart (#353): an
+        entity named ``schema.table`` (SQL) keeps that title even when the
+        other table is excluded; otherwise table names are compared without
+        regard to case, as SQL folds unquoted names.
         """
+        qualified = f"{entity.schema}.{entity.table_name}" if entity.schema else None
+        if entity.name == qualified:
+            return entity.name
         if self._table_counts is None:
-            self._table_counts = Counter(e.table_name for e in self.entities.values())
-        if self._table_counts[entity.table_name] > 1 and entity.schema:
-            return f"{entity.schema}.{entity.table_name}"
+            self._table_counts = Counter(e.table_name.lower() for e in self.entities.values())
+        if qualified and self._table_counts[entity.table_name.lower()] > 1:
+            return qualified
         return entity.table_name
 
     def _generate_entity(self, entity: EntityInfo) -> List[str]:
@@ -376,6 +383,7 @@ class MermaidGenerator(_ERGenerator):
             Mermaid ``erDiagram`` source.
         """
         self._ids = None  # the entities may have changed since the last call
+        self._table_counts = None
         lines = ["erDiagram"]
 
         for entity in self.entities.values():

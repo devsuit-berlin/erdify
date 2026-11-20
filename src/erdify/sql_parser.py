@@ -672,9 +672,10 @@ class SqlSchemaParser:
         they stay apart (#353); one of them declared without a schema keeps
         the bare name.
         """
-        counts = Counter(e.table_name for e in self._tables.values())
-        for entity in self._tables.values():
-            if counts[entity.table_name] > 1 and entity.schema:
+        # By table key: CORE.customer and MART.CUSTOMER are one name in Snowflake.
+        counts = Counter(tid[1] for tid in self._tables)
+        for tid, entity in self._tables.items():
+            if counts[tid[1]] > 1 and entity.schema:
                 entity.name = f"{entity.schema}.{entity.table_name}"
         self._entities = {e.name: e for e in self._tables.values()}
 

@@ -178,8 +178,6 @@ class ASTDatabaseParser:
                     continue
                 self._parse_table_class(class_node, source)
 
-        self._warn_replaced_models()
-
         # Entities that are not classes, e.g. SQLAlchemy Core tables (#34, #305).
         for dialect in self._ctx.all_dialects():
             if self.sources is not None and dialect.kind not in self.sources:
@@ -200,6 +198,7 @@ class ASTDatabaseParser:
 
         # Third pass: apply exclude patterns
         self._apply_exclude_patterns()
+        self._warn_replaced_models()
 
         return self._entities, self._enums
 

@@ -221,7 +221,7 @@ class _EdgeBuilder:
         a schema, the table of that name in that schema is meant; when that
         schema has none, a table of that name without a schema, never one in
         another schema (#353). Without one, the only table of that name; of
-        several, the one declared without a schema, else the one in
+        several, the (first) one declared without a schema, else the one in
         ``entity``'s schema. Anything else is ambiguous: no edge.
         """
         if not field.foreign_table:
@@ -238,11 +238,13 @@ class _EdgeBuilder:
             return found[0] if len(found) == 1 else None
         if len(candidates) <= 1:
             return candidates[0] if candidates else None
-        for wanted in (None, entity.schema):
-            matches = [e for e in candidates if e.schema == wanted]
-            if len(matches) == 1:
-                return matches[0]
-        return None
+        # Several without a schema (a Python model and a SQL table drawing the
+        # same table): the first, the Python model, as before schemas counted.
+        unqualified = [e for e in candidates if e.schema is None]
+        if unqualified:
+            return unqualified[0]
+        in_schema = [e for e in candidates if e.schema == entity.schema]
+        return in_schema[0] if len(in_schema) == 1 else None
 
     def _connected_pairs(self) -> "set[frozenset[str]]":
         """Compute entity-name pairs already connected by a foreign-key column."""
