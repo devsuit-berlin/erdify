@@ -11,11 +11,11 @@ name (:func:`~erdify.parser.common.original_class_name`), and the entities are
 renamed to ``module.Class`` (``billing.models.Address``) once they are built.
 
 A reference means the definition in its own file, else the one its imports
-name: ``from billing.models import Address [as A]`` (also an explicit
-re-export, ``from .address import Address``, in a package's
-``__init__.py``), a star import, or an attribute (``models.Address`` after ``from billing import
-models``, ``billing.models.Address``) whose module path ends a candidate's
-module. A string reference (``"Address"``,
+name: ``from billing.models import Address [as A]`` (also re-exported by a
+package's ``__init__.py``: ``from .address import Address`` or ``from
+.address import *``), a star import, or an attribute (``models.Address``
+after ``from billing import models``, ``billing.models.Address``) whose
+module path ends a candidate's module. A string reference (``"Address"``,
 ``relationship("billing.models.Address")``, Django's ``"billing.Address"`` /
 ``ForeignKey("Address")``, model names in any case) is resolved the same
 way, a Django app label by the candidates' ``Meta.app_label`` or app, a bare
@@ -24,8 +24,8 @@ file's app) first. ``Literal[...]`` values, ``Annotated`` metadata and
 ``ForeignKey`` strings outside Django files (SQLAlchemy's
 ``"table.column"``) are not references. A reference several definitions
 could mean is left unresolved (no edge) and reported on stderr; a name
-imported from a module that isn't scanned, or bound by the file itself, is
-not a reference to them.
+imported from a module that isn't scanned, or from a scanned one that binds
+it itself, or bound by the file itself, is not a reference to them.
 """
 
 import ast
@@ -37,8 +37,10 @@ from typing import Dict, List, Mapping, Sequence, Tuple
 from .common import is_module_file, module_name
 from .dialects.django_apps import app_label, app_package
 
-#: :meth:`_Rewriter._imported` for an import several candidates could mean.
+#: :meth:`_Rewriter._imported` results besides an internal name.
 _AMBIGUOUS = "\0ambiguous"
+_OUTSIDE = "\0outside"
+_ABSENT = "\0absent"
 
 #: Calls whose first argument (or ``to=`` / ``argument=``) names a model.
 _REFERENCE_CALLS = {
@@ -212,15 +214,9 @@ class _Rewriter:
                 self.bindings[name] = own[-1].internal
         # A name this file binds itself otherwise (a plain class, an
         # assignment): its references mean that, not a scanned model.
-        for stmt in self.tree.body:
-            targets: List[str] = []
-            if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                targets = [stmt.name]
-            elif isinstance(stmt, ast.Assign):
-                targets = [t.id for t in stmt.targets if isinstance(t, ast.Name)]
-            for target in targets:
-                if target in self.candidates and target not in self.bindings:
-                    self.elsewhere.add(target)
+        for target in _own_names(self.tree.body):
+            if target in self.candidates and target not in self.bindings:
+                self.elsewhere.add(target)
 
     def _bind_from(self, node: ast.ImportFrom) -> None:
         source = (node.level, node.module or "")
@@ -239,25 +235,28 @@ class _Rewriter:
                     continue
                 bound = name if alias.name == "*" else (alias.asname or name)
                 internal = self._imported(name, self.path, source, depth=0)
-                if internal == _AMBIGUOUS:
-                    continue  # reported where it is used
-                if internal is not None:
+                if internal == _OUTSIDE:
+                    if alias.name != "*":
+                        # From a module that isn't scanned, or one that binds
+                        # the name itself: not one of the same-name classes.
+                        self.elsewhere.add(bound)
+                elif internal not in (_AMBIGUOUS, _ABSENT):  # those are reported on use
                     self.bindings[bound] = internal
-                elif alias.name != "*":
-                    self.elsewhere.add(bound)  # not one of the scanned classes
 
-    def _imported(
-        self, name: str, importer: Path, source: Tuple[int, str], depth: int
-    ) -> str | None:
-        """The candidate ``from <source> import name`` means, following re-exports.
-
-        :data:`_AMBIGUOUS` when several candidates could be meant, None when
-        the import names none of them (a module that isn't scanned, or one
-        that binds the name otherwise).
+    def _imported(self, name: str, importer: Path, source: Tuple[int, str], depth: int) -> str:
+        """What ``from <source> import name`` means, following re-exports.
 
         ``from shop.models import Address``, where ``shop/models/__init__.py``
-        does ``from .address import Address``, means the class in
-        ``shop/models/address.py``.
+        does ``from .address import Address`` (or ``from .address import *``),
+        means the class in ``shop/models/address.py``.
+
+        Returns:
+            A candidate's internal name; :data:`_OUTSIDE` when the import names
+            none of them (a module that isn't scanned, or a scanned one that
+            binds the name itself: a class, function or assignment of its
+            own); :data:`_ABSENT` when the scanned module has no such name;
+            :data:`_AMBIGUOUS` when several candidates or modules could be
+            meant, or it is re-exported in a way erdify doesn't follow.
         """
         group = self.candidates[name]
         found = [c for c in group if is_module_file(c.file, importer, source)]
@@ -265,18 +264,32 @@ class _Rewriter:
             return found[0].internal
         if found:
             return _AMBIGUOUS
-        if depth > 4:
-            return None
         modules = [path for path in self.trees if is_module_file(path, importer, source)]
-        if len(modules) != 1:
-            return None
-        for stmt in self.trees[modules[0]].body:
-            if isinstance(stmt, ast.ImportFrom) and any(
-                alias.name == name and alias.asname in (None, name) for alias in stmt.names
-            ):
-                inner = (stmt.level, stmt.module or "")
-                return self._imported(name, modules[0], inner, depth + 1)
-        return None
+        if not modules:
+            return _OUTSIDE
+        if len(modules) > 1 or depth > 4:
+            return _AMBIGUOUS
+        module = modules[0]
+        body = self.trees[module].body
+        if name in _own_names(body):
+            return _OUTSIDE
+        results: List[str] = []
+        for stmt in body:
+            if not isinstance(stmt, ast.ImportFrom):
+                continue
+            inner = (stmt.level, stmt.module or "")
+            if any(alias.name == name and alias.asname in (None, name) for alias in stmt.names):
+                results.append(self._imported(name, module, inner, depth + 1))
+            elif any(alias.name == "*" for alias in stmt.names):
+                result = self._imported(name, module, inner, depth + 1)
+                if result not in (_ABSENT, _OUTSIDE):  # a star of other names
+                    results.append(result)
+        if not results:
+            # Bound some other way (under `if` / `try`, renamed): can't follow.
+            return _AMBIGUOUS if _binds_somehow(body, name) else _ABSENT
+        if _AMBIGUOUS in results or len(set(results)) > 1:
+            return _AMBIGUOUS
+        return results[0]
 
     def name(self, name: str) -> str | None:
         """The internal name ``name`` means here, or None (reported) if it can't tell."""
@@ -318,9 +331,7 @@ class _Rewriter:
             return self.dotted(f"{module}.{name}")
         if django:
             app = (_meta_app_label(owner) if owner is not None else None) or _app(self.path)
-            found = [c for c in self.candidates[name] if c.app == app] or [
-                c for c in self.candidates[name] if _app(c.file) == _app(self.path)
-            ]
+            found = [c for c in self.candidates[name] if c.app == app]
             if len(found) == 1:
                 return found[0].internal
         internal = self.bindings.get(name)
@@ -343,6 +354,30 @@ class _Rewriter:
             self._reported.add(name)
             files = [c.file for c in self.candidates[name]]
             self.result.unresolved.append((self.path, name, files))
+
+
+def _own_names(body: Sequence[ast.stmt]) -> List[str]:
+    """Names a module binds at its top level itself: classes, functions, assignments."""
+    names: List[str] = []
+    for stmt in body:
+        if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.append(stmt.name)
+        elif isinstance(stmt, ast.Assign):
+            names.extend(t.id for t in stmt.targets if isinstance(t, ast.Name))
+    return names
+
+
+def _binds_somehow(body: Sequence[ast.stmt], name: str) -> bool:
+    """Whether a module binds ``name`` anywhere (nested, imported under another name)."""
+    for node in ast.walk(ast.Module(body=list(body), type_ignores=[])):
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == name:
+                return True
+        elif isinstance(node, ast.alias) and (node.asname or node.name) == name:
+            return True
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == name:
+            return True
+    return False
 
 
 def _meta_app_label(node: ast.ClassDef) -> str | None:

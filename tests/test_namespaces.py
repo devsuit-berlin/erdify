@@ -661,3 +661,44 @@ def test_namesake_preference_ignores_a_sql_table_of_the_same_name() -> None:
     }
 
     assert _edges(entities) == [("Order", "shipping.models.Address", "address_id")]
+
+
+class TestReExports:
+    def _layout(self, root: Path, billing_init: str) -> None:
+        _packages(root, "billing", "billing/models", "shipping", "orders")
+        _write(
+            root,
+            {
+                "billing/models/__init__.py": billing_init,
+                "billing/models/address.py": ADDRESS["billing/models.py"],
+                "billing/models/invoice.py": "from pydantic import BaseModel\n\n\n"
+                "class Invoice(BaseModel):\n    number: str\n",
+                "shipping/models.py": ADDRESS["shipping/models.py"],
+                "orders/models.py": "from pydantic import BaseModel\n"
+                "from billing.models import Address\n\n\n"
+                "class Order(BaseModel):\n    address: Address\n",
+            },
+        )
+
+    def _parse(self, root: Path) -> dict[str, EntityInfo]:
+        entities, _ = parse_models_directory(
+            root, include_patterns=["models.py", "billing/models/*.py"]
+        )
+        return dict(entities)
+
+    def test_star_re_exports_are_followed(self, tmp_path: Path) -> None:
+        self._layout(tmp_path, "from .invoice import *\nfrom .address import *\n")
+
+        edges = _edges(self._parse(tmp_path))
+
+        assert edges == [("Order", "billing.models.address.Address", "address")]
+
+    def test_a_re_export_erdify_cannot_follow_is_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self._layout(
+            tmp_path, "try:\n    from .address import Address\nexcept ImportError:\n    pass\n"
+        )
+
+        assert _edges(self._parse(tmp_path)) == []
+        assert "orders/models.py refers to 'Address'" in capsys.readouterr().err

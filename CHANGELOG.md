@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entities, named `module.Class` (`billing.models.Address`) when more than
   one of them is built (before `--exclude`; `--sources` can leave one); they used to be one entity, the class scanned last.
   Each reference goes to the class its file defines or imports (`from ...
-  import X [as Y]`, also an explicit re-export in a package's `__init__.py`, `from pkg
+  import X [as Y]`, also re-exported by a package's `__init__.py` (`from .x
+  import X` or `from .x import *`), `from pkg
   import module`, a star import, `module.X`, a quoted name,
   `relationship("billing.models.X")`); a Django string by its app label
   (`"app.Model"`, any case, `Meta.app_label` included) or, bare, the

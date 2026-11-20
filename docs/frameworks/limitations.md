@@ -367,7 +367,7 @@ dataclass field with such a name is a real field
 | A model class and a same-name class that is not a model (a plain class) in another module | Only the one scanned last is kept, with a warning on stderr |
 | Same-name model classes when one of them extends a namesake (`class Item(Item)`) | Not kept apart: the namesake handling above applies, and the others collapse to the class scanned last |
 | Same-name model classes defined under a module-level `if` / `try` | Not kept apart: only top-level definitions are. Without top-level namesakes the class scanned last is kept, with a warning on stderr; next to them it stays a separate entity under its plain name |
-| A package re-export other than an explicit top-level `from .x import Name` (a star re-export, one under `try` / `if`, a renamed one) | Not followed: a reference imported through it doesn't reach the same-name class, so no edge |
+| A package re-export other than a top-level `from .x import Name` / `from .x import *` (one under `try` / `if`, a renamed one) | Not followed: a reference imported through it is not drawn, and is reported on stderr |
 | A Django models file that gets `models` through a project wrapper (`from core.db import models`), with same-name models in several apps | Its `ForeignKey("Model")` strings are not resolved among them: no edge, no warning |
 | Same-name enum classes in different modules | One enum, the class scanned last; a field of either type uses it |
 | Same-name SQLAlchemy Core `Table` variables in different modules | Drawn once, the first one scanned |
