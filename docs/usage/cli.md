@@ -397,8 +397,8 @@ for edge in diagram_edges(entities):
   a schema. A target found none of these ways, or ambiguous (in several
   schemas, none preferred), gives no edge. Of same-name model classes in
   several modules (`module.Class`) drawing the table, it is the one in the
-  referencing entity's module, else its Django app; when neither tells them
-  apart, there is no edge.
+  referencing entity's module, else its Django app, else another entity
+  drawing that table (a SQL table); with none of these, there is no edge.
 - A detected link table (`is_link_table`) stays an entity: two edges through
   it (`Post ||--o{ post_tag`, `post_tag }o--|| Tag`), or a star from each
   parent for three or more keys. `kind` is `link_table`.

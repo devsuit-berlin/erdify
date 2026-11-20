@@ -500,9 +500,11 @@ class ASTDatabaseParser:
     def _apply_exclude_patterns(self) -> None:
         """Remove excluded entities and strip relationships pointing at them.
 
-        A pattern matches an entity if its case-sensitive glob matches either
-        the class name or the table name. Relationships in surviving entities
-        that target an excluded entity are dropped so no dangling lines remain.
+        A pattern matches an entity if its case-sensitive glob matches its
+        name (``module.Class`` for a same-name class, #367), its table name
+        or, for such a class, its class name. Relationships in surviving
+        entities that target an excluded entity are dropped so no dangling
+        lines remain.
         """
         if not self.exclude_patterns:
             return

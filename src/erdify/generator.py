@@ -209,7 +209,7 @@ class PlantUMLGenerator(_ERGenerator):
         return "\n".join(lines)
 
     def _title(self, entity: EntityInfo) -> str:
-        """The box title: the table name, ``schema.table`` when the name is in several schemas.
+        """The box title: the table name, ``schema.table`` or ``module.Class`` to tell boxes apart.
 
         Same-name tables in different schemas are told apart (#353): an
         entity named ``schema.table`` (SQL) keeps that title even when the

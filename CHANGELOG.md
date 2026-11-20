@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay as written. A reference several of them could mean is not drawn and
   is reported on stderr; one that names none of them is not drawn. A foreign
   key by table name goes to the namesake in the referencing model's module,
-  else its Django app, and is not drawn when that can't tell them apart.
+  else its Django app, else another entity of that table (a SQL table), and
+  is not drawn when none of these decides.
   `--exclude X` still matches each of them, and a Python model still wins
   over a SQL table of its class name. Projects without same-name model
   classes are unchanged

@@ -847,3 +847,22 @@ class TestReleaseAudit:
 
         # Order is in neither module: which Address is meant can't be told.
         assert _edges(dict(entities)) == []
+
+
+def test_namesakes_no_module_decides_fall_back_to_a_sql_table_of_the_name() -> None:
+    from erdify.config import FieldInfo
+
+    def address(name: str, module: str | None, source: str) -> EntityInfo:
+        return EntityInfo(name=name, table_name="address", module=module, source=source)
+
+    fk = FieldInfo("address_id", "int", is_foreign_key=True, foreign_table="address.id")
+    entities = {
+        "billing.models.Address": address("billing.models.Address", "billing.models", "pydantic"),
+        "shipping.models.Address": address(
+            "shipping.models.Address", "shipping.models", "pydantic"
+        ),
+        "address": address("address", None, "sql"),
+        "Order": EntityInfo(name="Order", table_name="order", module="orders.models", fields=[fk]),
+    }
+
+    assert _edges(entities) == [("Order", "address", "address_id")]

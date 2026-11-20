@@ -90,12 +90,15 @@ Entities appear, but the diagram has no lines.
 6. **Same-name classes in several modules?** Two model classes called
    `Address` are separate entities, `billing.models.Address` and
    `shipping.models.Address` (the Mermaid / HTML box names, the JSON `name`,
-   `--exclude`; PlantUML titles a box by its table name, or by
-   `module.Class` when both draw the same table name). A reference to `Address` in a file that neither
-   defines nor imports one of them can't be told apart: it is not drawn, and
-   erdify names the candidates on stderr. Import the class you mean. A model
-   replaced by a same-name class that is not a model is reported on stderr
-   too.
+   `--exclude`; PlantUML titles a box by its table name, or by `module.Class`
+   when they draw the same table name). A reference to `Address` in a file
+   that neither defines nor imports one of them can't be told apart: it is not
+   drawn, and erdify names the candidates on stderr. Import the class you
+   mean. A foreign key by table name (`address_id`) goes to the one in the
+   referencing model's module, else its Django app; from a third module it
+   draws no edge, without a warning, unless another table of that name (a
+   SQL table) is drawn. A model replaced by a same-name class that is not a
+   model is reported on stderr too.
 7. **Pydantic or dataclass models?** They have no keys until you pass
    `--infer-keys` (next section).
 
