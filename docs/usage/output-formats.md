@@ -159,6 +159,10 @@ point for downstream tools that want erdify's model without re-parsing source.
       ]
     }
   ],
+  "edges": [
+    {"from_entity": "Order", "to_entity": "User", "label": "user_id", "kind": "foreign_key",
+     "from_end": {"optional": true, "many": true}, "to_end": {"optional": false, "many": false}}
+  ],
   "enums": [{"name": "Status", "values": ["DRAFT", "PUBLISHED"]}]
 }
 ```
@@ -178,6 +182,7 @@ Top level:
 | `schema_version` | integer | Version of this document shape. Currently `1`. |
 | `title` | string | The diagram title (`--title`). |
 | `entities` | array of entity | One object per table / model. |
+| `edges` | array of edge | The relationship lines the diagram draws, in diagram order: the same edges PlantUML and Mermaid draw. Empty when relationships are disabled (`--no-relationships`). Added in 1.7.0. |
 | `enums` | array of enum | Empty when enums are disabled (`--no-enums`). |
 
 Entity:
@@ -217,6 +222,26 @@ Relationship:
 | `attribute` | string | Attribute name on this entity. |
 | `nullable` | boolean | Always present. `true` when a `one` relationship's annotation admits `None` (`user: User \| None`, `Optional[User]`, `Mapped[Optional["User"]]`); `false` otherwise, including every `many` / `many_to_many` relationship. |
 | `inverse` | string or null | The other side's attribute, when the source names it (SQLAlchemy / SQLModel `back_populates=`); `null` otherwise. Added in 1.4.0. |
+
+Edge:
+
+| Key | Type | Description |
+|---|---|---|
+| `from_entity` | string | Name of the entity the edge starts at: the one holding the foreign-key column, a link table's first parent or the link table itself, or the kept side of a relationship. |
+| `to_entity` | string | Name of the entity the edge ends at. |
+| `from_end` | edge end | How many `from_entity` rows relate to one `to_entity` row. |
+| `to_end` | edge end | How many `to_entity` rows relate to one `from_entity` row. |
+| `label` | string | The foreign-key column or relationship attribute the edge is labelled with. |
+| `kind` | string | `foreign_key` (a foreign-key column), `link_table` (a column of a detected link table: the table stays an entity, with a path of two edges or, for three or more keys, a star) or `relationship` (a declared relationship between entities no column connects; both sides of a bidirectional one are one edge). |
+
+Edge end:
+
+| Key | Type | Description |
+|---|---|---|
+| `optional` | boolean | The minimum is zero (else one). |
+| `many` | boolean | The maximum is many (else one). |
+
+In crow's-foot notation, an end is `||` (exactly one), `o|` (zero or one), `o{` (zero or many) or `|{` (one or many).
 
 Enum:
 

@@ -330,6 +330,33 @@ mmd = MermaidGenerator(entities, enums, title="Custom ERD").generate()
 `SqlSchemaParser.parse()` raises `erdify.SqlDependencyError` when the optional
 `sqlglot` dependency is missing.
 
+### Edges
+
+`diagram_edges(entities)` returns the relationship lines erdify draws, the
+same ones PlantUML and Mermaid render and `--format json` lists under
+[`edges`](output-formats.md#json). A tool built on erdify can draw exactly
+erdify's edges without re-implementing its rules:
+
+```python
+from erdify import diagram_edges
+
+for edge in diagram_edges(entities):
+    # e.g. "Post }o--|| User author_id foreign_key"
+    print(edge.from_entity, edge.glyph, edge.to_entity, edge.label, edge.kind)
+    # Each end: optional (minimum 0) and many (maximum many)
+    print(edge.from_end.optional, edge.from_end.many, edge.to_end.optional, edge.to_end.many)
+```
+
+- One edge per foreign-key column, from the entity holding it.
+- A detected link table (`is_link_table`) stays an entity: two edges through
+  it (`Post ||--o{ post_tag`, `post_tag }o--|| Tag`), or a star from each
+  parent for three or more keys. `kind` is `link_table`.
+- A declared relationship (`kind` `relationship`) is drawn only between
+  entities no column connects, and the two sides of a bidirectional one are
+  one edge.
+- Endpoints are entity names; relationships to an entity that isn't in
+  `entities` (excluded, say) give no edge.
+
 ## What is public
 
 Everything listed in `erdify.__all__` is the public Python API. Within it:
@@ -341,6 +368,8 @@ Everything listed in `erdify.__all__` is the public Python API. Within it:
 | `SqlSchemaParser` | The constructor (`files` positional, options keyword-only) and `parse()`. |
 | `PlantUMLGenerator`, `MermaidGenerator` | The constructor (`entities`, `enums` positional, `title` keyword-only) and `generate()`. |
 | `EntityInfo`, `FieldInfo`, `EnumInfo` | The dataclass fields. New fields may be added with defaults. |
+| `diagram_edges` | The function, its `entities` argument, and which edges it returns: a change to the edges is an output change, as it changes the diagrams. |
+| `Edge`, `EdgeEnd` | The dataclass fields, `Edge.glyph`, `EdgeEnd.token` / `left_token` / `from_token()`. New fields may be added with defaults. |
 | `SqlDependencyError` | The exception type. |
 | `ModelParseError` | The exception type and its `errors` attribute (`(file, message)` pairs). |
 | `JSON_SCHEMA_VERSION` | The current [JSON output](output-formats.md#json) `schema_version`. |
