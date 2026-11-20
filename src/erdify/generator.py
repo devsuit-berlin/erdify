@@ -3,7 +3,7 @@
 import html
 import json
 import re
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_sole_primary_key
 from .edges import diagram_edges
@@ -40,6 +40,7 @@ class _ERGenerator:
         self.include_relationships = include_relationships
         self._ids: Dict[Tuple[str, str], str] | None = None
         self._table_schemas: Dict[str, Set[str | None]] | None = None
+        self._namesakes: Set[str] | None = None
 
     # -- Names in the diagram source (#288) ---------------------------------
     #
@@ -164,6 +165,7 @@ class PlantUMLGenerator(_ERGenerator):
         """
         self._ids = None  # the entities may have changed since the last call
         self._table_schemas = None
+        self._namesakes = None
         lines = [
             f"@startuml {self.title}",
             '!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>',
@@ -214,6 +216,10 @@ class PlantUMLGenerator(_ERGenerator):
         other table is excluded; otherwise a table name is qualified when the
         entities drawing it are in more than one schema (no schema counts as
         one), compared without regard to case, as SQL folds unquoted names.
+        Same-name model classes of several modules (named ``module.Class``,
+        #367) that draw one table name in one schema are titled by that name,
+        so their boxes differ (two Pydantic ``Address`` classes are both
+        ``address`` tables).
         """
         qualified = f"{entity.schema}.{entity.table_name}" if entity.schema else None
         if entity.name == qualified:
@@ -224,6 +230,10 @@ class PlantUMLGenerator(_ERGenerator):
                 self._table_schemas.setdefault(e.table_name.lower(), set()).add(e.schema)
         if qualified and len(self._table_schemas[entity.table_name.lower()]) > 1:
             return qualified
+        if self._namesakes is None:
+            self._namesakes = _namesake_names(self.entities.values())
+        if entity.name in self._namesakes:
+            return entity.name
         return entity.table_name
 
     def _generate_entity(self, entity: EntityInfo) -> List[str]:
@@ -381,6 +391,7 @@ class MermaidGenerator(_ERGenerator):
         """
         self._ids = None  # the entities may have changed since the last call
         self._table_schemas = None
+        self._namesakes = None
         lines = ["erDiagram"]
 
         for entity in self.entities.values():
@@ -459,6 +470,24 @@ class MermaidGenerator(_ERGenerator):
         cleaned = type_str.split(".")[-1]
         token = re.sub(r"[^0-9A-Za-z_]+", "_", cleaned).strip("_")
         return MermaidGenerator._attribute_word(token or "unknown")
+
+
+def _namesake_names(entities: Iterable[EntityInfo]) -> Set[str]:
+    """Names of same-name model classes (``module.Class``) that share a table title.
+
+    Two entities named ``billing.models.Address`` and
+    ``shipping.models.Address`` drawing the table ``address`` in the same
+    schema would otherwise both be titled ``address``.
+    """
+    by_title: Dict[Tuple[str | None, str], List[str]] = {}
+    for e in entities:
+        by_title.setdefault((e.schema, e.table_name.lower()), []).append(e.name)
+    found: Set[str] = set()
+    for names in by_title.values():
+        dotted = [n for n in names if "." in n]
+        if len(dotted) > 1 and len({n.rpartition(".")[2] for n in dotted}) == 1:
+            found.update(dotted)
+    return found
 
 
 def generate_plantuml(
@@ -540,6 +569,9 @@ def generate_json(
     edges: [{from_entity, to_entity, from_end: {optional, many}, to_end, label, kind}],
     enums:
     [{name, values, used_by}]}``. Downstream tools can consume this without re-parsing.
+    ``enums`` lists every parsed enum; ``used_by`` names the entities with a
+    field of it, in entity order (:func:`enum_users`), and is empty for an
+    enum the diagrams don't draw.
     ``schema_version`` is :data:`JSON_SCHEMA_VERSION`; consumers should ignore
     keys they do not know. The full schema is documented in
     ``docs/usage/output-formats.md`` and published as a JSON Schema,

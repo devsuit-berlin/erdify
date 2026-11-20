@@ -46,7 +46,7 @@
       ],
       "properties": {
         "name": {
-          "description": "Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named schema.table; one declared without a schema keeps its bare name. Same-name model classes in different modules are named module.Class when more than one of them is built (before --exclude).",
+          "description": "Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named schema.table; one declared without a schema keeps its bare name. Same-name model classes in different modules are named module.Class (the path from the scanned folder when the modules are named alike) when more than one of them is built (before --exclude).",
           "type": "string"
         },
         "table_name": {
@@ -101,7 +101,7 @@
       "properties": {
         "name": { "description": "Column / attribute name.", "type": "string" },
         "type": {
-          "description": "Type as written in the source (or the mapped Python type).",
+          "description": "Type as written in the source (or the mapped Python type); a same-name model class drawn as module.Class is written so here too.",
           "type": "string"
         },
         "primary_key": { "description": "Part of the primary key.", "type": "boolean" },

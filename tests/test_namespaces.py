@@ -815,3 +815,35 @@ def test_a_bare_django_name_is_not_resolved_by_the_files_directory(
 
     assert _edges(dict(entities)) == []
     assert "billing/other.py refers to 'Profile'" in capsys.readouterr().err
+
+
+class TestReleaseAudit:
+    """Cases the 1.9.0 docs audit found (#367)."""
+
+    @pytest.fixture
+    def root(self, tmp_path: Path) -> Path:
+        _packages(tmp_path, "billing", "shipping", "orders")
+        _write(tmp_path, ADDRESS)
+        return tmp_path
+
+    def test_plantuml_titles_namesakes_of_one_table_by_their_name(self, root: Path) -> None:
+        entities, _ = parse_models_directory(root)
+
+        plantuml = generate_plantuml(dict(entities))
+
+        assert 'entity "billing.models.Address" as billing_models_Address {' in plantuml
+        assert 'entity "shipping.models.Address" as shipping_models_Address {' in plantuml
+
+    def test_a_key_that_cannot_tell_the_namesakes_apart_draws_no_edge(self, root: Path) -> None:
+        _write(
+            root,
+            {
+                "orders/models.py": "from pydantic import BaseModel\n\n\n"
+                "class Order(BaseModel):\n    id: int\n    address_id: int\n"
+            },
+        )
+
+        entities, _ = parse_models_directory(root, infer_keys=True)
+
+        # Order is in neither module: which Address is meant can't be told.
+        assert _edges(dict(entities)) == []

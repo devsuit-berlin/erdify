@@ -46,7 +46,8 @@ class ASTDatabaseParser:
     Args:
         database_path: Directory to scan for model files.
         exclude_patterns: Case-sensitive globs; an entity is dropped if one
-            matches its class name or table name.
+            matches its name (``module.Class`` for same-name classes, #367),
+            its class name or its table name.
         infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
             key from ``id`` and a foreign key from ``<x>_id``.
         sources: Restrict which model kinds become entities (subset of

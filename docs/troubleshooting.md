@@ -88,8 +88,10 @@ Entities appear, but the diagram has no lines.
    stderr when two SQL tables differ only in quoting; a SQL table hidden by a
    Python model of the same name is dropped without a warning.
 6. **Same-name classes in several modules?** Two model classes called
-   `Address` are drawn as `billing.models.Address` and
-   `shipping.models.Address`. A reference to `Address` in a file that neither
+   `Address` are separate entities, `billing.models.Address` and
+   `shipping.models.Address` (the Mermaid / HTML box names, the JSON `name`,
+   `--exclude`; PlantUML titles a box by its table name, or by
+   `module.Class` when both draw the same table name). A reference to `Address` in a file that neither
    defines nor imports one of them can't be told apart: it is not drawn, and
    erdify names the candidates on stderr. Import the class you mean. A model
    replaced by a same-name class that is not a model is reported on stderr
