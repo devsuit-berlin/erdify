@@ -29,6 +29,11 @@ CONFIG_KEYS = frozenset(
 )
 
 
+class ConfigError(ValueError):
+    """An invalid erdify setting: a ``[tool.erdify]`` value of the wrong type,
+    or an unknown setting passed to :func:`erdify.load_project`."""
+
+
 def load_config(input_path: Path) -> Tuple[Dict[str, Any], Path | None]:
     """Find the nearest ``pyproject.toml`` and return its ``[tool.erdify]`` table.
 
@@ -37,6 +42,9 @@ def load_config(input_path: Path) -> Tuple[Dict[str, Any], Path | None]:
     ``base_dir`` is that file's directory (used to resolve relative paths), or
     ``({}, None)`` if no ``pyproject.toml`` exists. Unknown keys are dropped with
     a warning.
+
+    Raises:
+        ConfigError: A key has a value of the wrong type.
     """
     start = input_path.resolve()
     if start.is_file():
@@ -69,10 +77,6 @@ def _validate(table: Dict[str, Any], source: Path) -> Dict[str, Any]:
 
     for str_key in ("title", "output", "sql_dialect"):
         if str_key in clean and not isinstance(clean[str_key], str):
-            print(
-                f"Error: [tool.erdify] '{str_key}' must be a string in {source}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise ConfigError(f"[tool.erdify] '{str_key}' must be a string in {source}")
 
     return clean

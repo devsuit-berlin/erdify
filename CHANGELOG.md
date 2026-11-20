@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with its two edges (or a star), as in the diagrams. The JSON
   `schema_version` stays `1`: adding a key is not a shape change. The
   diagrams don't change.
+- `erdify.load_project(path, **overrides)` resolves the settings for a path
+  exactly like the `erdify` command (explicit option > `[tool.erdify]` >
+  default, boolean flags merged by OR, config paths relative to the
+  `pyproject.toml`) and parses the models; `resolve_settings()` returns just
+  the `Settings`, which name the `pyproject.toml` they read
+  ([#360](https://github.com/devsuit-berlin/erdify/issues/360)). The CLI
+  uses them, so a tool built on erdify reads the same model set `erdify`
+  draws. An invalid `[tool.erdify]` value raises the new `ConfigError`; the
+  CLI's message and exit code are unchanged.
 
 ### Output changes
 
