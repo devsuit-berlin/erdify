@@ -29,6 +29,12 @@ CONFIG_KEYS = frozenset(
 )
 
 
+class ConfigError(ValueError):
+    """An invalid erdify setting: a ``[tool.erdify]`` value, or a
+    :func:`erdify.load_project` / :func:`erdify.resolve_settings` argument, of
+    the wrong type."""
+
+
 def load_config(input_path: Path) -> Tuple[Dict[str, Any], Path | None]:
     """Find the nearest ``pyproject.toml`` and return its ``[tool.erdify]`` table.
 
@@ -37,6 +43,9 @@ def load_config(input_path: Path) -> Tuple[Dict[str, Any], Path | None]:
     ``base_dir`` is that file's directory (used to resolve relative paths), or
     ``({}, None)`` if no ``pyproject.toml`` exists. Unknown keys are dropped with
     a warning.
+
+    Raises:
+        ConfigError: A key has a value of the wrong type.
     """
     start = input_path.resolve()
     if start.is_file():
@@ -67,12 +76,18 @@ def _validate(table: Dict[str, Any], source: Path) -> Dict[str, Any]:
         else:
             print(f"Warning: unknown [tool.erdify] key '{key}' in {source}", file=sys.stderr)
 
-    for str_key in ("title", "output", "sql_dialect"):
+    for str_key in ("title", "output", "inject", "sql_dialect"):
         if str_key in clean and not isinstance(clean[str_key], str):
-            print(
-                f"Error: [tool.erdify] '{str_key}' must be a string in {source}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise ConfigError(f"[tool.erdify] '{str_key}' must be a string in {source}")
+    # A list setting given as one string means a list of that one string;
+    # anything else must be a list of strings.
+    for list_key in ("sources", "exclude", "exclude_paths", "include", "base_classes", "format"):
+        value = clean.get(list_key)
+        if isinstance(value, str):
+            clean[list_key] = [value]
+        elif value is not None and not (
+            isinstance(value, list) and all(isinstance(item, str) for item in value)
+        ):
+            raise ConfigError(f"[tool.erdify] '{list_key}' must be a list of strings in {source}")
 
     return clean

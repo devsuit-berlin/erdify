@@ -99,6 +99,7 @@ erdify/
 │   ├── edges.py         # Public edge model: the relationship lines every format draws
 │   ├── generator.py     # PlantUML / Mermaid / JSON / HTML generation
 │   ├── inject.py        # Markdown embedding (--inject)
+│   ├── project.py       # Settings resolution + parsing like the CLI (load_project)
 │   ├── pyproject.py     # [tool.erdify] config loading
 │   ├── parser/          # AST parsing of Python models
 │   │   ├── core.py          # ASTDatabaseParser + parse_models_directory / scan_report

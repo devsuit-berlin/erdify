@@ -123,6 +123,8 @@ strict = true                       # fail if any model/.sql file cannot be pars
 sql_dialect = "postgres"            # required for CREATE TYPE … AS ENUM support
 ```
 
+A list setting may also be one string (`exclude = "audit_log"`).
+
 With that in place, `erdify .` uses these settings. Precedence is **explicit CLI
 flag > `[tool.erdify]` value > built-in default**. (Boolean flags merge by OR: a
 flag enabled in config can be added to on the CLI but not turned off there.)
@@ -292,6 +294,45 @@ Path("erd.puml").write_text(diagram)
 `generate_plantuml` and return the [other output formats](output-formats.md) as a
 string.
 
+### Load a project like the CLI
+
+`load_project` resolves the settings for a path exactly like the `erdify`
+command (explicit option > `[tool.erdify]` > default, `output` / `inject` from
+the config relative to the `pyproject.toml`) and parses the models. A tool
+built on erdify reads the same model set `erdify` would draw, and honours the
+project's `[tool.erdify]` table without copying its rules:
+
+```python
+from pathlib import Path
+from erdify import load_project
+
+project = load_project(Path("."))                     # like `erdify .`
+project = load_project(Path("."), include=["*.py"])   # like `erdify . --include '*.py'`
+
+print(project.settings.pyproject)  # the pyproject.toml the settings come from, or None
+print(project.settings.title, project.settings.formats)
+for name, entity in project.entities.items():
+    print(name, entity.table_name)
+```
+
+- The keyword arguments are named like the `[tool.erdify]` keys (`title`,
+  `include`, `exclude`, `sql_dialect`, `format`, `infer_keys`, ...); an
+  unknown name is a `TypeError`. `None` (the default) means "not given": the
+  config's value, else the default, applies.
+- A boolean `True` turns a setting on and `False` turns it off, also when the
+  config turns it on (on the command line a flag can only be added).
+- `resolve_settings(path, ...)` takes the same arguments and returns just the
+  `Settings` (list settings as tuples), without parsing.
+- Errors are exceptions: `FileNotFoundError` (no such input), `ConfigError` (a
+  `[tool.erdify]` value or an argument of the wrong type, e.g. a string where
+  a list of strings belongs, a flag that isn't a `bool`), `SqlDependencyError` (`.sql` files without
+  `erdify[sql]`), `ModelParseError` (`strict` and a file that fails to parse).
+  Warnings (an unknown config key or format, a file that fails to parse
+  without `strict`) go to stderr, as on the command line; the CLI's hint
+  about a skipped `models/` package does not.
+- The CLI-only steps stay in the CLI: `allow_empty` (an empty result is not an
+  error here; check `project.entities`), `--check` and the output files.
+
 ## Programmatic Access
 
 For lower-level control, use the parser and generator classes directly:
@@ -370,6 +411,9 @@ Everything listed in `erdify.__all__` is the public Python API. Within it:
 | `EntityInfo`, `FieldInfo`, `EnumInfo` | The dataclass fields. New fields may be added with defaults. |
 | `diagram_edges` | The function, its `entities` argument, and which edges it returns: a change to the edges is an output change, as it changes the diagrams. |
 | `Edge`, `EdgeEnd` | The dataclass fields, `Edge.glyph`, `EdgeEnd.left_token` / `right_token`. New fields may be added with defaults; new `Edge.kind` values (`EdgeKind`) may be added in a minor release. |
+| `load_project`, `resolve_settings` | The functions, their `path` argument and keyword-only arguments (the `[tool.erdify]` keys; a new key adds one), and that they resolve settings as the CLI does. |
+| `Project`, `Settings` | The dataclass fields, read-only: build them with `load_project` / `resolve_settings`, not yourself. New fields may be added. |
+| `ConfigError` | The exception type (a `ValueError`). |
 | `SqlDependencyError` | The exception type. |
 | `ModelParseError` | The exception type and its `errors` attribute (`(file, message)` pairs). |
 | `JSON_SCHEMA_VERSION` | The current [JSON output](output-formats.md#json) `schema_version`. |

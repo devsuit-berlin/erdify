@@ -14,6 +14,8 @@ from .generator import (
     generate_plantuml,
 )
 from .parser import ASTDatabaseParser, ModelParseError, parse_models_directory
+from .project import Project, Settings, load_project, resolve_settings
+from .pyproject import ConfigError
 from .sql_parser import SqlDependencyError, SqlSchemaParser
 
 try:
@@ -37,6 +39,12 @@ __all__ = [
     "ModelParseError",
     "SqlSchemaParser",
     "SqlDependencyError",
+    # Project (resolve settings and parse like the CLI)
+    "load_project",
+    "resolve_settings",
+    "Project",
+    "Settings",
+    "ConfigError",
     # Generator
     "PlantUMLGenerator",
     "generate_plantuml",

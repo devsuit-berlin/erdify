@@ -261,12 +261,22 @@ parser/    ──►  config.py (IR)  ──►  generator.py
 
 - **`cli.py`** — argparse parser (`build_parser()`, also reused by the docs
   script) + `main()`. The `FORMATS` dict maps format name → (generator, extension).
-  Settings precedence is **explicit CLI flag > `[tool.erdify]` config > default**,
-  implemented by the `pick()` helper; boolean flags merge by OR.
+  `main()` resolves its settings and parses through `project.py`, then writes
+  the output, `--check`s and `--inject`s.
+
+- **`project.py`** — the public `resolve_settings()` / `load_project()`: the one
+  implementation of how a path + options + `[tool.erdify]` become settings and a
+  model set. Precedence is **explicit CLI flag / keyword argument >
+  `[tool.erdify]` config > default**; `None` means "not given", so the CLI
+  passes an omitted flag as `None` and flags merge by OR there, while an API
+  caller can pass `False`; `output` / `inject` from the config resolve from the
+  `pyproject.toml` folder. A new `[tool.erdify]` key needs its keyword in
+  `resolve_settings` / `load_project` and the CLI call (a test checks). Tools built on erdify use it
+  to read the same models the CLI draws.
 
 - **`pyproject.py`** — `load_config()` finds the nearest `pyproject.toml`
-  (searching upward from the input) and reads/validates the `[tool.erdify]` table.
-  Recognized keys mirror the CLI options.
+  (searching upward from the input) and reads/validates the `[tool.erdify]` table
+  (an invalid value raises `ConfigError`). Recognized keys mirror the CLI options.
 
 - **`inject.py`** — `--inject` embeds the diagram into a Markdown file between
   `<!-- erdify:start -->` / `<!-- erdify:end -->` markers; only that region is

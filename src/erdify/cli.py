@@ -3,13 +3,14 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 from . import __version__
 from .generator import generate_html, generate_json, generate_mermaid, generate_plantuml
 from .inject import MarkerError, current_region, inject, render_region
-from .parser import MODEL_SOURCES, parse_models_directory, scan_report
-from .pyproject import load_config
+from .parser import MODEL_SOURCES, scan_report
+from .project import _resolve, parse_settings
+from .pyproject import ConfigError
 
 #: Supported output formats: name -> (generator function, file extension).
 FORMATS = {
@@ -202,6 +203,33 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _overrides(args: argparse.Namespace) -> Dict[str, Any]:
+    """The settings the command line gives, by ``[tool.erdify]`` key; None: not given.
+
+    A ``store_true`` flag that isn't given is None, not False, so the config
+    can still turn it on: flags merge by OR on the command line.
+    """
+    return {
+        "title": args.title,
+        "sources": args.sources,
+        "sql_dialect": args.sql_dialect,
+        "exclude": args.exclude,
+        "exclude_paths": args.exclude_paths,
+        "include": args.include,
+        "base_classes": args.base_classes,
+        "infer_keys": args.infer_keys or None,
+        "django_raw_types": args.django_raw_types or None,
+        "no_enums": args.no_enums or None,
+        "no_relationships": args.no_relationships or None,
+        "no_default_excludes": args.no_default_excludes or None,
+        "allow_empty": args.allow_empty or None,
+        "strict": args.strict or None,
+        "output": args.output,
+        "inject": args.inject,
+        "format": args.format,
+    }
+
+
 def main() -> int:
     """Main entry point for the CLI."""
     parser = build_parser()
@@ -213,57 +241,21 @@ def main() -> int:
         return 1
 
     # Resolve settings: explicit CLI flag > [tool.erdify] in pyproject.toml > default.
-    config, base_dir = load_config(args.input)
-
-    def pick(cli_value: Any, key: str, default: Any) -> Any:
-        return cli_value if cli_value is not None else config.get(key, default)
-
-    title = pick(args.title, "title", "Database ERD")
-    sources = pick(args.sources, "sources", None)
-    sql_dialect = pick(args.sql_dialect, "sql_dialect", None)
-    exclude = pick(args.exclude, "exclude", [])
-    exclude_paths = pick(args.exclude_paths, "exclude_paths", [])
-    include = pick(args.include, "include", ["models.py"])
-    base_classes = pick(args.base_classes, "base_classes", [])
-    # Hint only when the user left discovery at the default (neither CLI nor config).
-    include_is_default = args.include is None and "include" not in config
-    # Boolean flags merge by OR (a flag enabled in config or on the CLI is enabled).
-    infer_keys = args.infer_keys or bool(config.get("infer_keys", False))
-    django_raw_types = args.django_raw_types or bool(config.get("django_raw_types", False))
-    no_enums = args.no_enums or bool(config.get("no_enums", False))
-    no_relationships = args.no_relationships or bool(config.get("no_relationships", False))
-    no_default_excludes = args.no_default_excludes or bool(config.get("no_default_excludes", False))
-    allow_empty = args.allow_empty or bool(config.get("allow_empty", False))
-    strict = args.strict or bool(config.get("strict", False))
-
-    # Output: CLI path (relative to cwd) > config path (relative to the project) > stdout.
-    output_path: Path | None = args.output
-    if output_path is None and "output" in config:
-        output_path = Path(config["output"])
-        if not output_path.is_absolute() and base_dir is not None:
-            output_path = base_dir / output_path
-
-    # --inject target: CLI flag > config; a relative config path resolves from
-    # the project root, like output.
-    inject_path: Path | None = Path(args.inject) if args.inject is not None else None
-    if inject_path is None and "inject" in config:
-        inject_path = Path(config["inject"])
-        if not inject_path.is_absolute() and base_dir is not None:
-            inject_path = base_dir / inject_path
-
-    # Resolve output format(s); a config value may be a single string or a list.
-    # Default is mermaid when injecting into markdown, plantuml otherwise.
-    _fmt_default = "mermaid" if inject_path is not None else "plantuml"
-    formats = pick(args.format, "format", [_fmt_default])
-    if isinstance(formats, str):
-        formats = [formats]
-    valid_formats = []
-    for fmt in formats:
-        if fmt in FORMATS:
-            valid_formats.append(fmt)
-        else:
-            print(f"Warning: unknown format '{fmt}', ignoring", file=sys.stderr)
-    formats = valid_formats or [_fmt_default]
+    try:
+        settings, include_is_default = _resolve(args.input, _overrides(args))
+    except ConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    title = settings.title
+    exclude_paths = list(settings.exclude_paths)
+    include = list(settings.include)
+    no_enums = settings.no_enums
+    no_relationships = settings.no_relationships
+    no_default_excludes = settings.no_default_excludes
+    allow_empty = settings.allow_empty
+    output_path = settings.output
+    inject_path = settings.inject
+    formats = list(settings.formats)
 
     if args.check and output_path is None and inject_path is None:
         print(
@@ -284,22 +276,9 @@ def main() -> int:
             print("Error: --inject cannot embed the html format", file=sys.stderr)
             return 2
 
-    # Parse models
+    # Parse models; the models.py-package hint only at the default --include.
     try:
-        entities, enums = parse_models_directory(
-            args.input,
-            exclude_patterns=exclude,
-            infer_keys=infer_keys,
-            sources=sources,
-            django_raw_types=django_raw_types,
-            exclude_paths=exclude_paths,
-            use_default_excludes=not no_default_excludes,
-            include_patterns=include,
-            hint_unmatched_model_packages=include_is_default,
-            sql_dialect=sql_dialect,
-            base_classes=base_classes,
-            strict=strict,
-        )
+        entities, enums = parse_settings(settings, hint_unmatched_model_packages=include_is_default)
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)
         return 1

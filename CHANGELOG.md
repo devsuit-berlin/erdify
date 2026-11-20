@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with its two edges (or a star), as in the diagrams. The JSON
   `schema_version` stays `1`: adding a key is not a shape change. The
   diagrams don't change.
+- `erdify.load_project(path, ...)` resolves the settings for a path exactly
+  like the `erdify` command (explicit option > `[tool.erdify]` > default,
+  config paths relative to the `pyproject.toml`) and parses the models; its
+  keyword arguments are the `[tool.erdify]` keys, and a boolean `False` turns
+  off a flag the config turns on. `resolve_settings()` returns just the
+  `Settings`, which name the `pyproject.toml` they come from
+  ([#360](https://github.com/devsuit-berlin/erdify/issues/360)). The CLI
+  uses them, so a tool built on erdify reads the same model set `erdify`
+  draws. An invalid `[tool.erdify]` value raises the new `ConfigError`; the
+  CLI's message and exit code are unchanged.
 
 ### Output changes
 
@@ -38,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entity. Regenerate a committed JSON file once if you gate CI on `--check`.
 - `--format json` gains the top-level `edges` key. Regenerate a committed
   JSON file once if you gate CI on `--check`.
+
+### Fixed
+
+- A `[tool.erdify]` list setting (`include`, `exclude`, `exclude_paths`,
+  `sources`, `base_classes`) given as one string is read as a list of that
+  string: `exclude = "AuditLog"` excludes `AuditLog`. Before, the string was
+  read letter by letter, so it matched nothing. A value of another wrong type
+  (`inject = 42`, `format = 42`, `exclude = [1]`) is reported as
+  `Error: [tool.erdify] '<key>' must be ...` (exit 1) instead of crashing
+  with a traceback.
 
 ## [1.6.0] - 2026-11-13
 
