@@ -65,6 +65,9 @@ def test_output_matches_the_schema(source: Any) -> None:
             assert set(field) == _properties("field")
         for relationship in entity["relationships"]:
             assert set(relationship) == _properties("relationship")
+    for edge in document["edges"]:
+        assert set(edge) == _properties("edge")
+        assert set(edge["from_end"]) == set(edge["to_end"]) == _properties("edge_end")
     for enum in document["enums"]:
         assert set(enum) == _properties("enum")
 
@@ -102,6 +105,8 @@ def test_docs_list_the_schema_keys() -> None:
         "Entity": _properties("entity"),
         "Field": _properties("field"),
         "Relationship": _properties("relationship"),
+        "Edge": _properties("edge"),
+        "Edge end": _properties("edge_end"),
         "Enum": _properties("enum"),
     }
 

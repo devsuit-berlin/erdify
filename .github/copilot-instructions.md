@@ -248,9 +248,16 @@ parser/    ──►  config.py (IR)  ──►  generator.py
   framework-agnostic intermediate representation that decouples parsing from
   rendering. The parser produces it; the generators consume it.
 
+- **`edges.py`** — the public edge model: `diagram_edges()` turns the IR into
+  the `Edge`s every format draws (foreign keys, link-table paths / stars,
+  declared relationships with both sides of a bidirectional one merged). It
+  is the single implementation of edge cardinality and pairing: PlantUML and
+  Mermaid render its edges, and `--format json` lists them.
+
 - **`generator.py`** — `_ERGenerator` base with `PlantUMLGenerator` and
   `MermaidGenerator` subclasses, plus the `generate_plantuml/mermaid/json/html`
-  functions. All four formats render from the same IR.
+  functions. All four formats render from the same IR; relationship lines come
+  from `edges.py`.
 
 - **`cli.py`** — argparse parser (`build_parser()`, also reused by the docs
   script) + `main()`. The `FORMATS` dict maps format name → (generator, extension).

@@ -20,11 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tests compare `schema` with SQLAlchemy's `Table.schema` and `app` with
   Django's `_meta.app_label`. The JSON `schema_version` stays `1`: adding a
   key is not a shape change. The diagrams don't change.
+- A public edge model: `erdify.diagram_edges(entities)` returns the
+  relationship lines erdify draws as `Edge` objects (both entities, each
+  end's `EdgeEnd` with `optional` / `many`, the label and the kind (`EdgeKind`):
+  `foreign_key`, `link_table` or `relationship`), and `--format json` lists
+  them in a new top-level `edges` key
+  ([#359](https://github.com/devsuit-berlin/erdify/issues/359)). PlantUML and
+  Mermaid now draw their relationship lines from it, so a tool built on
+  erdify gets exactly the same edges. A detected link table stays an entity
+  with its two edges (or a star), as in the diagrams. The JSON
+  `schema_version` stays `1`: adding a key is not a shape change. The
+  diagrams don't change.
 
 ### Output changes
 
 - `--format json` gains the `schema`, `module` and `app` keys on every
   entity. Regenerate a committed JSON file once if you gate CI on `--check`.
+- `--format json` gains the top-level `edges` key. Regenerate a committed
+  JSON file once if you gate CI on `--check`.
 
 ## [1.6.0] - 2026-11-13
 

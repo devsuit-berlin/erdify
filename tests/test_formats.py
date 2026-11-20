@@ -23,7 +23,7 @@ class TestJsonFormat:
         data = json.loads(generate_json(entities, enums))
         post = next(e for e in data["entities"] if e["name"] == "Post")
 
-        assert set(data) == {"schema_version", "title", "entities", "enums"}
+        assert set(data) == {"schema_version", "title", "entities", "edges", "enums"}
         assert set(post) == {
             "name",
             "table_name",

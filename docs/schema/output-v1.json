@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://erdify.devsuit.io/schema/output-v1.json",
   "title": "erdify JSON output, schema_version 1",
-  "description": "The document `erdify --format json` writes. Documented in https://erdify.devsuit.io/usage/output-formats/#json. Keys added later are allowed: consumers must ignore keys they do not know. New `source` and relationship `type` values may be added in a minor release; this file is updated in place then.",
+  "description": "The document `erdify --format json` writes. Documented in https://erdify.devsuit.io/usage/output-formats/#json. Keys added later are allowed: consumers must ignore keys they do not know. New `source`, relationship `type` and edge `kind` values may be added in a minor release; this file is updated in place then.",
   "type": "object",
-  "required": ["schema_version", "title", "entities", "enums"],
+  "required": ["schema_version", "title", "entities", "edges", "enums"],
   "properties": {
     "schema_version": {
       "description": "Version of this document shape.",
@@ -18,6 +18,11 @@
       "description": "One object per table / model.",
       "type": "array",
       "items": { "$ref": "#/$defs/entity" }
+    },
+    "edges": {
+      "description": "The relationship lines the diagram draws, in diagram order. Empty when relationships are disabled (--no-relationships).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
     },
     "enums": {
       "description": "Empty when enums are disabled (--no-enums).",
@@ -135,6 +140,41 @@
           "description": "The other side's attribute, when the source names it (back_populates=).",
           "type": ["string", "null"]
         }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from_entity", "to_entity", "from_end", "to_end", "label", "kind"],
+      "properties": {
+        "from_entity": {
+          "description": "Name of the entity the edge starts at.",
+          "type": "string"
+        },
+        "to_entity": { "description": "Name of the entity the edge ends at.", "type": "string" },
+        "from_end": {
+          "description": "How many from_entity rows relate to one to_entity row.",
+          "$ref": "#/$defs/edge_end"
+        },
+        "to_end": {
+          "description": "How many to_entity rows relate to one from_entity row.",
+          "$ref": "#/$defs/edge_end"
+        },
+        "label": {
+          "description": "The foreign-key column or relationship attribute the edge is labelled with.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the edge stands for.",
+          "enum": ["foreign_key", "link_table", "relationship"]
+        }
+      }
+    },
+    "edge_end": {
+      "type": "object",
+      "required": ["optional", "many"],
+      "properties": {
+        "optional": { "description": "The minimum is zero (else one).", "type": "boolean" },
+        "many": { "description": "The maximum is many (else one).", "type": "boolean" }
       }
     },
     "enum": {
