@@ -236,11 +236,16 @@ def _collect(registry: Apps, modules: set[str], classes: list[type], labels: lis
         checks = _system_checks(registry, labels)
     except FieldError as exc:
         raise Rejected(f"FieldError: {exc}") from exc
+
+    def drawn(cls: type[enum.Enum]) -> tuple[str, ...]:
+        return tuple(m for m in cls.__members__ if m != "__empty__")
+
     enums = {
-        name: members
-        for name, cls in enum_keys(c for c in classes if issubclass(c, enum.Enum)).items()
+        name: drawn(cls)
         # A base without members (a project's own choices base) has nothing to draw.
-        if (members := tuple(m for m in cls.__members__ if m != "__empty__"))
+        for name, cls in enum_keys(
+            c for c in classes if issubclass(c, enum.Enum) and drawn(c)
+        ).items()
     }
     return Schema(tables=tables, enums=enums, checks=tuple(checks))
 

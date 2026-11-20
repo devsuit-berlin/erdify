@@ -64,6 +64,9 @@ def test_same_model_set_as_the_cli(source: Any, capsys: pytest.CaptureFixture[st
     if source.base_classes:
         argv += ["--base-classes", *source.base_classes]
         overrides["base_classes"] = source.base_classes
+    if source.exclude_paths:
+        argv += ["--exclude-paths", *source.exclude_paths]
+        overrides["exclude_paths"] = source.exclude_paths
 
     assert _project_json(source.path, **overrides) == _cli_json(argv, capsys)
 

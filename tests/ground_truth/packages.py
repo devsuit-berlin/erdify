@@ -41,9 +41,9 @@ def module_names(root: Path) -> list[str]:
 def importable(root: Path) -> Iterator[list[str]]:
     """Make the packages under ``root`` importable; yield their module names.
 
-    Modules of the same top-level names already imported are set aside and
-    restored afterwards, and the source's modules are removed again, so every
-    load imports a fresh copy.
+    A package named like a module Python can already import is refused (it
+    would shadow it). The source's modules are removed again afterwards, so
+    every load imports a fresh copy.
     """
     names = module_names(root)
     tops = {name.split(".")[0] for name in names}
@@ -56,7 +56,6 @@ def importable(root: Path) -> Iterator[list[str]]:
     def ours(module: str) -> bool:
         return module.split(".")[0] in tops
 
-    saved = {name: sys.modules.pop(name) for name in list(sys.modules) if ours(name)}
     sys.path.insert(0, str(root))
     importlib.invalidate_caches()
     try:
@@ -65,18 +64,23 @@ def importable(root: Path) -> Iterator[list[str]]:
         sys.path.remove(str(root))
         for name in [name for name in sys.modules if ours(name)]:
             del sys.modules[name]
-        sys.modules.update(saved)
         importlib.invalidate_caches()
 
 
 def enum_keys(classes: Iterable[type]) -> dict[str, type]:
-    """Enums by class name; two of the same name are an error (#371, not namespaced)."""
+    """Enums by class name; two of the same name are an error.
+
+    erdify draws same-name enum classes as one (see "Same-name enum classes
+    in different modules" in ``docs/frameworks/limitations.md``), so a source
+    with two would compare by chance. This applies to any source, enums
+    nested in two models included; pass only the enums that are drawn.
+    """
     found: dict[str, type] = {}
     for cls in classes:
         if cls.__name__ in found and found[cls.__name__] is not cls:
             raise AssertionError(
                 f"two enums called {cls.__name__} ({found[cls.__name__].__module__}, "
-                f"{cls.__module__}): erdify doesn't keep same-name enums apart (#371)"
+                f"{cls.__module__}): erdify draws same-name enums as one (limitations.md)"
             )
         found[cls.__name__] = cls
     return found

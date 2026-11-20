@@ -151,9 +151,12 @@ def load_package(root: Path) -> Schema:
                 }
                 return _schema(modules, classes, registries)
         finally:
+            # Every module of the source that got imported, also through
+            # another one that then failed.
+            imported = [sys.modules[n] for n in names if n in sys.modules]
             registries |= {
                 c.registry
-                for c in _classes(modules, set(names))
+                for c in _classes(imported, set(names))
                 if isinstance(vars(c).get("registry"), registry)
             }
             for reg in registries:
@@ -205,9 +208,10 @@ def _schema(
             tables[names.get(id(table), table.name)] = _table(table, None)
     enums = {
         name: tuple(cls.__members__)
-        for name, cls in enum_keys(c for c in classes if issubclass(c, enum.Enum)).items()
         # A base without members (a project's own enum base) has nothing to draw.
-        if cls is not enum.Enum and cls.__members__
+        for name, cls in enum_keys(
+            c for c in classes if issubclass(c, enum.Enum) and c is not enum.Enum and c.__members__
+        ).items()
     }
     return Schema(tables=tables, enums=enums, checks=tuple(sorted(set(checks))))
 

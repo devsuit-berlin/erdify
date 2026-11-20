@@ -120,9 +120,10 @@ def _schema(classes: list[type]) -> Schema:
     }
     enums = {
         name: tuple(cls.__members__)
-        for name, cls in enum_keys(c for c in classes if issubclass(c, enum.Enum)).items()
         # A base without members (a project's own enum base) has nothing to draw.
-        if cls.__members__
+        for name, cls in enum_keys(
+            c for c in classes if issubclass(c, enum.Enum) and c.__members__
+        ).items()
     }
     return Schema(tables=tables, enums=enums)
 

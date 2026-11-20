@@ -8,7 +8,8 @@ published schema through :func:`sources`.
 
 Sources: every fixture directory under ``tests/fixtures/`` (one diagram per
 directory), every module of the edge-case catalogs (one diagram per module),
-and every directory under ``docs/examples/``. SQL sources are parsed with the
+every package directory of a catalog (a source of several modules or apps,
+#380), and every directory under ``docs/examples/``. SQL sources are parsed with the
 dialect the SQL ground-truth tests use for them.
 
 Usage::
@@ -38,7 +39,8 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
 EXAMPLES = ROOT / "docs" / "examples"
 # Sources with nothing to draw (deliberately empty or unparsable input): a
-# fixture directory by name, a catalog module as "<catalog>/<stem>".
+# fixture directory by name, a catalog module or package directory as
+# "<catalog>/<stem>".
 NO_DIAGRAM = {"empty", "malformed"}
 # Dialects of the SQL sources (the SQL ground-truth tests' DIALECTS, by file
 # stem or fixture path); the rest is parsed without one.
@@ -55,13 +57,15 @@ BASE_CLASSES = {"fixtures/base_classes": ["Schema"]}
 
 @dataclass(frozen=True)
 class Source:
-    """One diagram: a fixture directory, a catalog module or a docs example."""
+    """One diagram: a fixture directory, a catalog module or package, or a docs example."""
 
     id: str
     path: Path
     include_patterns: list[str] | None = None
     sql_dialect: str | None = None
     base_classes: list[str] | None = None
+    #: Path segments to skip (``--exclude-paths``).
+    exclude_paths: list[str] | None = None
 
 
 def sources() -> Iterator[Source]:
@@ -71,16 +75,18 @@ def sources() -> Iterator[Source]:
         if name in NO_DIAGRAM or name.startswith("__"):
             continue
         if name.endswith("_edge_cases"):
+            # A module's bare include pattern matches its name at any depth:
+            # leave the catalog's package directories out of it.
+            packages = [p.name for p in directory.iterdir() if p.is_dir()]
             for module in sorted(directory.glob("*.py")) + sorted(directory.glob("*.sql")):
                 if module.name == "__init__.py" or f"{name}/{module.stem}" in NO_DIAGRAM:
                     continue
                 is_sql = module.suffix == ".sql"
                 yield Source(
                     id=f"fixtures/{name}/{module.stem}",
-                    # The file itself: a bare include pattern would match the
-                    # same name in a package of the catalog too.
-                    path=module,
-                    include_patterns=None,
+                    path=module if is_sql else directory,
+                    include_patterns=None if is_sql else [module.name],
+                    exclude_paths=None if is_sql else packages,
                     # The dialect keys are SQL file stems: Python modules get none.
                     sql_dialect=SQL_DIALECTS.get(module.stem) if is_sql else None,
                 )
@@ -108,6 +114,7 @@ def render(source: Source) -> dict[str, str]:
         include_patterns=source.include_patterns,
         sql_dialect=source.sql_dialect,
         base_classes=source.base_classes,
+        exclude_paths=source.exclude_paths,
         # A fixture under site-packages is skipped by default; draw it anyway.
         use_default_excludes=False,
     )
