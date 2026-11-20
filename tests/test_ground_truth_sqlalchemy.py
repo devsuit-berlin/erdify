@@ -100,6 +100,10 @@ LIMITATIONS = {
     ".test_unreadable_declared_attr_table_args_give_no_schema.body": (
         "limitations.md: a declared_attr __table_args__ needs a single return"
     ),
+    "test_entity_origin.py::TestSqlAlchemySchema"
+    ".test_table_args_ending_in_a_variable_give_none.body": (
+        "limitations.md: a non-literal schema gives none"
+    ),
     "test_entity_origin.py::TestSqlAlchemySchema.test_non_literal_schema_gives_none.body": (
         "limitations.md: a non-literal schema gives none"
     ),

@@ -9,7 +9,7 @@ from erdify import generate_json, parse_models_directory
 from erdify.parser.common import module_name
 
 HEADER = """\
-from sqlalchemy import Column, Integer, MetaData, Table
+from sqlalchemy import Column, Integer, MetaData, Table, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 
@@ -166,6 +166,39 @@ md = Base.metadata
 log = Table("log", md, Column("id", Integer, primary_key=True))
 """
         assert self._schema(tmp_path, body, "log") is None
+
+    def test_table_args_ending_in_a_variable_give_none(self, tmp_path: Path) -> None:
+        body = """
+TABLE_KW = {"schema": "x"}
+
+
+class Item(Base):
+    __tablename__ = "item"
+    __table_args__ = (UniqueConstraint("code"), TABLE_KW)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str]
+"""
+        assert self._schema(tmp_path, body, "Item") is None
+
+    def test_mapped_core_table_metadata_is_looked_up_in_the_tables_file(
+        self, tmp_path: Path
+    ) -> None:
+        for name in ("billing", "crm"):
+            _write(
+                tmp_path / name / "models.py",
+                "from sqlalchemy import Column, Integer, MetaData, Table\n"
+                f'metadata = MetaData(schema="{name}")\n'
+                f'{name}_rows = Table("{name}_rows", metadata, Column("id", Integer))\n',
+            )
+        body = """
+from billing.models import billing_rows
+
+
+class Invoice(Base):
+    __table__ = billing_rows
+"""
+        assert self._schema(tmp_path, body, "Invoice") == "billing"
 
     def test_non_literal_schema_gives_none(self, tmp_path: Path) -> None:
         body = """

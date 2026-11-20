@@ -98,13 +98,14 @@ class Match(Base):
 - `"schema"` is read into the entity's `schema` (API and
   [JSON](../usage/output-formats.md#json)), as SQLAlchemy takes it: the
   class's own `__table_args__`, else the one a mixin or abstract base passes
-  on (a mapped parent alone doesn't). Without a `"schema"` (or with `None`),
+  on (a mapped parent alone doesn't, unless it declares it with
+  `@declared_attr`). Without a `"schema"` (or with `None`),
   the table is in the default schema of the declarative base's
   `metadata = MetaData(schema=...)`. A `@declared_attr` `__table_args__` is
   read when its body is a single `return`. A Core `Table(...)` takes its
   `schema=`, else that of its metadata: a module-level `MetaData(schema=...)`
   variable (from the table's own file, else the one scanned file defining
-  it) or `Base.metadata`. A non-literal value (`{"schema": SCHEMA}`), a
+  it) or `Base.metadata`. A non-literal value (`{"schema": SCHEMA}`, a tuple ending in a variable), a
   metadata reached any other way (`md = Base.metadata`, a `MetaData` passed
   to `declarative_base()` / `registry()`) and a variable defined in several
   other files give no schema. Entities are not namespaced: the diagram shows

@@ -2,7 +2,7 @@
 abstract base, never from a mapped parent; a tuple ending in a dict."""
 
 from sqlalchemy import ForeignKey, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 
 class Base(DeclarativeBase):
@@ -69,3 +69,21 @@ class Customer(Account, InReporting):
     __tablename__ = "customer"
 
     id: Mapped[int] = mapped_column(ForeignKey("crm.account.id"), primary_key=True)
+
+
+class Ledger(Base):
+    __tablename__ = "ledger"
+
+    @declared_attr.directive
+    def __table_args__(cls):
+        return {"schema": "finance"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class SubLedger(Ledger):
+    """A @declared_attr __table_args__ is passed on even by a mapped parent."""
+
+    __tablename__ = "sub_ledger"
+
+    id: Mapped[int] = mapped_column(ForeignKey("finance.ledger.id"), primary_key=True)

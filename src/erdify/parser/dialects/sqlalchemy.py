@@ -57,14 +57,18 @@ class TableDialect(AnnotatedDialect):
     def _table_args_class(self, class_node: ast.ClassDef, names: List[str]) -> ast.ClassDef | None:
         """The class whose ``__table_args__`` SQLAlchemy uses for ``class_node``, if any.
 
-        Its own, else, when an unmapped ancestor sets it, the first class in
-        the MRO that does (SQLAlchemy reads ``cls.__table_args__`` there).
+        Its own, else, when an unmapped ancestor sets it or any ancestor
+        declares it with ``@declared_attr``, the first class in the MRO that
+        sets it (SQLAlchemy reads ``cls.__table_args__`` there).
         """
         if _class_attr(class_node, "__table_args__")[0]:
             return class_node
         ancestors = [node for name in names[1:] if (node := self.classes.all.get(name))]
         setters = [node for node in ancestors if _class_attr(node, "__table_args__")[0]]
-        if any(not self._has_own_table(node) for node in setters):
+        if any(
+            not self._has_own_table(node) or _defines_function(node, "__table_args__")
+            for node in setters
+        ):
             return setters[0]
         return None
 
@@ -364,8 +368,13 @@ class SQLAlchemyDialect(TableDialect):
         """The mapped Core table's schema, else the one ``__table_args__`` names."""
         mapped = self._mapped_tables.get(class_node.name)
         if mapped is not None:
-            return self._core_table_schema(mapped.table, self.ctx.tree_of(class_node))
+            tree = self._table_trees().get(id(mapped.table), self.ctx.tree_of(class_node))
+            return self._core_table_schema(mapped.table, tree)
         return super().schema(class_node)
+
+    def _table_trees(self) -> Dict[int, ast.Module]:
+        """``id()`` of each module-level Core ``Table(...)`` -> the file it is in."""
+        return {id(call): tree for tree in self.ctx.trees for _, call in module_tables(tree)}
 
     def _has_own_table(self, class_node: ast.ClassDef) -> bool:
         """A mapped class, also a single-table subclass (it is mapped, in its parent's table)."""
@@ -1038,15 +1047,19 @@ def _table_args_schema(value: ast.expr | None) -> Tuple[bool, str | None]:
 
     A dict, or a tuple ending in one, with a ``"schema"`` other than ``None``
     sets it (None when not a string literal). Without one (constraints only,
-    no key, ``None``) it sets none. A value erdify can't read sets an unknown
-    one: ``(True, None)``.
+    no key, ``None``) it sets none. A value erdify can't read (a variable, a
+    ``dict(...)`` call, a starred item last) sets an unknown one:
+    ``(True, None)``.
     """
     if _is_none(value):
         return False, None
     if isinstance(value, (ast.Tuple, ast.List)):
-        if not value.elts or not isinstance(value.elts[-1], ast.Dict):
+        if not value.elts:
             return False, None
-        value = value.elts[-1]
+        last = value.elts[-1]
+        if isinstance(last, ast.Call) and expr_name(last.func) != "dict":
+            return False, None  # a constraint or index: no options dict
+        value = last
     if not isinstance(value, ast.Dict):
         return True, None
     for key, item in zip(value.keys, value.values):
