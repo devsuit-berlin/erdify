@@ -304,7 +304,7 @@ project's `[tool.erdify]` table without copying its rules:
 
 ```python
 from pathlib import Path
-from erdify import load_project
+from erdify import diagram_edges, load_project
 
 project = load_project(Path("."))                     # like `erdify .`
 project = load_project(Path("."), include=["*.py"])   # like `erdify . --include '*.py'`
@@ -312,7 +312,9 @@ project = load_project(Path("."), include=["*.py"])   # like `erdify . --include
 print(project.settings.pyproject)  # the pyproject.toml the settings come from, or None
 print(project.settings.title, project.settings.formats)
 for name, entity in project.entities.items():
-    print(name, entity.table_name)
+    print(name, entity.table_name, entity.schema, entity.module, entity.app)
+for edge in diagram_edges(project.entities):          # the edges erdify draws
+    print(edge.from_entity, edge.glyph, edge.to_entity)
 ```
 
 - The keyword arguments are named like the `[tool.erdify]` keys (`title`,
