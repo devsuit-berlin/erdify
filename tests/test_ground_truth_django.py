@@ -237,6 +237,7 @@ def test_edge_case_matches_django(path: Path, tmp_path: Path) -> None:
 def test_edge_case_package_matches_django(path: Path) -> None:
     """Several apps: same-name models keyed ``module.Class`` (#367)."""
     expected = django_ref.load_package(path)
+    assert expected.tables, "the reference loader found no models"
     _assert_checks(path.name, expected, ())
     _assert_same(from_erdify(path, "django", app=True), expected)
 
@@ -263,6 +264,7 @@ def test_most_sources_are_compared() -> None:
     compared = [s for s in SNIPPETS if s.id not in listed]
     assert len(compared) >= 40
     assert len(EDGE_CASES) >= 15
+    assert EDGE_PACKAGES, "no multi-module catalog source is compared (#380)"
 
 
 def test_reference_reports_system_check_errors() -> None:

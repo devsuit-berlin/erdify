@@ -279,6 +279,7 @@ def test_edge_case_matches_library(path: Path, tmp_path: Path) -> None:
 def test_edge_case_package_matches_library(path: Path) -> None:
     """A source of several modules: same-name classes keyed ``module.Class`` (#367)."""
     expected = keyless_ref.load_package(path)
+    assert expected.tables, "the reference loader found no models"
     actual = from_erdify(path, SOURCES, relationships=True, include=["**/*.py"])
     _assert_same(actual, expected)
 
@@ -311,6 +312,7 @@ def test_most_sources_are_compared() -> None:
     compared = [s for s in SNIPPETS if s.id not in listed]
     assert len(compared) >= 60
     assert len(EDGE_CASES) >= 15
+    assert EDGE_PACKAGES, "no multi-module catalog source is compared (#380)"
 
 
 def test_reference_reads_inherited_and_nested_fields() -> None:

@@ -10,6 +10,7 @@ for a name more than one of them has.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import sys
 from collections import Counter
 from collections.abc import Iterable, Iterator
@@ -46,6 +47,11 @@ def importable(root: Path) -> Iterator[list[str]]:
     """
     names = module_names(root)
     tops = {name.split(".")[0] for name in names}
+    for top in sorted(tops):
+        # A catalog package named like an installed or stdlib module would
+        # shadow it while the source is imported: name it differently.
+        if top in sys.builtin_module_names or importlib.util.find_spec(top) is not None:
+            raise AssertionError(f"{root}: package {top!r} shadows an importable module")
 
     def ours(module: str) -> bool:
         return module.split(".")[0] in tops
@@ -61,6 +67,19 @@ def importable(root: Path) -> Iterator[list[str]]:
             del sys.modules[name]
         sys.modules.update(saved)
         importlib.invalidate_caches()
+
+
+def enum_keys(classes: Iterable[type]) -> dict[str, type]:
+    """Enums by class name; two of the same name are an error (#371, not namespaced)."""
+    found: dict[str, type] = {}
+    for cls in classes:
+        if cls.__name__ in found and found[cls.__name__] is not cls:
+            raise AssertionError(
+                f"two enums called {cls.__name__} ({found[cls.__name__].__module__}, "
+                f"{cls.__module__}): erdify doesn't keep same-name enums apart (#371)"
+            )
+        found[cls.__name__] = cls
+    return found
 
 
 def entity_keys(classes: Iterable[type]) -> dict[type, str]:

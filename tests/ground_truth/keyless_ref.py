@@ -1,6 +1,7 @@
 """Pydantic / dataclass reference loader: build a :class:`Schema` from the classes' own fields.
 
-The source is executed as a fresh module. The fields of a Pydantic model come
+The source is executed as a fresh module, or a directory of packages is
+imported for real (:func:`load_package`, #380). The fields of a Pydantic model come
 from ``Model.model_fields`` (after ``model_rebuild()`` resolves forward
 references), those of a dataclass from ``dataclasses.fields()``, each type
 resolved in the class that declared the field; both include inherited fields.
@@ -33,7 +34,7 @@ from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin
 import pydantic
 from pydantic.errors import PydanticUserError
 
-from .packages import entity_keys, importable
+from .packages import entity_keys, enum_keys, importable
 from .schema import Column, Relationship, Schema, Table
 
 # A top-level name: a relative import in a source fails (it is not
@@ -118,10 +119,10 @@ def _schema(classes: list[type]) -> Schema:
         keys[cls]: _table(cls, sys.modules[cls.__module__], entities, keys) for cls in entities
     }
     enums = {
-        cls.__name__: tuple(cls.__members__)
-        for cls in classes
+        name: tuple(cls.__members__)
+        for name, cls in enum_keys(c for c in classes if issubclass(c, enum.Enum)).items()
         # A base without members (a project's own enum base) has nothing to draw.
-        if issubclass(cls, enum.Enum) and cls.__members__
+        if cls.__members__
     }
     return Schema(tables=tables, enums=enums)
 

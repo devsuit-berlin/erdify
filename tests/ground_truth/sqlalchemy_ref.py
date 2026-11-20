@@ -1,6 +1,7 @@
 """SQLAlchemy / SQLModel reference loader: build a :class:`Schema` from the mapped metadata.
 
-The source is executed as a fresh module. Every declarative base it defines
+The source is executed as a fresh module (a directory of packages is
+imported for real by :func:`load_package`, #380). Every declarative base it defines
 brings its own registry and ``MetaData``; SQLModel's shared default registry is
 swapped for a new one per load, so tables with the same name in different
 sources never collide. No database is touched: columns and keys come from
@@ -28,7 +29,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapper, RelationshipDirection, RelationshipProperty, registry
 from sqlmodel import SQLModel
 
-from .packages import entity_keys, importable
+from .packages import entity_keys, enum_keys, importable
 from .schema import Column, Relationship, Schema, Table as SchemaTable
 
 # A top-level name: a relative import in a source fails (it is not
@@ -133,10 +134,15 @@ def load_package(root: Path) -> Schema:
         try:
             with swap, mock.patch.object(sqlmodel.main, "default_registry", sqlmodel_registry):
                 try:
-                    modules = [importlib.import_module(name) for name in names]
+                    for name in names:
+                        # One by one: a module imported before a failure is
+                        # cleaned up too (its classes are in a registry).
+                        modules.append(importlib.import_module(name))
                 except (NameError, ImportError) as exc:
                     raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
                 except (sa_exc.ArgumentError, sa_exc.InvalidRequestError, TypeError) as exc:
+                    if _caused_by_name_error(exc):
+                        raise Unloadable(f"{type(exc).__name__}: {exc}") from exc
                     raise Rejected(f"{type(exc).__name__}: {exc}") from exc
                 classes = list(_classes(modules, set(names)))
                 registries |= {sa_inspect(c).registry for c in classes if _is_mapped(c)}
@@ -198,10 +204,10 @@ def _schema(
             # association table (#34), a secondary= or a plain table.
             tables[names.get(id(table), table.name)] = _table(table, None)
     enums = {
-        cls.__name__: tuple(cls.__members__)
-        for cls in classes
+        name: tuple(cls.__members__)
+        for name, cls in enum_keys(c for c in classes if issubclass(c, enum.Enum)).items()
         # A base without members (a project's own enum base) has nothing to draw.
-        if issubclass(cls, enum.Enum) and cls is not enum.Enum and cls.__members__
+        if cls is not enum.Enum and cls.__members__
     }
     return Schema(tables=tables, enums=enums, checks=tuple(sorted(set(checks))))
 

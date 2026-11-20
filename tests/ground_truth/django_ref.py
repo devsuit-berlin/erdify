@@ -32,7 +32,7 @@ from django.core.exceptions import FieldError
 from django.db import models
 from django.test.utils import isolate_apps, override_settings
 
-from .packages import entity_keys, importable
+from .packages import entity_keys, enum_keys, importable
 from .schema import Column, Schema, Table
 
 APP = "tests.ground_truth.django_app"
@@ -164,11 +164,16 @@ def _load(tree: ast.Module, namespace: dict[str, Any], registry: Apps, labels: l
 def load_package(root: Path) -> Schema:
     """Import the Django apps under ``root`` and normalise their models (#380).
 
-    Each top-level package with a ``models`` module is an installed app,
-    labelled by its package name. Its models are imported inside the
-    isolated registry (an app config on a stand-in module, so Django imports
-    nothing itself), and same-name models of two apps are keyed
-    ``module.Class``, as erdify names them (#367).
+    Each package with a ``models`` module is an installed app, labelled by
+    its package name. Its models are imported inside the isolated registry
+    (an app config on a stand-in module, so Django imports nothing itself),
+    and same-name models of two apps are keyed ``module.Class``, as erdify
+    names them (#367).
+
+    Unlike :func:`load`, a package source keeps Django's own user model (no
+    ``AUTH_USER_MODEL`` swap) and ignores the apps' ``apps.py`` (labels are
+    package names): a catalog directory with a custom user model or app label
+    needs that added first.
     """
     _setup()
     with importable(root) as names:
@@ -232,11 +237,10 @@ def _collect(registry: Apps, modules: set[str], classes: list[type], labels: lis
     except FieldError as exc:
         raise Rejected(f"FieldError: {exc}") from exc
     enums = {
-        cls.__name__: members
-        for cls in classes
-        if issubclass(cls, enum.Enum)
+        name: members
+        for name, cls in enum_keys(c for c in classes if issubclass(c, enum.Enum)).items()
         # A base without members (a project's own choices base) has nothing to draw.
-        and (members := tuple(m for m in cls.__members__ if m != "__empty__"))
+        if (members := tuple(m for m in cls.__members__ if m != "__empty__"))
     }
     return Schema(tables=tables, enums=enums, checks=tuple(checks))
 

@@ -79,7 +79,7 @@ FK, nullability, many-to-many edges, enums; the Django app label and the
 SQLAlchemy database schema too). `tests/test_ground_truth_django.py`
 runs this over the Django fixture, `docs/examples/django`, the Django
 **edge-case catalog** (`tests/fixtures/django_edge_cases/`, one module per
-Django feature) and every inline Django snippet in `tests/test_*.py` (any
+Django feature; a directory for a source of several apps) and every inline Django snippet in `tests/test_*.py` (any
 string literal with a `class` and `models.Model` or a `from django` import,
 discovered automatically). A new regression test is checked against Django
 without extra work.
@@ -177,25 +177,28 @@ belongs to their harness), and every annotation a `str.format` template in
   examples and the catalog always must load.
 - New Pydantic / dataclass parsing support → add an edge-case module for it.
 
-A source spread over several modules or apps (same-name classes in two
-packages, #367) is a **directory** in an edge-case catalog
-(`tests/fixtures/{keyless,sqlalchemy}_edge_cases/same_name_modules/`,
-`tests/fixtures/django_edge_cases/same_name_apps/`): real packages, imported
-for real by each loader's `load_package()` (`tests/ground_truth/packages.py`
-puts the directory on `sys.path` and cleans up; Django installs each package
-with a `models` module as an app). Both sides key entities like erdify names
-them: the class name, `module.Class` for a name several share. erdify reads the
-directory with `include=["**/*.py"]`; `scripts/render_outputs.py` draws it
-too. An inline multi-file snippet in a test still can't be loaded and stays in
-`EXPECTED_UNLOADABLE`; a multi-module behaviour worth checking against the
-framework belongs in such a catalog directory.
-
 - `.github/workflows/upstream.yml` (weekly, not a required check) runs the
   whole suite on the newest releases (newest SQLModel / Pydantic / sqlglot /
   Django from PyPI on top of `uv lock --upgrade`) and
   `scripts/check_upstream_series.py`, which fails when a Django / SQLAlchemy
   series is out but missing from the `test.yml` matrices. A failed scheduled
   run opens or updates one `ci`-labelled issue.
+
+A source spread over several modules or apps (same-name classes in two
+packages, #367) is a **directory** in an edge-case catalog
+(`tests/fixtures/{keyless,sqlalchemy}_edge_cases/same_name_modules/`,
+`tests/fixtures/django_edge_cases/same_name_apps/`): real packages, imported
+for real by each loader's `load_package()` (`tests/ground_truth/packages.py`
+puts the directory on `sys.path` and cleans up; Django installs each package
+with a `models` module as an app, labelled by its package name, with Django's
+own user model). A package must not share a name with an importable module, and
+same-name enums in two packages fail the load (#371). Both sides key entities
+like erdify names them: the class name, `module.Class` for a name several
+share. erdify reads the directory (`include=["**/*.py"]`; Django's apps with
+its default `models.py`); `scripts/render_outputs.py` draws it too. An inline
+multi-file snippet in a test still can't be loaded and stays in
+`EXPECTED_UNLOADABLE`; a multi-module behaviour worth checking against the
+framework belongs in such a catalog directory.
 
 ### Supported versions are documented
 

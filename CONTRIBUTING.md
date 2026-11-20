@@ -180,13 +180,6 @@ issue and list the source in `KNOWN_DIFFERENCES`; a documented limitation goes i
 rejects must be listed in `EXPECTED_UNLOADABLE` / `EXPECTED_REJECTED`; nothing is
 skipped silently.
 
-A source spread over several modules or apps is a directory of real packages
-in the edge-case catalog (e.g. `tests/fixtures/django_edge_cases/same_name_apps/`,
-`tests/fixtures/sqlalchemy_edge_cases/same_name_modules/`); the ground-truth
-tests import it for real (`load_package()`, Django with one app per package)
-and compare it with erdify. Use such a directory for behaviour across modules,
-like same-name classes in two packages.
-
 Test models must also be valid Django: each source is loaded the way a project
 would run it and must pass Django's model checks (the `models` checks of
 `manage.py check`, per model and across models) on every supported Django series. Give a second foreign key to the same model a
@@ -258,6 +251,15 @@ library refuses on purpose is listed in `EXPECTED_REJECTED`, one that is not
 self-contained in `EXPECTED_UNLOADABLE`; a real erdify bug you aren't fixing
 goes in `KNOWN_DIFFERENCES` with an issue, a documented limitation in
 `LIMITATIONS`.
+
+A source spread over several modules or apps is a directory of real packages
+in an edge-case catalog (`tests/fixtures/keyless_edge_cases/same_name_modules/`,
+`tests/fixtures/sqlalchemy_edge_cases/same_name_modules/`,
+`tests/fixtures/django_edge_cases/same_name_apps/`). The ground-truth tests
+import it for real (`load_package()`; Django installs one app per package) and
+compare it with erdify. Use such a directory for behaviour across modules, like
+same-name classes in two packages; don't name a package like an installed
+module (the harness refuses it).
 
 ```bash
 uv run pytest tests/test_ground_truth_keyless.py -rsx

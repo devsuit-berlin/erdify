@@ -77,14 +77,16 @@ def sources() -> Iterator[Source]:
                 is_sql = module.suffix == ".sql"
                 yield Source(
                     id=f"fixtures/{name}/{module.stem}",
-                    path=module if is_sql else directory,
-                    include_patterns=None if is_sql else [module.name],
+                    # The file itself: a bare include pattern would match the
+                    # same name in a package of the catalog too.
+                    path=module,
+                    include_patterns=None,
                     # The dialect keys are SQL file stems: Python modules get none.
                     sql_dialect=SQL_DIALECTS.get(module.stem) if is_sql else None,
                 )
             # A catalog source of several modules or apps (#380): a directory.
             for package in sorted(p for p in directory.iterdir() if p.is_dir()):
-                if package.name.startswith("__"):
+                if package.name.startswith("__") or f"{name}/{package.name}" in NO_DIAGRAM:
                     continue
                 yield Source(
                     id=f"fixtures/{name}/{package.name}",
