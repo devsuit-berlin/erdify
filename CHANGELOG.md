@@ -31,8 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first definition; it now has those of the definition that is drawn
   ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 - Same-name SQL tables in different schemas (`core.customer`, `mart.customer`)
-  are no longer merged into one entity. Each is its own entity named
-  `schema.table`; a table name used in one schema only keeps its short name.
+  are no longer merged into one entity. Each one in a schema is its own entity
+  named `schema.table`; one declared without a schema keeps its bare name, and
+  a table name used in one schema only keeps its short name.
   `REFERENCES`, `ALTER TABLE` and `CREATE INDEX` find the table in the schema
   they name (else a same-name table without a schema), never one in another
   schema. An unqualified `REFERENCES` prefers the referencing table's schema,

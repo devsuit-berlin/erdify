@@ -256,7 +256,7 @@ parser/    ──►  config.py (IR)  ──►  generator.py
 
 - **`enums.py`** — `enum_users()`: the enums erdify draws (a field's type
   names them) and the entities using each. The PlantUML and Mermaid generators
-  draw exactly these; the JSON lists every parsed enum.
+  draw exactly these; the JSON lists every parsed enum (unless `--no-enums`).
 
 - **`generator.py`** — `_ERGenerator` base with `PlantUMLGenerator` and
   `MermaidGenerator` subclasses, plus the `generate_plantuml/mermaid/json/html`

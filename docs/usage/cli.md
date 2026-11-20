@@ -391,9 +391,11 @@ for edge in diagram_edges(entities):
 ```
 
 - One edge per foreign-key column, from the entity holding it. Its target is
-  found by table name and, for a `schema.table.column` target, by schema: a
-  target that is missing, only in another schema than the one named, or
-  ambiguous (in several schemas, none preferred) gives no edge.
+  found by table name and, for a `schema.table.column` target, by schema: the
+  table in the named schema, else (from another source, such as a Python model
+  a SQL reference names) one whose schema differs only in case or one without
+  a schema. A target found none of these ways, or ambiguous (in several
+  schemas, none preferred), gives no edge.
 - A detected link table (`is_link_table`) stays an entity: two edges through
   it (`Post ||--o{ post_tag`, `post_tag }o--|| Tag`), or a star from each
   parent for three or more keys. `kind` is `link_table`.

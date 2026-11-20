@@ -77,14 +77,17 @@ Entities appear, but the diagram has no lines.
    or a composite key in `__table_args__` are all invisible. See
    [Python parsing limitations](frameworks/limitations.md).
 5. **Tables in database schemas?** A foreign key naming a schema
-   (`core.customer`) is drawn only to the table in that schema: if that table
-   isn't scanned (or is excluded), there is no line. An unqualified reference
+   (`core.customer`) is drawn to the table in that schema or, when that schema
+   has no such table, to a same-name table declared without a schema, never to
+   one in another schema. With neither (not scanned, or excluded), there is no
+   line. An unqualified reference
    to a table name that exists in several schemas, none of them preferred, is
    ambiguous and draws none either. See
    [Schemas in references](frameworks/sql.md#supported-ddl-subset) and the
-   [`__table_args__` schema note](frameworks/limitations.md). erdify also warns
-   on stderr when a model class or SQL table is hidden by another of the same
-   name.
+   [`__table_args__` schema note](frameworks/limitations.md#__table_args__-is-mostly-not-read). erdify warns on
+   stderr when a model class is hidden by a same-name class in another module,
+   or when two SQL tables differ only in quoting; a SQL table hidden by a Python
+   model of the same name is dropped without a warning.
 6. **Pydantic or dataclass models?** They have no keys until you pass
    `--infer-keys` (next section).
 

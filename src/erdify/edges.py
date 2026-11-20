@@ -89,8 +89,9 @@ def diagram_edges(entities: Mapping[str, EntityInfo]) -> List[Edge]:
       one. The far end is optional when the column is nullable; the near end
       is at most one when the column is unique on its own or is the table's
       only primary-key column (1:1), else many. The target is found by table
-      name and, for ``schema.table.column``, by schema; one that is missing,
-      only in another schema than the one named, or ambiguous gives no edge.
+      name and, for ``schema.table.column``, by schema (see :meth:`_fk_target`
+      for the fallbacks from another source); one found no way, or
+      ambiguous, gives no edge.
     - **Link tables** (:attr:`EntityInfo.is_link_table`): a binary one is
       drawn as a path through the link entity (``A ||--o{ Link``, ``Link
       }o--|| B``), a ternary or larger one as a star from each parent to the
