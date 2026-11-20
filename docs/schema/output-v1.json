@@ -28,7 +28,17 @@
   "$defs": {
     "entity": {
       "type": "object",
-      "required": ["name", "table_name", "source", "is_link_table", "fields", "relationships"],
+      "required": [
+        "name",
+        "table_name",
+        "schema",
+        "source",
+        "module",
+        "app",
+        "is_link_table",
+        "fields",
+        "relationships"
+      ],
       "properties": {
         "name": {
           "description": "Class name (or table name for SQL DDL).",
@@ -38,9 +48,21 @@
           "description": "Database table name.",
           "type": "string"
         },
+        "schema": {
+          "description": "The database schema the table is in, when the source names one.",
+          "type": ["string", "null"]
+        },
         "source": {
           "description": "The framework the entity was read from.",
           "enum": ["sqlmodel", "sqlalchemy", "django", "dataclass", "pydantic", "sql"]
+        },
+        "module": {
+          "description": "The dotted Python module the class is defined in; null for SQL DDL.",
+          "type": ["string", "null"]
+        },
+        "app": {
+          "description": "The Django app label; null for every other source.",
+          "type": ["string", "null"]
         },
         "is_link_table": {
           "description": "true for a detected many-to-many join table.",

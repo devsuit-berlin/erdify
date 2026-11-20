@@ -119,6 +119,9 @@ EXPECTED_REJECTED = {
     "test_sql.py::test_schema_qualified_name_and_lenient_skipping": (
         "a schema-qualified table among CREATE SEQUENCE / INSERT / GRANT noise erdify must skip"
     ),
+    "test_entity_origin.py::TestSqlSchema.test_schema_qualified_tables.sql": (
+        "schema-qualified table names SQLite has no schemas for"
+    ),
     "test_strict.py::mixed_tree": "a syntax error, for --strict",
     "test_sql.py::test_strict_error_names_each_file_once": "syntax errors, for --strict",
     "test_sql.py::test_reference_to_an_unknown_table_without_columns_keeps_id": (

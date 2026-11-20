@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Where an entity comes from: `EntityInfo.schema`, `.module` and `.app`, and
+  `schema`, `module` and `app` keys on each JSON entity
+  ([#358](https://github.com/devsuit-berlin/erdify/issues/358)). `schema` is
+  the database schema (a schema-qualified SQL table, SQLAlchemy / SQLModel
+  `__table_args__ = {"schema": ...}` also from a mixin or abstract base, a
+  Core `Table(..., schema=...)`, a declarative base's `MetaData(schema=...)`),
+  `module` the dotted Python module named from the file's package, `app` the
+  Django app label; each is `null` where it doesn't apply. The ground-truth
+  tests compare `schema` with SQLAlchemy's `Table.schema` and `app` with
+  Django's `_meta.app_label`. The JSON `schema_version` stays `1`: adding a
+  key is not a shape change. The diagrams don't change.
+
+### Output changes
+
+- `--format json` gains the `schema`, `module` and `app` keys on every
+  entity. Regenerate a committed JSON file once if you gate CI on `--check`.
+
 ## [1.6.0] - 2026-11-13
 
 ### Fixed

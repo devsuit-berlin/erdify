@@ -186,6 +186,10 @@ class DjangoDialect(Dialect):
         model_name = class_node.name.lower()
         return f"{label}_{model_name}" if label else model_name
 
+    def app_label(self, class_node: ast.ClassDef) -> str | None:
+        """The model's app label: the one its default table name starts with."""
+        return self._app_label(class_node)
+
     def _app_label(self, class_node: ast.ClassDef) -> str | None:
         """``Meta.app_label`` (also inherited, #279), else the label of the model's app."""
         label = self._meta_constant(class_node, "app_label")

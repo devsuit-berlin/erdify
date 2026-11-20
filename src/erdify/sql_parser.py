@@ -302,7 +302,9 @@ class SqlSchemaParser:
         """Register a ``CREATE TABLE`` as an entity with its columns (no FKs yet)."""
         schema = create.this  # type: ignore[attr-defined]  # exp.Schema: table + column/constraint expressions
         table_name = schema.this.name
-        entity = EntityInfo(name=table_name, table_name=table_name, source="sql")
+        entity = EntityInfo(
+            name=table_name, table_name=table_name, source="sql", schema=schema.this.db or None
+        )
 
         coldefs = list(schema.find_all(exp.ColumnDef))  # type: ignore[attr-defined]
         columns = {self._key(c.this): c.name for c in coldefs}

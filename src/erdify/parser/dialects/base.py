@@ -148,6 +148,14 @@ class Dialect:
         """The table name of a class that declares none; the snake_case class name."""
         return to_snake_case(class_node.name)
 
+    def schema(self, class_node: ast.ClassDef) -> str | None:
+        """The database schema the class's table is in, if the source names one."""
+        return None
+
+    def app_label(self, class_node: ast.ClassDef) -> str | None:
+        """The Django app label of the class; None outside Django."""
+        return None
+
     def class_fields(
         self, class_node: ast.ClassDef, concrete: str
     ) -> Tuple[Dict[str, FieldInfo], Dict[str, _Rel]]:

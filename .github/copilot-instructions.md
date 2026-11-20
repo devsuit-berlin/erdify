@@ -75,7 +75,8 @@ Golden files only lock in erdify's own output. The ground-truth tests check it
 against the real framework instead: `tests/ground_truth/` loads a model source
 with the library (Django: an isolated app registry, no database) and reduces it
 to the same normalised schema as erdify's parse (tables, columns, PK / unique /
-FK, nullability, many-to-many edges, enums). `tests/test_ground_truth_django.py`
+FK, nullability, many-to-many edges, enums; the Django app label and the
+SQLAlchemy database schema too). `tests/test_ground_truth_django.py`
 runs this over the Django fixture, `docs/examples/django`, the Django
 **edge-case catalog** (`tests/fixtures/django_edge_cases/`, one module per
 Django feature) and every inline Django snippet in `tests/test_*.py` (any
@@ -105,7 +106,7 @@ without extra work.
 counterpart (`tests/ground_truth/sqlalchemy_ref.py`): each source runs as a
 fresh module (SQLModel's shared registry is swapped per load), its mappers are
 configured, and the schema comes from `MetaData.tables` (every Core
-`Table(...)` included) and the relationships from `sqlalchemy.inspect(Model)`
+`Table(...)` included, with its `Table.schema`) and the relationships from `sqlalchemy.inspect(Model)`
 (target, `"one"` / `"many"`, optionality, `back_populates`; `secondary=` and
 `backref=`-created sides are left out, as erdify draws them through the link
 table / doesn't declare them). Sources: the SQLAlchemy / SQLModel fixtures, the

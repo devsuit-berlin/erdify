@@ -143,7 +143,10 @@ point for downstream tools that want erdify's model without re-parsing source.
     {
       "name": "Order",
       "table_name": "order",
+      "schema": null,
       "source": "sqlmodel",
+      "module": "shop.models",
+      "app": null,
       "is_link_table": false,
       "fields": [
         {"name": "id", "type": "int", "primary_key": true, "foreign_key": false,
@@ -183,7 +186,10 @@ Entity:
 |---|---|---|
 | `name` | string | Class name (or table name for SQL DDL). |
 | `table_name` | string | Database table name. |
+| `schema` | string or null | The database schema the table is in: a schema-qualified SQL table (`core.customer` → `core`; a database / catalog part before it is not included), SQLAlchemy / SQLModel `__table_args__ = {"schema": ...}` (also from a mixin or abstract base), a Core `Table(..., schema=...)`, or a declarative base's `metadata = MetaData(schema=...)`. `null` when the source names none. Added in 1.7.0. |
 | `source` | string | One of `sqlmodel`, `sqlalchemy`, `django`, `dataclass`, `pydantic`, `sql`. |
+| `module` | string or null | The dotted Python module the class (or Core table) is defined in. It is named from the file's package, the directories above it with an `__init__.py`: `src/shop/models.py` in package `shop` is `shop.models`; a file outside a package is its file name (`models`). `null` for SQL DDL. Added in 1.7.0. |
+| `app` | string or null | The Django app label: `Meta.app_label`, else the app's `AppConfig` `label` / `name`, else its package name (the same label erdify's default Django table names use). `null` for every other source. Added in 1.7.0. |
 | `is_link_table` | boolean | `true` for a detected many-to-many join table. |
 | `fields` | array of field | Columns, in declaration order. |
 | `relationships` | array of relationship | Empty when relationships are disabled (`--no-relationships`). |

@@ -2,6 +2,7 @@
 
 import ast
 import re
+from pathlib import Path
 from typing import Dict, List, Mapping, NamedTuple, Set, Tuple, TypeVar
 
 from ..config import FieldInfo
@@ -71,3 +72,26 @@ def to_snake_case(name: str) -> str:
     """Convert CamelCase to snake_case."""
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
     return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+
+
+def module_name(path: Path) -> str:
+    """The dotted module a Python file is, named from its package.
+
+    The package is every directory above the file with an ``__init__.py``,
+    as Python imports it with the directory above the top package on
+    ``sys.path``: ``src/shop/models/order.py`` (with ``shop/__init__.py`` and
+    ``shop/models/__init__.py``) is ``shop.models.order``, a package's
+    ``__init__.py`` is the package itself, and a file outside a package is
+    its stem. The path is resolved first, so the name doesn't depend on how
+    the input path was written.
+    """
+    path = path.resolve()
+    parts = [] if path.name == "__init__.py" else [path.stem]
+    directory = path.parent
+    if path.name == "__init__.py":
+        parts.append(directory.name)
+        directory = directory.parent
+    while (directory / "__init__.py").is_file() and directory.parent != directory:
+        parts.append(directory.name)
+        directory = directory.parent
+    return ".".join(reversed(parts))
