@@ -53,3 +53,19 @@ class Draft(InReporting, Base):
     __table_args__ = ({"comment": "unpublished"},)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Account(Base):
+    __tablename__ = "account"
+    __table_args__ = {"schema": "crm"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Customer(Account, InReporting):
+    """A mixin after a mapped parent: SQLAlchemy reads ``cls.__table_args__``,
+    which Python finds on the parent first."""
+
+    __tablename__ = "customer"
+
+    id: Mapped[int] = mapped_column(ForeignKey("crm.account.id"), primary_key=True)

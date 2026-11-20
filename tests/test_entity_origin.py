@@ -180,7 +180,7 @@ class Item(Base):
 """
         assert self._schema(tmp_path, body, "Item") is None
 
-    def test_metadata_variable_defined_in_two_files_is_ambiguous(self, tmp_path: Path) -> None:
+    def test_metadata_variable_is_looked_up_in_the_tables_file_first(self, tmp_path: Path) -> None:
         _write(
             tmp_path / "other" / "models.py",
             'from sqlalchemy import MetaData\nmd = MetaData(schema="b")\n',
@@ -189,7 +189,22 @@ class Item(Base):
 md = MetaData(schema="a")
 tag = Table("tag", md, Column("id", Integer, primary_key=True))
 """
-        assert self._schema(tmp_path, body, "tag") is None
+        assert self._schema(tmp_path, body, "tag") == "a"
+
+    def test_metadata_variable_defined_in_two_other_files_is_ambiguous(
+        self, tmp_path: Path
+    ) -> None:
+        for name in ("a", "b"):
+            _write(
+                tmp_path / name / "models.py",
+                f'from sqlalchemy import MetaData\nmd = MetaData(schema="{name}")\n',
+            )
+        body = """
+tag = Table("tag", md, Column("id", Integer, primary_key=True))
+"""
+        _write(tmp_path / "models.py", HEADER + body)
+        entities, _ = parse_models_directory(tmp_path)
+        assert entities["tag"].schema is None
 
 
 class TestSqlSchema:

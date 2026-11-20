@@ -1,7 +1,7 @@
 """A default schema from the declarative base's MetaData(schema=...); a
 module-level MetaData for Core tables; Table(..., schema=...)."""
 
-from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -21,6 +21,25 @@ class Order(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("sales.customer.id"))
+
+
+class Coupon(Base):
+    """__table_args__ without a schema: the metadata's default schema."""
+
+    __tablename__ = "coupon"
+    __table_args__ = (UniqueConstraint("code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str]
+
+
+class Voucher(Base):
+    """An explicit schema None is the metadata's default schema too."""
+
+    __tablename__ = "voucher"
+    __table_args__ = {"schema": None}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
 
 
 # A Core table on the base's metadata takes its default schema.
@@ -45,6 +64,15 @@ audit_archive = Table(
     audit_metadata,
     Column("id", Integer, primary_key=True),
     schema="archive",
+)
+
+
+# schema=None is the metadata's schema.
+audit_event = Table(
+    "audit_event",
+    audit_metadata,
+    Column("id", Integer, primary_key=True),
+    schema=None,
 )
 
 

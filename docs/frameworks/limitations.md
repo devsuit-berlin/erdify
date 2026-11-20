@@ -96,15 +96,20 @@ class Match(Base):
   is assigned directly in the model class: one inherited from a mixin or
   returned by a `@declared_attr` method is not seen.
 - `"schema"` is read into the entity's `schema` (API and
-  [JSON](../usage/output-formats.md#json)), as SQLAlchemy takes it: from the
-  class or a mixin / abstract base, not from a mapped parent; else from the
-  declarative base's `metadata = MetaData(schema=...)`. A `@declared_attr`
-  `__table_args__` is read when its body is a single `return`. A non-literal
-  value (`{"schema": SCHEMA}`) and a `MetaData` passed to
-  `declarative_base()` / `registry()` give no schema. Entities are not
-  namespaced: the diagram shows table names only, and two tables of the same
-  name in different schemas are one entity
-  ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
+  [JSON](../usage/output-formats.md#json)), as SQLAlchemy takes it: the
+  class's own `__table_args__`, else the one a mixin or abstract base passes
+  on (a mapped parent alone doesn't). Without a `"schema"` (or with `None`),
+  the table is in the default schema of the declarative base's
+  `metadata = MetaData(schema=...)`. A `@declared_attr` `__table_args__` is
+  read when its body is a single `return`. A Core `Table(...)` takes its
+  `schema=`, else that of its metadata: a module-level `MetaData(schema=...)`
+  variable (from the table's own file, else the one scanned file defining
+  it) or `Base.metadata`. A non-literal value (`{"schema": SCHEMA}`), a
+  metadata reached any other way (`md = Base.metadata`, a `MetaData` passed
+  to `declarative_base()` / `registry()`) and a variable defined in several
+  other files give no schema. Entities are not namespaced: the diagram shows
+  table names only, and two tables of the same name in different schemas are
+  one entity ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 
 A Django model's `__table_args__` is ignored, as Django ignores it. Django's
 own single-field `Meta.constraints` / `Meta.unique_together` uniqueness is read

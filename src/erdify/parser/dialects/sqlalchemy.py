@@ -35,24 +35,38 @@ class TableDialect(AnnotatedDialect):
     def schema(self, class_node: ast.ClassDef) -> str | None:
         """The ``"schema"`` of ``__table_args__``, else the declarative base's ``MetaData``.
 
-        ``__table_args__`` is taken as SQLAlchemy takes it: from the first
-        class in the MRO that sets it, the class itself or a mixin / abstract
-        base, but never from a mapped ancestor (a joined-table subclass
-        doesn't inherit its parent's schema). A dict, or a tuple ending in
-        one, is read; a class setting it without a schema, or to a value
-        erdify can't read, has none. Without it, ``metadata =
-        MetaData(schema=...)`` in the class or a base names the default
-        schema.
+        ``__table_args__`` is taken as SQLAlchemy takes it: the class's own,
+        else the value Python finds for the class (the first class in the MRO
+        that sets it, a mapped parent included) when a mixin or abstract base
+        sets it; a mapped parent alone doesn't pass it on (a joined-table
+        subclass doesn't inherit its parent's schema). A dict, or a tuple
+        ending in one, is read. Without a ``"schema"`` (or with ``None``), the
+        table is in the default schema of the metadata: ``metadata =
+        MetaData(schema=...)`` in the class or a base. A value erdify can't
+        read gives None.
         """
         names = self._mro_names(class_node)
-        for name in names:
-            node = self.classes.all.get(name)
-            if node is None or (name != class_node.name and self._has_own_table(node)):
-                continue
-            found, value = _class_attr(node, "__table_args__")
-            if found:
-                return _table_args_schema(value)
+        setter = self._table_args_class(class_node, names)
+        if setter is not None:
+            _, value = _class_attr(setter, "__table_args__")
+            sets, schema = _table_args_schema(value)
+            if sets:
+                return schema
         return self._metadata_schema(names)
+
+    def _table_args_class(self, class_node: ast.ClassDef, names: List[str]) -> ast.ClassDef | None:
+        """The class whose ``__table_args__`` SQLAlchemy uses for ``class_node``, if any.
+
+        Its own, else, when an unmapped ancestor sets it, the first class in
+        the MRO that does (SQLAlchemy reads ``cls.__table_args__`` there).
+        """
+        if _class_attr(class_node, "__table_args__")[0]:
+            return class_node
+        ancestors = [node for name in names[1:] if (node := self.classes.all.get(name))]
+        setters = [node for node in ancestors if _class_attr(node, "__table_args__")[0]]
+        if any(not self._has_own_table(node) for node in setters):
+            return setters[0]
+        return None
 
     def _mro_names(self, class_node: ast.ClassDef) -> List[str]:
         """The class and its scanned ancestors, in MRO order (a DFS fallback without one)."""
@@ -73,25 +87,30 @@ class TableDialect(AnnotatedDialect):
                 return _metadata_call_schema(value)
         return None
 
-    def _core_table_schema(self, call: ast.Call) -> str | None:
+    def _core_table_schema(self, call: ast.Call, tree: ast.Module | None) -> str | None:
         """The schema of a Core ``Table(...)``: its ``schema=``, else its metadata's.
 
-        The metadata is a module-level ``MetaData(schema=...)`` variable
-        (defined in exactly one scanned file) or a declarative base's
-        ``Base.metadata``.
+        ``schema=None`` is the metadata's schema too, as in SQLAlchemy. The
+        metadata is a module-level ``MetaData(schema=...)`` variable, looked up
+        like Python looks it up: in the table's own file (``tree``) first,
+        else in the one scanned file that defines it (not when several do);
+        or a declarative base's ``Base.metadata``.
         """
         for kw in call.keywords:
-            if kw.arg == "schema":
+            if kw.arg == "schema" and not _is_none(kw.value):
                 return _literal_str(kw.value)
         metadata = call.args[1] if len(call.args) > 1 else None
         for kw in call.keywords:
             if kw.arg == "metadata":
                 metadata = kw.value
         if isinstance(metadata, ast.Name):
+            local = [v for n, v in _module_assignments(tree) if n == metadata.id] if tree else []
+            if local:
+                return _metadata_call_schema(local[-1])
             calls = [
                 value
-                for tree in self.ctx.trees
-                for name, value in _module_assignments(tree)
+                for other in self.ctx.trees
+                for name, value in _module_assignments(other)
                 if name == metadata.id
             ]
             return _metadata_call_schema(calls[0]) if len(calls) == 1 else None
@@ -345,7 +364,7 @@ class SQLAlchemyDialect(TableDialect):
         """The mapped Core table's schema, else the one ``__table_args__`` names."""
         mapped = self._mapped_tables.get(class_node.name)
         if mapped is not None:
-            return self._core_table_schema(mapped.table)
+            return self._core_table_schema(mapped.table, self.ctx.tree_of(class_node))
         return super().schema(class_node)
 
     def _has_own_table(self, class_node: ast.ClassDef) -> bool:
@@ -613,7 +632,7 @@ class SQLAlchemyDialect(TableDialect):
                     continue
                 entity = build_core_table_entity(var_name, call)
                 if entity is not None:
-                    entity.schema = self._core_table_schema(call)
+                    entity.schema = self._core_table_schema(call, tree)
                     self._note_core_table(entity, call)
                     entities.append(entity)
         return entities
@@ -917,7 +936,8 @@ def _references(entity: EntityInfo, table: str) -> List[FieldInfo]:
     return [
         f
         for f in entity.fields
-        # "schema.table.column": schema= is not read, the table name is matched.
+        # "schema.table.column": the table name is matched, as entities are not
+        # namespaced by schema (#353).
         if f.is_foreign_key
         and (f.foreign_table or "").rpartition(".")[0].rpartition(".")[2] == table
     ]
@@ -1013,16 +1033,26 @@ def _declared_attr_value(node: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.ex
     return None
 
 
-def _table_args_schema(value: ast.expr | None) -> str | None:
-    """The ``"schema"`` of a ``__table_args__`` dict, or of the dict ending a tuple."""
-    if isinstance(value, (ast.Tuple, ast.List)) and value.elts:
+def _table_args_schema(value: ast.expr | None) -> Tuple[bool, str | None]:
+    """Whether a ``__table_args__`` value sets a schema, and which.
+
+    A dict, or a tuple ending in one, with a ``"schema"`` other than ``None``
+    sets it (None when not a string literal). Without one (constraints only,
+    no key, ``None``) it sets none. A value erdify can't read sets an unknown
+    one: ``(True, None)``.
+    """
+    if _is_none(value):
+        return False, None
+    if isinstance(value, (ast.Tuple, ast.List)):
+        if not value.elts or not isinstance(value.elts[-1], ast.Dict):
+            return False, None
         value = value.elts[-1]
     if not isinstance(value, ast.Dict):
-        return None
+        return True, None
     for key, item in zip(value.keys, value.values):
         if isinstance(key, ast.Constant) and key.value == "schema":
-            return _literal_str(item)
-    return None
+            return (False, None) if _is_none(item) else (True, _literal_str(item))
+    return False, None
 
 
 def _metadata_call_schema(value: ast.expr | None) -> str | None:
