@@ -54,8 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` /
   `Field(foreign_key="core.customers.id")` now draws its edge
   ([#373](https://github.com/devsuit-berlin/erdify/issues/373)).
-- `--format json`: a SQLAlchemy foreign key under `MetaData(schema=...)` has
-  `foreign_table` `schema.table.column`
+- SQLAlchemy under `MetaData(schema=...)`: an unqualified foreign key has
+  `foreign_table` `schema.table.column` in `--format json`, and its edge goes
+  to the table in that schema (a same-name table without a schema used to
+  win); a `ForeignKey`-only Core column with a schema-qualified target now
+  shows its type in every format
   ([#370](https://github.com/devsuit-berlin/erdify/issues/370)).
 - SQL DDL: a foreign key naming a schema that has no table of that name
   (`REFERENCES core.customer` with only `staging.customer` scanned) no longer

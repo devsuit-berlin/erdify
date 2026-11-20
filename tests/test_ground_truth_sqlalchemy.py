@@ -94,6 +94,10 @@ SQLMODEL_DIFFERENCES = {
 # Documented in docs/frameworks/limitations.md; strict xfails, so that the
 # page is updated once one is supported.
 LIMITATIONS = {
+    "test_schema_identity.py::TestSqlAlchemy"
+    ".test_a_target_whose_schema_is_not_read_keeps_its_edge": (
+        "limitations.md: a metadata reached as `md = Base.metadata` gives no schema"
+    ),
     "classic_columns": "limitations.md: classic Column() attributes are not read",
     "composite_foreign_key": "limitations.md: composite foreign keys are not read",
     "test_entity_origin.py::TestSqlAlchemySchema"

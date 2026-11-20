@@ -117,7 +117,9 @@ class Match(Base):
   An unqualified foreign key (`ForeignKey("customer.id")`) on a table whose
   metadata has a default schema (`MetaData(schema="core")`) targets that
   schema, as in SQLAlchemy: `foreign_table` is `core.customer.id`
-  ([#370](https://github.com/devsuit-berlin/erdify/issues/370)).
+  ([#370](https://github.com/devsuit-berlin/erdify/issues/370)). It is
+  qualified only when erdify sees a `customer` table in that schema: a target
+  whose schema it can't read keeps `customer.id`, and its edge.
 
 A Django model's `__table_args__` is ignored, as Django ignores it. Django's
 own single-field `Meta.constraints` / `Meta.unique_together` uniqueness is read

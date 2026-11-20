@@ -103,5 +103,15 @@ def test_the_diagrams_draw_exactly_these_enums(source: Any) -> None:
     assert [quoted or bare for quoted, bare in drawn] == expected
 
     mermaid = generate_mermaid(entities, enums)
-    for name in expected:
-        assert re.search(rf"^    \"?{re.escape(name)}\"? {{\n        enum ", mermaid, re.M)
+    blocks = re.findall(r'^    "?(.+?)"? \{\n        enum ', mermaid, flags=re.M)
+    assert blocks == [_mermaid_text(name) for name in expected]
+
+    assert "enum " not in generate_plantuml(entities, enums, include_enums=False)
+    assert "        enum " not in generate_mermaid(entities, enums, include_enums=False)
+
+
+def _mermaid_text(name: str) -> str:
+    """How Mermaid writes an enum name (codes for quotes and the like)."""
+    from erdify.generator import MermaidGenerator
+
+    return MermaidGenerator._text(name)

@@ -408,13 +408,14 @@ field uses is not drawn, so it is left out (`project.enums` and the JSON
 `enums` list every parsed enum).
 
 ```python
+from pathlib import Path
 from erdify import enum_users, load_project
 
 project = load_project(Path("."))
 drawn = enum_users(
     project.entities, project.enums, include_enums=not project.settings.no_enums
 )
-for key, entity_names in drawn.items():  # e.g. "Status ['Order', 'Invoice']"
+for key, entity_names in drawn.items():  # e.g. "Status ['DRAFT', 'DONE'] ['Order', 'Invoice']"
     print(key, project.enums[key].values, entity_names)
 ```
 

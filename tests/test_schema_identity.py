@@ -528,6 +528,131 @@ audit = Table("audit", Base.metadata, Column("account_id", ForeignKey("account.i
         account_id = dict(entities)["Account"].fields[0]
         assert audit.fields[0].type_str == account_id.type_str != ""
 
+    def test_renamed_key_of_a_same_name_table_in_another_schema(self, tmp_path: Path) -> None:
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class CoreAccount(Base):
+    __tablename__ = "account"
+    __table_args__ = {"schema": "core"}
+    id: Mapped[int] = mapped_column("account_id", key="id", primary_key=True)
+
+
+class SalesAccount(Base):
+    __tablename__ = "account"
+    __table_args__ = {"schema": "sales"}
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Payment(Base):
+    __tablename__ = "payment"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    core_id: Mapped[int] = mapped_column(ForeignKey("core.account.id"))
+    sales_id: Mapped[int] = mapped_column(ForeignKey("sales.account.id"))
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert _fk_targets(dict(entities))["Payment"] == [
+            "core.account.account_id",
+            "sales.account.id",
+        ]
+
+    def test_a_core_table_on_other_metadata_keeps_its_targets(self, tmp_path: Path) -> None:
+        (tmp_path / "models.py").write_text(
+            """
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+other = MetaData()
+
+
+class Base(DeclarativeBase):
+    metadata = MetaData(schema="core")
+
+
+class Customer(Base):
+    __tablename__ = "customer"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+plain_customer = Table("customer", other, Column("id", Integer, primary_key=True))
+
+
+class Order(Base):
+    __table__ = Table(
+        "orders",
+        other,
+        Column("id", Integer, primary_key=True),
+        Column("cid", ForeignKey("customer.id")),
+    )
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        # Resolved in the table's own metadata (no schema), not the class's.
+        assert _fk_targets(dict(entities))["Order"] == ["customer.id"]
+        assert _edges(dict(entities)) == [("Order", "plain_customer", "cid")]
+
+    def test_a_target_whose_schema_is_not_read_keeps_its_edge(self, tmp_path: Path) -> None:
+        (tmp_path / "models.py").write_text(
+            """
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    metadata = MetaData(schema="core")
+
+
+md = Base.metadata
+customer = Table("customer", md, Column("id", Integer, primary_key=True))
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"))
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        # erdify can't read `md`'s schema: the target stays as written.
+        assert _fk_targets(dict(entities))["Order"] == ["customer.id"]
+        assert _edges(dict(entities)) == [("Order", "customer", "customer_id")]
+
+    def test_sqlmodel_picks_the_named_schemas_table(self, tmp_path: Path) -> None:
+        (tmp_path / "models.py").write_text(
+            """
+from sqlmodel import Field, SQLModel
+
+
+class CoreCustomer(SQLModel, table=True):
+    __tablename__ = "customers"
+    __table_args__ = {"schema": "core"}
+    id: int = Field(primary_key=True)
+
+
+class BillingCustomer(SQLModel, table=True):
+    __tablename__ = "customers"
+    __table_args__ = {"schema": "billing"}
+    id: int = Field(primary_key=True)
+    core_id: int = Field(foreign_key="core.customers.id")
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert _edges(dict(entities)) == [("BillingCustomer", "CoreCustomer", "core_id")]
+
 
 class TestMixedSources:
     def test_python_model_and_sql_table_of_one_name_keep_their_edge(self, tmp_path: Path) -> None:

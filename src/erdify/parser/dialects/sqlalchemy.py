@@ -20,9 +20,13 @@ class TableDialect(AnnotatedDialect):
 
     def __init__(self, ctx: ParseContext):
         super().__init__(ctx)
-        #: Table name -> {column key: column name} where an explicit ``key=``
-        #: differs from the name (``mapped_column("account_id", key="id")``).
+        #: Table (``schema.table``, or the table name without a schema) ->
+        #: {column key: column name} where an explicit ``key=`` differs from
+        #: the name (``mapped_column("account_id", key="id")``).
         self._renamed_keys: Dict[str, Dict[str, str]] = {}
+        #: id() of a foreign-key field -> (field, its metadata's default
+        #: schema), qualified in :meth:`finalize` (#370).
+        self._default_schemas: Dict[int, Tuple[FieldInfo, str]] = {}
         #: id() of foreign-key fields declared with ``link_to_name=True``: their
         #: target already names the column, not its key.
         # Keyed by id() but holding the object, so a freed object's address is
@@ -150,10 +154,10 @@ class TableDialect(AnnotatedDialect):
             keys[attr]: name for attr, name in names.items() if attr in keys and keys[attr] != name
         }
         if renamed:
-            self._renamed_keys[entity.table_name] = renamed
+            self._renamed_keys[_table_key(entity)] = renamed
         for f in entity.fields:
             f.name = names.get(f.name, f.name)
-        _qualify_foreign_keys(entity.fields, self._metadata_schema(self._mro_names(class_node)))
+        self._note_default_schema(entity.fields, self._metadata_schema(self._mro_names(class_node)))
 
     def finalize(self, entities: Mapping[str, EntityInfo]) -> None:
         """Point foreign keys written against a column key at the column's name.
@@ -163,6 +167,7 @@ class TableDialect(AnnotatedDialect):
         ``account_id``.
         """
         self._optional_reverse_references(entities)
+        self._qualify_foreign_keys(entities)
         # Only this dialect's tables: SQLModel and SQLAlchemy keep separate
         # metadata, so a table name may exist in both. A Core table belongs to
         # the metadata it is declared on.
@@ -183,10 +188,32 @@ class TableDialect(AnnotatedDialect):
                 if f.foreign_table is None or name_targets.get(id(f)) is f:
                     continue
                 table, _, column = f.foreign_table.rpartition(".")
-                # A target in a schema ("core.account.id") names its table last.
-                name = renamed.get(table.rpartition(".")[2], {}).get(column)
+                name = _renamed_table(renamed, table).get(column)
                 if name is not None:
                     f.foreign_table = f"{table}.{name}"
+
+    def _note_default_schema(self, fields: List[FieldInfo], schema: str | None) -> None:
+        """Remember the metadata's default schema for these fields' foreign keys."""
+        if schema:
+            for f in fields:
+                if f.foreign_table:
+                    self._default_schemas[id(f)] = (f, schema)
+
+    def _qualify_foreign_keys(self, entities: Mapping[str, EntityInfo]) -> None:
+        """Qualify a ``table.column`` target with its metadata's default schema (#370).
+
+        SQLAlchemy resolves an unqualified ``ForeignKey("customer.id")`` in
+        the default schema of the referencing table's ``MetaData(schema=...)``.
+        The target is qualified only when a table of that name is in that
+        schema: one whose schema erdify can't read keeps the target as
+        written, and its edge.
+        """
+        tables = {(e.schema, e.table_name) for e in entities.values()}
+        for f, schema in self._default_schemas.values():
+            target = f.foreign_table or ""
+            table, dot, column = target.partition(".")
+            if dot and "." not in column and (schema, table) in tables:
+                f.foreign_table = f"{schema}.{target}"
 
     def _optional_reverse_references(self, entities: Mapping[str, EntityInfo]) -> None:
         """Mark a to-one reference from the referenced side as optional (#299).
@@ -610,7 +637,7 @@ class SQLAlchemyDialect(TableDialect):
                 field.name = names.get(attr, attr)
                 key = keys.get(attr, attr)
                 if key != field.name:
-                    self._renamed_keys.setdefault(entity.table_name, {})[key] = field.name
+                    self._renamed_keys.setdefault(_table_key(entity), {})[key] = field.name
                 existing = columns.get(field.name)
                 if existing is None:
                     columns[field.name] = field
@@ -633,14 +660,17 @@ class SQLAlchemyDialect(TableDialect):
             self._add_single_table_columns(entity, class_node)
             # Single-table subclass columns are on the same metadata.
             default = self._metadata_schema(self._mro_names(class_node))
-            _qualify_foreign_keys(entity.fields, default)
+            self._note_default_schema(entity.fields, default)
             return
         entity.fields = core_table_fields(mapped.table)
         self._note_core_table(entity, mapped.table)
         tree = self._table_trees().get(id(mapped.table), self.ctx.tree_of(class_node))
-        _qualify_foreign_keys(entity.fields, self._core_metadata_schema(mapped.table, tree))
+        self._note_default_schema(entity.fields, self._core_metadata_schema(mapped.table, tree))
+        table_fields = {id(f) for f in entity.fields}
         self._add_single_table_columns(entity, class_node)
-        _qualify_foreign_keys(entity.fields, self._metadata_schema(self._mro_names(class_node)))
+        # A single-table subclass's own columns are on its class's metadata.
+        added = [f for f in entity.fields if id(f) not in table_fields]
+        self._note_default_schema(added, self._metadata_schema(self._mro_names(class_node)))
         if mapped.properties is not None:
             self._properties[entity.name] = mapped.properties
 
@@ -655,7 +685,7 @@ class SQLAlchemyDialect(TableDialect):
                 entity = build_core_table_entity(var_name, call)
                 if entity is not None:
                     entity.schema = self._core_table_schema(call, tree)
-                    _qualify_foreign_keys(entity.fields, self._core_metadata_schema(call, tree))
+                    self._note_default_schema(entity.fields, self._core_metadata_schema(call, tree))
                     self._note_core_table(entity, call)
                     entities.append(entity)
         return entities
@@ -800,7 +830,7 @@ class SQLAlchemyDialect(TableDialect):
             if field.is_foreign_key and not field.type_str:
                 self._untyped.append((field, self._metadata_kind(entity)))
         if renamed:
-            owner._renamed_keys.setdefault(entity.table_name, {}).update(renamed)
+            owner._renamed_keys.setdefault(_table_key(entity), {}).update(renamed)
 
 
 def renamed_back(call: ast.Call, key: str) -> str:
@@ -1085,18 +1115,24 @@ def _table_args_schema(value: ast.expr | None) -> Tuple[bool, str | None]:
     return False, None
 
 
-def _qualify_foreign_keys(fields: List[FieldInfo], schema: str | None) -> None:
-    """Qualify each ``table.column`` foreign-key target with the metadata's default schema.
+def _table_key(entity: EntityInfo) -> str:
+    """``schema.table``, or the table name for a table without a schema."""
+    return f"{entity.schema}.{entity.table_name}" if entity.schema else entity.table_name
 
-    SQLAlchemy resolves an unqualified ``ForeignKey("customer.id")`` in the
-    default schema of the referencing table's ``MetaData(schema=...)`` (#370).
-    A target that names its schema is kept.
+
+def _renamed_table(renamed: Mapping[str, Dict[str, str]], table: str) -> Dict[str, str]:
+    """The renamed keys of the table a foreign key names (``schema.table`` or ``table``).
+
+    A target without a schema also finds the one table of that name in a
+    schema, as it did before tables were told apart by schema.
     """
-    if not schema:
-        return
-    for f in fields:
-        if f.foreign_table and f.foreign_table.count(".") == 1:
-            f.foreign_table = f"{schema}.{f.foreign_table}"
+    if table in renamed:
+        return renamed[table]
+    if "." not in table:
+        found = [keys for key, keys in renamed.items() if key.rpartition(".")[2] == table]
+        if len(found) == 1:
+            return found[0]
+    return {}
 
 
 def _metadata_call_schema(value: ast.expr | None) -> str | None:
