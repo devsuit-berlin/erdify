@@ -147,6 +147,10 @@ class _EdgeBuilder:
 
     def __init__(self, entities: Mapping[str, EntityInfo]):
         self.entities = entities
+        #: Table name -> the entities of that table name, in entity order.
+        self._by_table: Dict[str, List[EntityInfo]] = {}
+        for entity in entities.values():
+            self._by_table.setdefault(entity.table_name, []).append(entity)
 
     def edges(self) -> List[Edge]:
         """Every edge, de-duplicated by how it is drawn, in diagram order."""
@@ -214,24 +218,27 @@ class _EdgeBuilder:
         """The entity the foreign-key column ``field`` of ``entity`` references.
 
         ``foreign_table`` is ``table.column`` or ``schema.table.column``. With
-        a schema, the table of that name in that schema is meant, else the
-        only table of that name (#353). Without one, the only table of that
-        name; of several, the one declared without a schema, else the one in
+        a schema, the table of that name in that schema is meant; when that
+        schema has none, a table of that name without a schema, never one in
+        another schema (#353). Without one, the only table of that name; of
+        several, the one declared without a schema, else the one in
         ``entity``'s schema. Anything else is ambiguous: no edge.
         """
         if not field.foreign_table:
             return None
         target = field.foreign_table.rpartition(".")[0]
-        candidates = [e for e in self.entities.values() if e.table_name == target]
-        schema = None
+        candidates = self._by_table.get(target, [])
         if not candidates and "." in target:
             schema, _, table = target.rpartition(".")
             schema = schema.rpartition(".")[2]  # a database part is not compared
-            candidates = [e for e in self.entities.values() if e.table_name == table]
+            candidates = self._by_table.get(table, [])
+            found = [e for e in candidates if e.schema == schema] or [
+                e for e in candidates if e.schema is None
+            ]
+            return found[0] if len(found) == 1 else None
         if len(candidates) <= 1:
             return candidates[0] if candidates else None
-        preferred = (schema,) if schema is not None else (None, entity.schema)
-        for wanted in preferred:
+        for wanted in (None, entity.schema):
             matches = [e for e in candidates if e.schema == wanted]
             if len(matches) == 1:
                 return matches[0]

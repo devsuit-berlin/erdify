@@ -67,13 +67,6 @@ def _lookup(key: str, keys: dict[str, str]) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def _matching(key: str, keys: set[str]) -> set[str]:
-    """The keys ``key`` names: itself if present, else every case-insensitive match."""
-    if key in keys:
-        return {key}
-    return {k for k in keys if k.lower() == key.lower()}
-
-
 #: A table's identity: (schema key, table key), both as the dialect folds
 #: them; the schema key is ``""`` for a table declared without a schema.
 TableId = tuple[str, str]
@@ -143,7 +136,7 @@ class SqlSchemaParser:
         dialect: sqlglot dialect name (e.g. ``"postgres"``). ``None`` uses
             sqlglot's dialect-agnostic mode.
         exclude_patterns: Case-sensitive globs; a table is dropped if one
-            matches its name.
+            matches its name, its table name or, in a schema, ``schema.table``.
         strict: Raise :class:`~erdify.ModelParseError` if any file fails to
             parse, instead of reporting it on stderr and skipping it.
     """
@@ -167,6 +160,11 @@ class SqlSchemaParser:
         #: Every table by its identity: same-name tables in different schemas
         #: are different tables (#353).
         self._tables: dict[TableId, EntityInfo] = {}
+        #: Table key -> the tables of that name; the same by lower-case key.
+        self._by_table: dict[str, list[TableId]] = {}
+        self._by_lower: dict[str, list[TableId]] = {}
+        #: id() of a table's entity -> its identity.
+        self._id_of: dict[int, TableId] = {}
         #: id() of a table's entity -> its primary-key columns, in key order.
         self._primary_keys: dict[int, list[str]] = {}
         #: id() of a table's entity -> its column name keys (identifiers as
@@ -209,7 +207,8 @@ class SqlSchemaParser:
 
         statements: list[object] = []
         self._parse_errors = []
-        self._entities, self._tables = {}, {}
+        self._entities, self._tables, self._id_of = {}, {}, {}
+        self._by_table, self._by_lower = {}, {}
         self._enums, self._enum_keys, self._typed_fields = {}, {}, []
         self._primary_keys, self._column_keys = {}, {}
         for f in self.files:
@@ -329,7 +328,12 @@ class SqlSchemaParser:
         coldefs = list(schema.find_all(exp.ColumnDef))  # type: ignore[attr-defined]
         columns = {self._key(c.this): c.name for c in coldefs}
         # A second definition of the same table (CREATE OR REPLACE) replaces it.
-        self._tables[self._table_id(schema.this)] = entity
+        tid = self._table_id(schema.this)
+        if tid not in self._tables:
+            self._by_table.setdefault(tid[1], []).append(tid)
+            self._by_lower.setdefault(tid[1].lower(), []).append(tid)
+        self._tables[tid] = entity
+        self._id_of[id(entity)] = tid
         self._column_keys[id(entity)] = columns
         # Constraint columns name declared columns as the dialect folds names.
         pk_order = [
@@ -506,27 +510,27 @@ class SqlSchemaParser:
         """The table a Table node names, as the dialect resolves names (#353).
 
         The table name, and the schema when the node has one, match exactly
-        as folded, else case-insensitively. Without a schema, the one table
-        of that name is meant; of several, the one in the schema of ``near``
-        (the table the reference is made from), else the one declared
-        without a schema. A schema no table of that name is in still
-        finds the only table of that name, as before schemas were told
-        apart. Anything else is ambiguous and finds nothing.
+        as folded, else case-insensitively. With a schema, the table of that
+        name in that schema is meant; when that schema has none, a table of
+        that name declared without a schema, never one in another schema.
+        Without a schema, the one table of that name is meant; of several,
+        the one in the schema of ``near`` (the table the reference is made
+        from), else the one declared without a schema. Anything else is
+        ambiguous and finds nothing.
         """
         schema_key, table_key = self._table_id(node)
-        names = _matching(table_key, {t for _, t in self._tables})
-        candidates = [tid for tid in self._tables if tid[1] in names]
+        candidates = self._by_table.get(table_key) or self._by_lower.get(table_key.lower(), [])
         if schema_key:
-            schemas = _matching(schema_key, {s for s, _ in candidates if s})
-            in_schema = [tid for tid in candidates if tid[0] in schemas]
-            if in_schema:
-                return self._tables[in_schema[0]] if len(in_schema) == 1 else None
-            return self._tables[candidates[0]] if len(candidates) == 1 else None
+            in_schema = [t for t in candidates if t[0] == schema_key] or [
+                t for t in candidates if t[0] and t[0].lower() == schema_key.lower()
+            ]
+            found = in_schema or [t for t in candidates if not t[0]]
+            return self._tables[found[0]] if len(found) == 1 else None
         if len(candidates) == 1:
             return self._tables[candidates[0]]
-        near_schema = next((tid[0] for tid, e in self._tables.items() if e is near), None)
-        for schema in (near_schema, ""):
-            preferred = [tid for tid in candidates if schema is not None and tid[0] == schema]
+        near_id = self._id_of.get(id(near)) if near is not None else None
+        for schema in ((near_id[0],) if near_id else ()) + ("",):
+            preferred = [t for t in candidates if t[0] == schema]
             if len(preferred) == 1:
                 return self._tables[preferred[0]]
         return None
@@ -680,10 +684,8 @@ class SqlSchemaParser:
             return
 
         def excluded(e: EntityInfo) -> bool:
-            return any(
-                fnmatchcase(e.name, p) or fnmatchcase(e.table_name, p)
-                for p in self.exclude_patterns
-            )
+            names = [e.name, e.table_name] + ([f"{e.schema}.{e.table_name}"] if e.schema else [])
+            return any(fnmatchcase(n, p) for n in names for p in self.exclude_patterns)
 
         names = {n for n, e in self._entities.items() if excluded(e)}
         self._entities = {n: e for n, e in self._entities.items() if n not in names}

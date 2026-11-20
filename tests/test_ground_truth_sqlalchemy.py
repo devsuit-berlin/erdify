@@ -183,6 +183,10 @@ OTHER_FILE = "an alias from another file of the test"
 COMPLETED = "a source the test completes with a parameter"
 TEMPLATE = "a str.format template"
 EXPECTED_UNLOADABLE = {
+    "test_schema_identity.py::TestSqlAlchemy"
+    ".test_foreign_key_to_a_schema_not_scanned_draws_no_edge": (
+        "a foreign key to a schema's table the source leaves out on purpose (#353)"
+    ),
     **{
         "test_sqlalchemy_inheritance.py::TestColumnIdentity"
         f".test_parent_merges_before_a_child_from_an_earlier_file[{i}]": (

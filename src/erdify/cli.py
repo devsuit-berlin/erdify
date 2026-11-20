@@ -53,8 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATTERN",
         help=(
-            "Glob patterns (case-sensitive) to exclude entities by class name "
-            "or table name, e.g. --exclude '*Link' audit_log"
+            "Glob patterns (case-sensitive) to exclude entities by class name, "
+            "table name or schema.table, e.g. --exclude '*Link' audit_log 'staging.*'"
         ),
     )
     parser.add_argument(

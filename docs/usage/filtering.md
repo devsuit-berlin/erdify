@@ -62,8 +62,9 @@ one-line hint suggesting `--include '**/models/*.py'`.
 
 Use `--exclude` to drop tables/entities from the diagram. Each pattern is a
 case-sensitive [glob](https://docs.python.org/3/library/fnmatch.html) tested
-against both the **class name** and the **table name** — an entity is excluded
-if either matches. Any relationships pointing at an excluded entity are dropped
+against the **class name** and the **table name** — and, for a table in a
+database schema, against `schema.table` (`--exclude 'staging.*'` drops a whole
+schema) — an entity is excluded if one matches. Any relationships pointing at an excluded entity are dropped
 too, so no dangling lines remain.
 
 ```bash

@@ -41,7 +41,7 @@ class Settings:
         sql_dialect: sqlglot dialect for ``.sql`` files; None for generic.
         include: Globs selecting the scanned files (default ``("models.py",)``).
             Not used when ``input`` is a file: then only that file is read.
-        exclude: Entity name / table name globs to leave out.
+        exclude: Entity name / table name / ``schema.table`` globs to leave out.
         exclude_paths: File path globs to skip.
         base_classes: Extra Pydantic base-class names.
         infer_keys: Infer keys for Pydantic / dataclass models.

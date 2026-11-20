@@ -3,6 +3,7 @@
 import html
 import json
 import re
+from collections import Counter
 from typing import Dict, List, Tuple
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_sole_primary_key
@@ -38,6 +39,7 @@ class _ERGenerator:
         self.title = title
         self.include_relationships = include_relationships
         self._ids: Dict[Tuple[str, str], str] | None = None
+        self._table_counts: Counter[str] | None = None
 
     # -- Names in the diagram source (#288) ---------------------------------
     #
@@ -214,8 +216,9 @@ class PlantUMLGenerator(_ERGenerator):
 
         Same-name tables in different schemas are told apart (#353).
         """
-        shared = sum(e.table_name == entity.table_name for e in self.entities.values()) > 1
-        if shared and entity.schema:
+        if self._table_counts is None:
+            self._table_counts = Counter(e.table_name for e in self.entities.values())
+        if self._table_counts[entity.table_name] > 1 and entity.schema:
             return f"{entity.schema}.{entity.table_name}"
         return entity.table_name
 

@@ -103,6 +103,17 @@ class TestSqlTables:
         assert _fk_targets(entities)["sale"] == ["customer.id"]
         assert _edges(entities) == [("sale", "customer", "customer_id")]
 
+    def test_a_schema_never_finds_a_table_in_another_schema(self, tmp_path: Path) -> None:
+        entities = _sql(
+            tmp_path,
+            "CREATE TABLE mart.customer (id INT PRIMARY KEY,"
+            " core_id INT REFERENCES core.customer(id));\n",
+        )
+
+        # core.customer is not in the scan: kept as written, no self-reference.
+        assert _fk_targets(entities)["customer"] == ["core.customer.id"]
+        assert _edges(entities) == []
+
     def test_ambiguous_unqualified_reference_draws_no_edge(self, tmp_path: Path) -> None:
         entities = _sql(
             tmp_path,
@@ -167,6 +178,19 @@ class TestSqlTables:
         pytest.importorskip("sqlglot")
         path = tmp_path / "schema.sql"
         path.write_text(ISSUE_REPRO, encoding="utf-8")
+
+        entities, _ = parse_models_directory(
+            path, sql_dialect="snowflake", exclude_patterns=["MART.*"]
+        )
+
+        assert list(entities) == ["CORE.CUSTOMER"]
+
+    def test_a_whole_schema_can_be_excluded(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        path = tmp_path / "schema.sql"
+        path.write_text(
+            ISSUE_REPRO + "create TABLE MART.ORDERS (ID NUMBER PRIMARY KEY);\n", encoding="utf-8"
+        )
 
         entities, _ = parse_models_directory(
             path, sql_dialect="snowflake", exclude_patterns=["MART.*"]
@@ -275,6 +299,46 @@ class MartCustomer(Base):
         assert 'entity "core.customer" as CoreCustomer {' in plantuml
         assert 'entity "mart.customer" as MartCustomer {' in plantuml
 
+    def test_foreign_key_to_a_schema_not_scanned_draws_no_edge(self, tmp_path: Path) -> None:
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class MartCustomer(Base):
+    __tablename__ = "customer"
+    __table_args__ = {"schema": "mart"}
+    id: Mapped[int] = mapped_column(primary_key=True)
+    core_id: Mapped[int] = mapped_column(ForeignKey("core.customer.id"))
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert _edges(dict(entities)) == []
+
+    def test_schema_table_can_be_excluded(self, tmp_path: Path) -> None:
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class Customer(Base):
+    __tablename__ = "customer"
+    __table_args__ = {"schema": "staging"}
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    id: Mapped[int] = mapped_column(primary_key=True)
+""",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path, exclude_patterns=["staging.*"])
+
+        assert list(entities) == ["Order"]
+
 
 class TestSameNameClasses:
     def test_a_hidden_model_is_reported(
@@ -294,6 +358,43 @@ class TestSameNameClasses:
         err = capsys.readouterr().err
         assert "model class 'Address' is defined in billing/models.py and in" in err
         assert "only the one in shipping/models.py is drawn" in err
+
+    def test_three_definitions_name_the_one_drawn(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        for package in ("a", "b", "c"):
+            (tmp_path / package).mkdir()
+            (tmp_path / package / "models.py").write_text(
+                "from pydantic import BaseModel\n\n\n"
+                f"class Address(BaseModel):\n    {package}: str\n",
+                encoding="utf-8",
+            )
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert [f.name for f in entities["Address"].fields] == ["c"]
+        err = capsys.readouterr().err
+        assert err.count("Warning") == 1
+        assert "defined in a/models.py, b/models.py and in c/models.py" in err
+        assert "only the one in c/models.py is drawn" in err
+
+    def test_a_hidden_class_of_a_filtered_source_is_not_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        (tmp_path / "a" / "models.py").write_text(
+            "from pydantic import BaseModel\n\n\nclass Address(BaseModel):\n    city: str\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "b" / "models.py").write_text(
+            "from dataclasses import dataclass\n\n\n@dataclass\nclass Address:\n    city: str\n",
+            encoding="utf-8",
+        )
+
+        parse_models_directory(tmp_path, sources=["dataclass"])
+
+        assert "Warning" not in capsys.readouterr().err
 
     def test_a_same_name_class_that_is_no_model_is_not_reported(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
