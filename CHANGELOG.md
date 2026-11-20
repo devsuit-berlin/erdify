@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Same-name SQL tables in different schemas (`core.customer`, `mart.customer`)
+  are no longer merged into one entity. Each is its own entity named
+  `schema.table`; a table name used in one schema only keeps its short name.
+  `REFERENCES`, `ALTER TABLE` and `CREATE INDEX` find the table in the schema
+  they name; an unqualified name prefers the referencing table's schema, then
+  a table without a schema
+  ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
+- A foreign key that names a schema (SQLAlchemy
+  `ForeignKey("core.customer.id")`) drew no edge; it is now drawn to the table
+  of that name in that schema
+  ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
+- Two model classes of the same name in different modules are still drawn as
+  one, but erdify now warns about it on stderr instead of dropping one
+  silently ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
+
+### Output changes
+
+- SQL DDL with same-name tables in several schemas: two entities named
+  `schema.table` instead of one, and edges to the right one. PlantUML titles a
+  box `schema.table` when its table name is used in more than one schema (SQL
+  and SQLAlchemy / SQLModel).
+- SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` now draws its edge.
+- `--format json`: a SQL DDL foreign key to a table in a schema has
+  `foreign_table` `schema.table.column` (was `table.column`).
+
 ## [1.7.0] - 2026-11-20
 
 ### Added

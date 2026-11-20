@@ -108,7 +108,23 @@ EXPECTED_CHECK_ERRORS = {
 # Sources SQLite can't run, each a deliberate test of erdify on DDL that isn't
 # (only) SQLite's.
 NO_ALTER_CONSTRAINT = "SQLite has no ALTER TABLE ... ADD CONSTRAINT"
+SCHEMAS = "same-name tables in several schemas (#353); SQLite has no schemas"
 EXPECTED_REJECTED = {
+    **{
+        f"test_schema_identity.py::TestSqlTables.test_{name}.entities": SCHEMAS
+        for name in (
+            "a_name_in_one_schema_only_stays_short",
+            "a_schema_finds_the_only_table_of_that_name",
+            "a_table_without_a_schema_keeps_the_short_name",
+            "unqualified_reference_prefers_the_referencing_tables_schema",
+            "ambiguous_unqualified_reference_draws_no_edge",
+            "schema_and_table_fold_like_the_dialect",
+            "quoted_schemas_stay_apart_in_postgres",
+            "redefining_a_table_in_the_same_schema_replaces_it",
+            "alter_table_and_index_find_the_schemas_table",
+            "link_table_between_same_name_tables",
+        )
+    },
     "test_sql.py::test_inline_and_alter_foreign_keys": NO_ALTER_CONSTRAINT,
     "test_sql.py::test_composite_foreign_key_alter_table_pairs_columns_positionally": (
         NO_ALTER_CONSTRAINT

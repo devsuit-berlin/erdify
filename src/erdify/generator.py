@@ -209,10 +209,20 @@ class PlantUMLGenerator(_ERGenerator):
 
         return "\n".join(lines)
 
+    def _title(self, entity: EntityInfo) -> str:
+        """The box title: the table name, ``schema.table`` when the name is in several schemas.
+
+        Same-name tables in different schemas are told apart (#353).
+        """
+        shared = sum(e.table_name == entity.table_name for e in self.entities.values()) > 1
+        if shared and entity.schema:
+            return f"{entity.schema}.{entity.table_name}"
+        return entity.table_name
+
     def _generate_entity(self, entity: EntityInfo) -> List[str]:
         """Generate PlantUML entity definition."""
         lines = []
-        head = f'entity "{self._text(entity.table_name)}" as {self._ref(entity.name)}'
+        head = f'entity "{self._text(self._title(entity))}" as {self._ref(entity.name)}'
         if entity.is_link_table:
             lines.append(f"{head} << (L, #AAFFAA) link >> {{")
         else:

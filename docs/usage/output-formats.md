@@ -189,7 +189,7 @@ Entity:
 
 | Key | Type | Description |
 |---|---|---|
-| `name` | string | Class name (or table name for SQL DDL). |
+| `name` | string | Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named `schema.table` (`core.customer`). Edges refer to entities by it. |
 | `table_name` | string | Database table name. |
 | `schema` | string or null | The database schema the table is in: a schema-qualified SQL table (`core.customer` → `core`; a database / catalog part before it is not included), SQLAlchemy / SQLModel `__table_args__ = {"schema": ...}` (also from a mixin or abstract base), a Core `Table(..., schema=...)`, or a declarative base's `metadata = MetaData(schema=...)`. `null` when the source names none. Added in 1.7.0. |
 | `source` | string | One of `sqlmodel`, `sqlalchemy`, `django`, `dataclass`, `pydantic`, `sql`. |
@@ -208,7 +208,7 @@ Field:
 | `primary_key` | boolean | Part of the primary key. |
 | `foreign_key` | boolean | References another table. |
 | `nullable` | boolean | Column accepts `NULL`. |
-| `foreign_table` | string or null | Referenced `table.column` when `foreign_key` is `true`. |
+| `foreign_table` | string or null | Referenced `table.column` when `foreign_key` is `true`; `schema.table.column` when the source names the schema (SQLAlchemy `ForeignKey("core.customer.id")`) or, for SQL DDL, when the referenced table is in a schema. |
 | `index` | boolean | Column is indexed. |
 | `unique` | boolean | Column is unique on its own. Always `false` on a table's only primary-key column, which the key makes unique; `true` on a member of a composite primary key that is unique by itself. |
 | `default` | string or null | Default value as source text, if any. |

@@ -65,7 +65,7 @@ sql_dialect = "postgres"
 
 | Construct | Support | Notes |
 |-----------|---------|-------|
-| `CREATE TABLE` | ✅ | Table name becomes the entity name; schema-qualified names (`schema.table`) are normalised to the table name part, and the schema is kept as the entity's `schema` (API and [JSON](../usage/output-formats.md#json); a database / catalog part, `db.schema.table`, is dropped). Same-name tables in different schemas are one entity ([#353](https://github.com/devsuit-berlin/erdify/issues/353)). Trailing table options sqlglot doesn't know (SQLite's `WITHOUT ROWID`) are ignored |
+| `CREATE TABLE` | ✅ | Table name becomes the entity name; schema-qualified names (`schema.table`) are normalised to the table name part, and the schema is kept as the entity's `schema` (API and [JSON](../usage/output-formats.md#json); a database / catalog part, `db.schema.table`, is dropped). Tables of the same name in different schemas stay separate entities, each named `schema.table` (`core.customer`, `mart.customer`); a table in one schema only keeps its short name ([#353](https://github.com/devsuit-berlin/erdify/issues/353)). Trailing table options sqlglot doesn't know (SQLite's `WITHOUT ROWID`) are ignored |
 | Primary keys — inline (`col INT PRIMARY KEY`) | ✅ | |
 | Primary keys — table constraint (`PRIMARY KEY (col, …)`) | ✅ | Composite PKs supported |
 | Foreign keys — inline (`col INT REFERENCES other(id)`) | ✅ | Without a column list (`REFERENCES other`), the key references `other`'s primary key, paired in key order for a composite key |
@@ -77,6 +77,7 @@ sql_dialect = "postgres"
 | `CREATE INDEX` | ✅ (JSON only) | Detected and emitted in `--format json`; not drawn in PlantUML or Mermaid diagrams (consistent with the Indexes note in the [feature matrix](../features.md)) |
 | `CREATE UNIQUE INDEX` | ✅ | On one plain column and without `WHERE`, the column is unique like a `UNIQUE` constraint (`UK`, 1:1 for a foreign key). A composite, partial or expression unique index doesn't make a column unique |
 | Identifier case | ✅ | Names are resolved the way the dialect folds them: unquoted names are case-insensitive (`REFERENCES Customer(ID)` is `customer.id`), and with `--sql-dialect postgres` a quoted `"Account"` stays apart from `account`. A name that still matches nothing exactly is matched case-insensitively when that is unambiguous |
+| Schemas in references | ✅ | `REFERENCES core.customer(id)` is the `customer` table in schema `core`. An unqualified `REFERENCES customer` is the only table of that name; of several in different schemas, the one in the referencing table's schema, else the one declared without a schema, else none is drawn (ambiguous). `ALTER TABLE` and `CREATE INDEX` find their table the same way. The JSON `foreign_table` names the target as `schema.table.column` when it is in a schema ([#353](https://github.com/devsuit-berlin/erdify/issues/353)) |
 | Quoted names with spaces or punctuation (`"Order Items"`) | ✅ | Kept in the IR and JSON; each diagram format encodes what its syntax can't take ([Names with spaces or special characters](../usage/output-formats.md#names-with-spaces-or-special-characters)) |
 
 > **NOTE:** Functional/expression indexes (e.g. `CREATE INDEX ... ON t(lower(col))`) are not mapped

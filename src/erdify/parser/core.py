@@ -121,6 +121,8 @@ class ASTDatabaseParser:
         self._shadowed: Dict[str, str] = {}
         #: id() of such a definition -> the name it is kept under.
         self._renamed: Dict[int, str] = {}
+        #: (replaced, kept) definitions of one class name in different files.
+        self._replaced: List[Tuple[ast.ClassDef, ast.ClassDef]] = []
         #: Classes and dialects (with their caches); renewed for each parse run.
         self._ctx = self._new_context()
 
@@ -175,6 +177,8 @@ class ASTDatabaseParser:
                     continue
                 self._parse_table_class(class_node, source)
 
+        self._warn_replaced_models()
+
         # Entities that are not classes, e.g. SQLAlchemy Core tables (#34, #305).
         for dialect in self._ctx.all_dialects():
             if self.sources is not None and dialect.kind not in self.sources:
@@ -197,6 +201,28 @@ class ASTDatabaseParser:
         self._apply_exclude_patterns()
 
         return self._entities, self._enums
+
+    def _warn_replaced_models(self) -> None:
+        """Warn about a drawn model that hides a same-name model in another file.
+
+        Classes are keyed by name, so of two model classes of one name in
+        different modules only the one scanned last is drawn (#367). This
+        is reported on stderr instead of happening silently (#353).
+        """
+        for replaced, kept in self._replaced:
+            if kept.name not in self._entities or self._classify_source(replaced) is None:
+                continue
+            files = [self._display_path(node) for node in (replaced, kept)]
+            print(
+                f"Warning: model class {kept.name!r} is defined in {files[0]} and in "
+                f"{files[1]}; only the one in {files[1]} is drawn. Same-name classes in "
+                "different modules are not told apart yet (#367).",
+                file=sys.stderr,
+            )
+
+    def _display_path(self, class_node: ast.ClassDef) -> str:
+        """The file ``class_node`` is defined in, relative to the scanned directory."""
+        return self._class_files[id(class_node)].relative_to(self.database_path).as_posix()
 
     def _collect_classes(self, definitions: List[Tuple[ast.ClassDef, Path]]) -> None:
         """Index every class by name; a later definition replaces an earlier one.
@@ -251,6 +277,7 @@ class ASTDatabaseParser:
         self._class_files = {}
         self._shadowed = {}
         self._renamed = {}
+        self._replaced = []
         files = {id(node): model_file for node, model_file in definitions}
         bases = {id(base) for base in links.values()}
         for node, model_file in definitions:
@@ -261,6 +288,9 @@ class ASTDatabaseParser:
             if id(node) in links:
                 node = self._extend(node, links, files)
                 self._class_files[id(node)] = model_file
+            earlier = self._all_classes.get(node.name)
+            if earlier is not None and self._class_files.get(id(earlier)) != model_file:
+                self._replaced.append((earlier, node))
             self._all_classes[node.name] = node
         # Framework base classes the scanned models build on but whose source
         # isn't scanned (e.g. Django's AbstractUser, #277). They have no file.
