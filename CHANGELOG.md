@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   key is not a shape change. The diagrams don't change.
 - A public edge model: `erdify.diagram_edges(entities)` returns the
   relationship lines erdify draws as `Edge` objects (both entities, each
-  end's `EdgeEnd` with `optional` / `many`, the label and the kind:
+  end's `EdgeEnd` with `optional` / `many`, the label and the kind (`EdgeKind`):
   `foreign_key`, `link_table` or `relationship`), and `--format json` lists
   them in a new top-level `edges` key
   ([#359](https://github.com/devsuit-berlin/erdify/issues/359)). PlantUML and

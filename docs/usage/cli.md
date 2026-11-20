@@ -352,8 +352,8 @@ for edge in diagram_edges(entities):
   it (`Post ||--o{ post_tag`, `post_tag }o--|| Tag`), or a star from each
   parent for three or more keys. `kind` is `link_table`.
 - A declared relationship (`kind` `relationship`) is drawn only between
-  entities no column connects, and the two sides of a bidirectional one are
-  one edge.
+  entities no foreign-key column or link table connects (a many-to-many one:
+  no link table), and the two sides of a bidirectional one are one edge.
 - Endpoints are entity names; relationships to an entity that isn't in
   `entities` (excluded, say) give no edge.
 
@@ -369,7 +369,7 @@ Everything listed in `erdify.__all__` is the public Python API. Within it:
 | `PlantUMLGenerator`, `MermaidGenerator` | The constructor (`entities`, `enums` positional, `title` keyword-only) and `generate()`. |
 | `EntityInfo`, `FieldInfo`, `EnumInfo` | The dataclass fields. New fields may be added with defaults. |
 | `diagram_edges` | The function, its `entities` argument, and which edges it returns: a change to the edges is an output change, as it changes the diagrams. |
-| `Edge`, `EdgeEnd` | The dataclass fields, `Edge.glyph`, `EdgeEnd.token` / `left_token` / `from_token()`. New fields may be added with defaults. |
+| `Edge`, `EdgeEnd` | The dataclass fields, `Edge.glyph`, `EdgeEnd.left_token` / `right_token`. New fields may be added with defaults; new `Edge.kind` values (`EdgeKind`) may be added in a minor release. |
 | `SqlDependencyError` | The exception type. |
 | `ModelParseError` | The exception type and its `errors` attribute (`(file, message)` pairs). |
 | `JSON_SCHEMA_VERSION` | The current [JSON output](output-formats.md#json) `schema_version`. |

@@ -232,7 +232,7 @@ Edge:
 | `from_end` | edge end | How many `from_entity` rows relate to one `to_entity` row. |
 | `to_end` | edge end | How many `to_entity` rows relate to one `from_entity` row. |
 | `label` | string | The foreign-key column or relationship attribute the edge is labelled with. |
-| `kind` | string | `foreign_key` (a foreign-key column), `link_table` (a column of a detected link table: the table stays an entity, with a path of two edges or, for three or more keys, a star) or `relationship` (a declared relationship between entities no column connects; both sides of a bidirectional one are one edge). |
+| `kind` | string | `foreign_key` (a foreign-key column), `link_table` (a column of a detected link table: the table stays an entity, with a path of two edges or, for three or more keys, a star) or `relationship` (a declared relationship between entities no foreign-key column or link table connects, a many-to-many one where no link table does; both sides of a bidirectional one are one edge). New values may be added in a minor release. |
 
 Edge end:
 
@@ -256,8 +256,8 @@ Enum:
   Consumers must ignore keys they do not know.
 - **Removing or renaming** a key, or changing a value's type or meaning, bumps
   `schema_version` and ships only in a major erdify release.
-- A new value of `source` (a framework added in a minor release) or of a
-  relationship's `type` is not a new shape either: `schema_version` stays,
+- A new value of `source` (a framework added in a minor release), of a
+  relationship's `type` or of an edge's `kind` is not a new shape either: `schema_version` stays,
   and the published JSON Schema is updated in place with the release that
   adds it. A consumer validating with a copy of the schema should refresh it,
   or accept unknown values.

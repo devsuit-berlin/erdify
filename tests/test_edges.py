@@ -42,9 +42,8 @@ class TestEdgeEnd:
             (EdgeEnd(optional=False, many=True), "|{", "}|"),
         ],
     )
-    def test_tokens_round_trip(self, end: EdgeEnd, right: str, left: str) -> None:
-        assert (end.token, end.left_token) == (right, left)
-        assert EdgeEnd.from_token(right) == EdgeEnd.from_token(left) == end
+    def test_tokens(self, end: EdgeEnd, right: str, left: str) -> None:
+        assert (end.right_token, end.left_token) == (right, left)
 
 
 SQLALCHEMY = """
@@ -190,7 +189,7 @@ class Post(BaseModel):
             ("Post", "}o--o|", "User", "user", "relationship")
         ]
 
-    def test_back_populates_pairs_exactly(self, tmp_path: Path) -> None:
+    def test_fk_column_suppresses_the_mirroring_relationship(self, tmp_path: Path) -> None:
         entities = _parse(
             tmp_path,
             SQLALCHEMY
@@ -212,6 +211,41 @@ class Post(Base):
         # The foreign key already connects the pair: the relationship mirrors it.
         assert _summary(diagram_edges(entities)) == [
             ("Post", "}o--||", "User", "author_id", "foreign_key")
+        ]
+
+    def test_back_populates_beats_the_name_guess(self) -> None:
+        """Without back_populates, `author` would pair with `authored` by name."""
+        user = EntityInfo(
+            "User",
+            "user",
+            relationships=[("Post", "many", "authored"), ("Post", "many", "edited")],
+            inverse_relationships={"authored": "editor", "edited": "author"},
+        )
+        post = EntityInfo(
+            "Post",
+            "post",
+            relationships=[("User", "one", "author"), ("User", "one", "editor")],
+            nullable_relationships=["editor"],
+            inverse_relationships={"author": "edited", "editor": "authored"},
+        )
+
+        edges = diagram_edges({"User": user, "Post": post})
+
+        # Kept side: Post (sorts first); each edge pairs the attributes back_populates names.
+        assert _summary(edges) == [
+            ("Post", "}o--||", "User", "author", "relationship"),
+            ("Post", "}o--o|", "User", "editor", "relationship"),
+        ]
+        assert [e.from_end for e in edges] == [MANY, MANY]
+
+    def test_identical_edges_appear_once(self) -> None:
+        user = EntityInfo("User", "user")
+        post = EntityInfo(
+            "Post", "post", relationships=[("User", "one", "user"), ("User", "one", "user")]
+        )
+
+        assert _summary(diagram_edges({"User": user, "Post": post})) == [
+            ("Post", "}o--||", "User", "user", "relationship")
         ]
 
     def test_self_reference_folds_parent_and_children(self, tmp_path: Path) -> None:

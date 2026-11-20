@@ -3,7 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .config import EntityInfo, EnumInfo, FieldInfo
-from .edges import Edge, EdgeEnd, diagram_edges
+from .edges import Edge, EdgeEnd, EdgeKind, diagram_edges
 from .generator import (
     JSON_SCHEMA_VERSION,
     MermaidGenerator,
@@ -29,6 +29,7 @@ __all__ = [
     # Edges
     "Edge",
     "EdgeEnd",
+    "EdgeKind",
     "diagram_edges",
     # Parser
     "ASTDatabaseParser",

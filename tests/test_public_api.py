@@ -13,6 +13,7 @@ def test_public_api_is_pinned():
             "EntityInfo",
             "Edge",
             "EdgeEnd",
+            "EdgeKind",
             "diagram_edges",
             "ASTDatabaseParser",
             "parse_models_directory",

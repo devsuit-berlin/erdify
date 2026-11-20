@@ -2,8 +2,9 @@
 
 :func:`diagram_edges` turns parsed entities into the edges every diagram
 format draws: one per foreign-key column, two (or a star) through a detected
-link table, and one per declared relationship between entities no column
-already connects, with both sides of a bidirectional relationship merged into
+link table, and one per declared relationship between entities no
+foreign-key column or link table already connects (a many-to-many one: no
+link table), with both sides of a bidirectional relationship merged into
 one edge. The PlantUML and Mermaid generators render these edges, and
 ``--format json`` lists them, so a tool built on erdify draws exactly the same
 edges without re-implementing the rules.
@@ -11,9 +12,12 @@ edges without re-implementing the rules.
 
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Tuple
+from typing import Dict, Iterable, List, Literal, Mapping, Tuple
 
 from .config import EntityInfo, FieldInfo
+
+#: What an edge stands for (:attr:`Edge.kind`).
+EdgeKind = Literal["foreign_key", "link_table", "relationship"]
 
 
 @dataclass(frozen=True)
@@ -30,20 +34,14 @@ class EdgeEnd:
     many: bool
 
     @property
-    def token(self) -> str:
-        """The crow's-foot token at this end, written as the right-hand end
-        (``||``, ``o|``, ``o{``, ``|{``); :meth:`left_token` mirrors it."""
+    def right_token(self) -> str:
+        """This end's crow's-foot token right of ``--``: ``||``, ``o|``, ``o{``, ``|{``."""
         return ("o" if self.optional else "|") + ("{" if self.many else "|")
 
     @property
     def left_token(self) -> str:
-        """The crow's-foot token written as the left-hand end (``||``, ``|o``, ``}o``, ``}|``)."""
-        return self.token[::-1].replace("{", "}")
-
-    @classmethod
-    def from_token(cls, token: str) -> "EdgeEnd":
-        """The end a right-hand (``o{``) or left-hand (``}o``) token stands for."""
-        return cls(optional="o" in token, many="{" in token or "}" in token)
+        """This end's crow's-foot token left of ``--``: ``||``, ``|o``, ``}o``, ``}|``."""
+        return self.right_token[::-1].replace("{", "}")
 
 
 @dataclass(frozen=True)
@@ -51,7 +49,8 @@ class Edge:
     """One relationship line of the diagram.
 
     The edge is drawn from ``from_entity`` to ``to_entity``; PlantUML and
-    Mermaid write it ``<from> <from_end>--<to_end> <to> : "<label>"``.
+    Mermaid write it ``<from> <glyph> <to> : "<label>"`` (:attr:`glyph`), with
+    names and the label encoded as each format needs.
 
     Attributes:
         from_entity: Name of the entity the edge starts at: the one holding
@@ -71,21 +70,20 @@ class Edge:
     from_end: EdgeEnd
     to_end: EdgeEnd
     label: str
-    kind: str
+    kind: EdgeKind
 
     @property
     def glyph(self) -> str:
         """The crow's-foot glyph PlantUML and Mermaid draw, e.g. ``}o--||``."""
-        return f"{self.from_end.left_token}--{self.to_end.token}"
+        return f"{self.from_end.left_token}--{self.to_end.right_token}"
 
 
 def diagram_edges(entities: Mapping[str, EntityInfo]) -> List[Edge]:
     """The edges erdify draws between ``entities``, in diagram order.
 
     Order: one edge per foreign-key column (in entity and column order), then
-    the edges through each detected link table, then one edge per declared
-    relationship between entities no foreign-key column or link table already
-    connects. Edges that would be drawn identically appear once.
+    the edges through each detected link table, then the declared
+    relationships. Edges that would be drawn identically appear once.
 
     - **Foreign keys:** from the entity holding the column to the referenced
       one. The far end is optional when the column is nullable; the near end
@@ -95,7 +93,9 @@ def diagram_edges(entities: Mapping[str, EntityInfo]) -> List[Edge]:
       drawn as a path through the link entity (``A ||--o{ Link``, ``Link
       }o--|| B``), a ternary or larger one as a star from each parent to the
       link entity. A link-table column unique on its own caps its side at one.
-    - **Declared relationships** (:attr:`EntityInfo.relationships`): both
+    - **Declared relationships** (:attr:`EntityInfo.relationships`), only
+      between entities no foreign-key column or link table connects (a
+      many-to-many one only where no link table does): both
       sides of a bidirectional relationship are merged into one edge, paired
       by ``back_populates=`` first, then guessed by cardinality and attribute
       names; the edge starts at the entity whose name sorts first.
