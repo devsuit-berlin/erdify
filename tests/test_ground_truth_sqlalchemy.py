@@ -66,6 +66,10 @@ SNIPPET_HEADERS = {
 
 # erdify output that differs from SQLAlchemy's schema, pending a fix.
 KNOWN_DIFFERENCES = {
+    "test_schema_identity.py::TestMixedSources"
+    ".test_one_table_drawn_twice_in_one_schema_keeps_its_edge": (
+        "#370: an unqualified ForeignKey keeps no MetaData default schema"
+    ),
     "test_model_references.py::TestRedeclaration"
     ".test_unresolvable_redeclaration_shadows_the_inherited_relationship.src": (
         "#319: SQLAlchemy maps a Union[A, B] relationship to its first member"
@@ -183,6 +187,14 @@ OTHER_FILE = "an alias from another file of the test"
 COMPLETED = "a source the test completes with a parameter"
 TEMPLATE = "a str.format template"
 EXPECTED_UNLOADABLE = {
+    "test_schema_identity.py::TestSameNameClasses"
+    ".test_a_table_model_extending_its_namesake_is_not_reported[2]": (
+        "one file of a multi-file source: its base class is in another file"
+    ),
+    "test_schema_identity.py::TestSqlAlchemy"
+    ".test_foreign_key_to_a_schema_not_scanned_draws_no_edge": (
+        "a foreign key to a schema's table the source leaves out on purpose (#353)"
+    ),
     **{
         "test_sqlalchemy_inheritance.py::TestColumnIdentity"
         f".test_parent_merges_before_a_child_from_an_earlier_file[{i}]": (

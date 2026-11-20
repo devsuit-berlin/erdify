@@ -15,7 +15,9 @@ class FieldInfo:
         is_primary_key: Part of the primary key.
         is_foreign_key: References another table.
         is_nullable: Column accepts ``NULL``.
-        foreign_table: Referenced ``"table.column"`` when ``is_foreign_key``.
+        foreign_table: Referenced ``"table.column"`` when ``is_foreign_key``;
+            ``"schema.table.column"`` when the source names the schema (or, for
+            SQL DDL, the referenced table is in a schema).
         index: Column is indexed.
         default_value: Default value as source text, if any.
         is_unique: Unique on its own (implies a 1:1 relationship when the
@@ -54,7 +56,9 @@ class EntityInfo:
     """Represents a database table/entity.
 
     Attributes:
-        name: Class name (or table name for SQL DDL); the key in the entities dict.
+        name: Class name (or table name for SQL DDL); the key in the entities
+            dict. Same-name SQL tables in different schemas are each named
+            ``schema.table`` (#353).
         table_name: Database table name.
         fields: Columns, in declaration order.
         relationships: ``(target, type, attribute)`` tuples, where ``target`` is

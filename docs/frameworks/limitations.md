@@ -108,9 +108,12 @@ class Match(Base):
   it) or `Base.metadata`. A non-literal value (`{"schema": SCHEMA}`, a tuple ending in a variable), a
   metadata reached any other way (`md = Base.metadata`, a `MetaData` passed
   to `declarative_base()` / `registry()`) and a variable defined in several
-  other files give no schema. Entities are not namespaced: the diagram shows
-  table names only, and two tables of the same name in different schemas are
-  one entity ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
+  other files give no schema. A foreign key naming a schema
+  (`ForeignKey("core.customer.id")`) is drawn to the table of that name in
+  that schema; two tables of the same name in different schemas are told
+  apart in the diagram (PlantUML titles their boxes `schema.table`). A schema
+  erdify doesn't read (a non-literal one) draws no edge from a foreign key
+  that names it ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 
 A Django model's `__table_args__` is ignored, as Django ignores it. Django's
 own single-field `Meta.constraints` / `Meta.unique_together` uniqueness is read
@@ -193,9 +196,10 @@ Not read:
   table to the target's table makes a to-one reference, otherwise it is a
   collection (`uselist=False`: to-one); a self-referential one is a collection
   unless it sets `remote_side=`. `foreign_keys=` and `primaryjoin=` are not
-  read, and `properties=` must be a dict literal. A foreign key to a table in
-  another schema is matched by table name (entities are not namespaced by
-  schema, see [`__table_args__`](#__table_args__-is-mostly-not-read)).
+  read, and `properties=` must be a dict literal. Whether a foreign key
+  points at the target's table is decided by table name, without its schema
+  ([#372](https://github.com/devsuit-berlin/erdify/issues/372); see
+  [`__table_args__`](#__table_args__-is-mostly-not-read)).
 
 ## Column type aliases
 
@@ -353,7 +357,7 @@ dataclass field with such a name is a real field
 | Non-literal Django `db_column` / `Meta.db_table` | Falls back to the attribute name / Django's default table name, silently |
 | Non-literal `CompositePrimaryKey(*names)` arguments | No implicit `id` is added, but no column is marked as the primary key |
 | `__table_args__` (composite FKs, composite `UniqueConstraint`, partial or non-unique `Index`) | Not read; single-column `UniqueConstraint` / unique `Index` and `"schema"` are read |
-| Same-name tables in different database schemas | Drawn as one entity; the entity's `schema` is one of them ([#353](https://github.com/devsuit-berlin/erdify/issues/353)) |
+| Same-name model classes in different modules (a Pydantic `Address` in two packages, a Django `Profile` in two apps) | Only the class scanned last is kept (none is drawn if that one is not a model), with a warning on stderr ([#367](https://github.com/devsuit-berlin/erdify/issues/367)) |
 | Django composite `Meta.unique_together` / `Meta.constraints`, conditional or expression `UniqueConstraint`, `Meta.indexes` | Not read; a single-field, unconditional unique constraint is |
 | Django app label from an `AppConfig` named in `INSTALLED_APPS` (`"shop.apps.Custom"`), or a non-literal `label` | The app's default `AppConfig` or the package name is used |
 | Django base built on a class outside the scanned files (`class Stamped(LibBase)`) | Read like an abstract model: its fields are columns. A scanned plain class (not a `models.Model` subclass, also on `Generic[...]` / `Protocol` / `ABC`) adds none |

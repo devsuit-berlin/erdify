@@ -945,8 +945,8 @@ def _references(entity: EntityInfo, table: str) -> List[FieldInfo]:
     return [
         f
         for f in entity.fields
-        # "schema.table.column": the table name is matched, as entities are not
-        # namespaced by schema (#353).
+        # "schema.table.column": only the table name is matched; the schema is
+        # left out of this mapper check (the drawn edge does compare it).
         if f.is_foreign_key
         and (f.foreign_table or "").rpartition(".")[0].rpartition(".")[2] == table
     ]

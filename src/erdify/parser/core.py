@@ -121,6 +121,8 @@ class ASTDatabaseParser:
         self._shadowed: Dict[str, str] = {}
         #: id() of such a definition -> the name it is kept under.
         self._renamed: Dict[int, str] = {}
+        #: (replaced, kept) definitions of one class name in different files.
+        self._replaced: List[Tuple[ast.ClassDef, ast.ClassDef]] = []
         #: Classes and dialects (with their caches); renewed for each parse run.
         self._ctx = self._new_context()
 
@@ -195,8 +197,50 @@ class ASTDatabaseParser:
 
         # Third pass: apply exclude patterns
         self._apply_exclude_patterns()
+        self._warn_replaced_models()
 
         return self._entities, self._enums
+
+    def _warn_replaced_models(self) -> None:
+        """Warn about a drawn model that hides a same-name model in another file.
+
+        Classes are keyed by name, so of two model classes of one name in
+        different modules only the one scanned last is drawn (#367). This
+        is reported on stderr instead of happening silently (#353). A table
+        model extending a same-named table model (``class Item(Item)``) is
+        not: drawing only the extending class is documented behaviour.
+        """
+        hidden: Dict[str, List[ast.ClassDef]] = {}
+        for replaced, kept in self._replaced:
+            if _extends_namesake(kept):
+                continue
+            source = self._classify_source(replaced)
+            if source is not None and (self.sources is None or source in self.sources):
+                hidden.setdefault(kept.name, []).append(replaced)
+        for name, nodes in hidden.items():
+            drawn = self._display_path(self._all_classes[name])
+            files = ", ".join(self._display_path(node) for node in nodes)
+            if name not in self._entities:
+                kind = self._classify_source(self._all_classes[name])
+                if kind is not None and (self.sources is None or kind in self.sources):
+                    continue  # a model left out on purpose (--exclude)
+                print(
+                    f"Warning: model class {name!r} in {files} is not drawn: the class of "
+                    f"that name in {drawn} replaces it. Same-name classes in different "
+                    "modules are not told apart yet (#367).",
+                    file=sys.stderr,
+                )
+                continue
+            print(
+                f"Warning: model class {name!r} is defined in {files} and in {drawn}; "
+                f"only the one in {drawn} is drawn. Same-name classes in different "
+                "modules are not told apart yet (#367).",
+                file=sys.stderr,
+            )
+
+    def _display_path(self, class_node: ast.ClassDef) -> str:
+        """The file ``class_node`` is defined in, relative to the scanned directory."""
+        return self._class_files[id(class_node)].relative_to(self.database_path).as_posix()
 
     def _collect_classes(self, definitions: List[Tuple[ast.ClassDef, Path]]) -> None:
         """Index every class by name; a later definition replaces an earlier one.
@@ -251,6 +295,7 @@ class ASTDatabaseParser:
         self._class_files = {}
         self._shadowed = {}
         self._renamed = {}
+        self._replaced = []
         files = {id(node): model_file for node, model_file in definitions}
         bases = {id(base) for base in links.values()}
         for node, model_file in definitions:
@@ -261,6 +306,9 @@ class ASTDatabaseParser:
             if id(node) in links:
                 node = self._extend(node, links, files)
                 self._class_files[id(node)] = model_file
+            earlier = self._all_classes.get(node.name)
+            if earlier is not None and self._class_files.get(id(earlier)) != model_file:
+                self._replaced.append((earlier, node))
             self._all_classes[node.name] = node
         # Framework base classes the scanned models build on but whose source
         # isn't scanned (e.g. Django's AbstractUser, #277). They have no file.

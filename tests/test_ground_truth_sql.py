@@ -108,7 +108,47 @@ EXPECTED_CHECK_ERRORS = {
 # Sources SQLite can't run, each a deliberate test of erdify on DDL that isn't
 # (only) SQLite's.
 NO_ALTER_CONSTRAINT = "SQLite has no ALTER TABLE ... ADD CONSTRAINT"
+SCHEMAS = "same-name tables in several schemas (#353); SQLite has no schemas"
 EXPECTED_REJECTED = {
+    "test_schema_identity.py::TestSqlTables"
+    ".test_a_bare_name_excludes_the_table_in_every_schema": SCHEMAS,
+    "test_schema_identity.py::TestMixedSources"
+    ".test_sql_reference_to_a_python_models_schema_in_another_case": SCHEMAS,
+    "test_schema_identity.py::TestSqlTables"
+    ".test_a_redefined_table_takes_the_foreign_keys_of_its_later_definition.entities": (
+        "one table defined twice, for the redefinition; SQLite refuses the second"
+    ),
+    "test_schema_identity.py::TestMixedSources"
+    ".test_sql_reference_into_a_schema_prefers_the_sql_table": SCHEMAS,
+    "test_schema_identity.py::TestMixedSources"
+    ".test_sql_reference_to_a_python_model_without_a_schema": SCHEMAS,
+    "test_schema_identity.py::TestMixedSources"
+    ".test_one_table_drawn_twice_in_one_schema_keeps_its_edge": SCHEMAS,
+    "test_schema_identity.py::TestSqlTables"
+    ".test_an_excluded_target_draws_no_edge_to_another_table": SCHEMAS,
+    "test_schema_identity.py::TestMixedSources"
+    ".test_python_model_and_sql_table_in_one_schema_keep_their_edge": SCHEMAS,
+    **{
+        f"test_schema_identity.py::TestSqlTables.test_{name}.entities": SCHEMAS
+        for name in (
+            "a_name_in_one_schema_only_stays_short",
+            "a_schema_finds_the_only_table_of_that_name",
+            "names_collide_as_the_dialect_folds_them",
+            "names_that_collide_only_as_written_stay_apart",
+            "names_that_still_collide_are_reported",
+            "a_schema_matches_its_table_case_insensitively",
+            "a_schema_matching_two_tables_case_insensitively_draws_no_edge",
+            "a_schema_never_finds_a_table_in_another_schema",
+            "a_table_without_a_schema_keeps_the_short_name",
+            "unqualified_reference_prefers_the_referencing_tables_schema",
+            "ambiguous_unqualified_reference_draws_no_edge",
+            "schema_and_table_fold_like_the_dialect",
+            "quoted_schemas_stay_apart_in_postgres",
+            "redefining_a_table_in_the_same_schema_replaces_it",
+            "alter_table_and_index_find_the_schemas_table",
+            "link_table_between_same_name_tables",
+        )
+    },
     "test_sql.py::test_inline_and_alter_foreign_keys": NO_ALTER_CONSTRAINT,
     "test_sql.py::test_composite_foreign_key_alter_table_pairs_columns_positionally": (
         NO_ALTER_CONSTRAINT

@@ -64,7 +64,9 @@ Use `--exclude` to drop tables/entities from the diagram. Each pattern is a
 case-sensitive [glob](https://docs.python.org/3/library/fnmatch.html) tested
 against both the **class name** and the **table name** — an entity is excluded
 if either matches. Any relationships pointing at an excluded entity are dropped
-too, so no dangling lines remain.
+too, so no dangling lines remain. Same-name SQL tables in several schemas are
+named `schema.table` (`core.customer`), so that name picks one of them; a bare
+table name (`customer`) matches its table in every schema.
 
 ```bash
 # Exclude all link tables (class names ending in "Link")

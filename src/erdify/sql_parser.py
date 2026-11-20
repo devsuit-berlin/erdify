@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from fnmatch import fnmatchcase
@@ -64,6 +65,11 @@ def _lookup(key: str, keys: dict[str, str]) -> str | None:
         return keys[key]
     matches = [name for k, name in keys.items() if k.lower() == key.lower()]
     return matches[0] if len(matches) == 1 else None
+
+
+#: A table's identity: (schema key, table key), both as the dialect folds
+#: them; the schema key is ``""`` for a table declared without a schema.
+TableId = tuple[str, str]
 
 
 def _split_statements(tokens: list[Any], semicolon: Any) -> list[list[Any]]:
@@ -130,7 +136,8 @@ class SqlSchemaParser:
         dialect: sqlglot dialect name (e.g. ``"postgres"``). ``None`` uses
             sqlglot's dialect-agnostic mode.
         exclude_patterns: Case-sensitive globs; a table is dropped if one
-            matches its name.
+            matches its name (``schema.table`` for same-name tables in several
+            schemas) or its table name.
         strict: Raise :class:`~erdify.ModelParseError` if any file fails to
             parse, instead of reporting it on stderr and skipping it.
     """
@@ -151,12 +158,21 @@ class SqlSchemaParser:
         self.exclude_patterns = exclude_patterns or []
         self._entities: dict[str, EntityInfo] = {}
         self._enums: dict[str, EnumInfo] = {}
-        #: Table name -> its primary-key columns, in key order.
-        self._primary_keys: dict[str, list[str]] = {}
-        #: Name keys (identifiers as the dialect folds them) -> declared names,
-        #: for tables and, per table, for columns.
-        self._table_keys: dict[str, str] = {}
-        self._column_keys: dict[str, dict[str, str]] = {}
+        #: Every table by its identity: same-name tables in different schemas
+        #: are different tables (#353).
+        self._tables: dict[TableId, EntityInfo] = {}
+        #: Table key -> the tables of that name; the same by lower-case key.
+        self._by_table: dict[str, list[TableId]] = {}
+        self._by_lower: dict[str, list[TableId]] = {}
+        #: id() of each current table's entity -> its identity.
+        self._id_of: dict[int, TableId] = {}
+        #: id() of each CREATE TABLE statement -> the entity it made.
+        self._made_by: dict[int, EntityInfo] = {}
+        #: Table -> its primary-key columns, in key order.
+        self._primary_keys: dict[TableId, list[str]] = {}
+        #: Table -> its column name keys (identifiers as the dialect folds
+        #: them) -> declared names.
+        self._column_keys: dict[TableId, dict[str, str]] = {}
         #: Enum type name keys -> declared names.
         self._enum_keys: dict[str, str] = {}
         #: Columns of a user-defined type: (field, schema prefix, type name key),
@@ -174,7 +190,9 @@ class SqlSchemaParser:
         skipped as a whole.
 
         Returns:
-            Tuple of (entities, enums), both keyed by table / type name.
+            Tuple of (entities, enums), both keyed by name: a table's name,
+            or ``schema.table`` when tables of that name exist in several
+            schemas (#353); a type's name.
 
         Raises:
             SqlDependencyError: ``sqlglot`` (``erdify[sql]``) is not installed.
@@ -192,6 +210,10 @@ class SqlSchemaParser:
 
         statements: list[object] = []
         self._parse_errors = []
+        self._entities, self._tables, self._id_of, self._made_by = {}, {}, {}, {}
+        self._by_table, self._by_lower = {}, {}
+        self._enums, self._enum_keys, self._typed_fields = {}, {}, []
+        self._primary_keys, self._column_keys = {}, {}
         for f in self.files:
             try:
                 # Read inside the try: an unreadable or non-UTF-8 file is a parse
@@ -308,8 +330,18 @@ class SqlSchemaParser:
 
         coldefs = list(schema.find_all(exp.ColumnDef))  # type: ignore[attr-defined]
         columns = {self._key(c.this): c.name for c in coldefs}
-        self._table_keys[self._key(schema.this)] = table_name
-        self._column_keys[table_name] = columns
+        # A second definition of the same table (CREATE OR REPLACE) replaces it.
+        tid = self._table_id(schema.this)
+        replaced = self._tables.get(tid)
+        if replaced is None:
+            self._by_table.setdefault(tid[1], []).append(tid)
+            self._by_lower.setdefault(tid[1].lower(), []).append(tid)
+        else:
+            del self._id_of[id(replaced)]
+        self._tables[tid] = entity
+        self._id_of[id(entity)] = tid
+        self._made_by[id(create)] = entity
+        self._column_keys[tid] = columns
         # Constraint columns name declared columns as the dialect folds names.
         pk_order = [
             name
@@ -324,10 +356,7 @@ class SqlSchemaParser:
         }
         for coldef in coldefs:
             entity.fields.append(self._column(coldef, exp, pk_cols, unique_cols))
-        self._entities[table_name] = entity
-        self._primary_keys[table_name] = pk_order or [
-            f.name for f in entity.fields if f.is_primary_key
-        ]
+        self._primary_keys[tid] = pk_order or [f.name for f in entity.fields if f.is_primary_key]
 
     def _add_enum(self, create: "object", exp: "object") -> None:
         """Register a ``CREATE TYPE ... AS ENUM`` with its string literal values."""
@@ -477,10 +506,43 @@ class SqlSchemaParser:
             return str(ident)
         return str(self._dialect.normalize_identifier(ident.copy()).name)
 
-    def _entity(self, node: Any) -> EntityInfo | None:
-        """The table a Table node or identifier names (see :func:`_lookup`)."""
-        name = _lookup(self._key(node), self._table_keys)
-        return self._entities.get(name) if name is not None else None
+    def _table_id(self, node: Any) -> TableId:
+        """The identity of the table a Table node names (its catalog part is dropped)."""
+        db = node.args.get("db")
+        return (self._key(db) if db is not None else "", self._key(node))
+
+    def _entity(self, node: Any, near: EntityInfo | None = None) -> EntityInfo | None:
+        """The table a Table node names, as the dialect resolves names (#353).
+
+        The table name, and the schema when the node has one, match exactly
+        as folded, else case-insensitively. With a schema, the table of that
+        name in that schema is meant; when that schema has none, a table of
+        that name declared without a schema, never one in another schema.
+        Without a schema, the one table of that name is meant; of several,
+        the one in the schema of ``near`` (the table the reference is made
+        from), else the one declared without a schema. Anything else is
+        ambiguous and finds nothing.
+        """
+        schema_key, table_key = self._table_id(node)
+        if schema_key:
+            same_name = self._by_lower.get(table_key.lower(), [])
+            in_schema = [t for t in same_name if t[0] == schema_key] or [
+                t for t in same_name if t[0] and t[0].lower() == schema_key.lower()
+            ]
+            for pool in (in_schema, [t for t in same_name if not t[0]]):
+                found = [t for t in pool if t[1] == table_key] or pool
+                if pool:
+                    return self._tables[found[0]] if len(found) == 1 else None
+            return None
+        candidates = self._by_table.get(table_key) or self._by_lower.get(table_key.lower(), [])
+        if len(candidates) == 1:
+            return self._tables[candidates[0]]
+        near_id = self._id_of.get(id(near)) if near is not None else None
+        for schema in ((near_id[0],) if near_id else ()) + ("",):
+            preferred = [t for t in candidates if t[0] == schema]
+            if len(preferred) == 1:
+                return self._tables[preferred[0]]
+        return None
 
     def _set_fks(
         self, entity: EntityInfo, columns: list[Any], ref: "object", exp: "object"
@@ -490,24 +552,26 @@ class SqlSchemaParser:
         Composite keys pair local and referenced columns in order. No referenced
         columns (a bare ``REFERENCES t``) pairs them with ``t``'s primary key,
         or with ``id`` when ``t`` is unknown. Names are resolved the way the
-        dialect resolves them (:meth:`_key`); a target that matches no table is
-        kept as written.
+        dialect resolves them (:meth:`_entity`); a target that matches no table
+        is kept as written. The target is recorded as ``schema.table.column``
+        when its table is in a schema, else ``table.column`` (#353).
         """
         table_node = ref.find(exp.Table)  # type: ignore[attr-defined]
         if table_node is None or not table_node.name:
             return  # unresolved target: never record a bogus ".id"
-        target = self._entity(table_node)
+        target = self._entity(table_node, near=entity)
         schema_node = ref.this  # type: ignore[attr-defined]
         ref_idents = list(getattr(schema_node, "expressions", None) or [])
         if target is not None:
-            target_columns = self._column_keys[target.name]
+            target_id = self._id_of[id(target)]
+            target_columns = self._column_keys[target_id]
             ref_cols = [_lookup(self._key(i), target_columns) or i.name for i in ref_idents]
-            ref_cols = ref_cols or self._primary_keys.get(target.name, [])
-            ref_table = target.name
+            ref_cols = ref_cols or self._primary_keys.get(target_id, [])
+            ref_table = f"{target.schema}.{target.table_name}" if target.schema else target.name
         else:
             ref_cols = [i.name for i in ref_idents]
-            ref_table = table_node.name
-        local = self._column_keys[entity.name]
+            ref_table = ".".join(p for p in (table_node.db, table_node.name) if p)
+        local = self._column_keys[self._id_of[id(entity)]]
         for i, ident in enumerate(columns):
             rc = ref_cols[i] if i < len(ref_cols) else (ref_cols[0] if ref_cols else "id")
             name = _lookup(self._key(ident), local)
@@ -518,10 +582,15 @@ class SqlSchemaParser:
                     f.foreign_table = f"{ref_table}.{rc}"
 
     def _table_foreign_keys(self, create: "object", exp: "object") -> None:
-        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses."""
+        """Apply inline ``REFERENCES`` and table-level ``FOREIGN KEY`` clauses.
+
+        Only the statement whose table is kept applies them: a table defined
+        again (``CREATE OR REPLACE``, or the same name in another case) takes
+        the foreign keys of its later definition, not of the replaced one.
+        """
         schema = create.this  # type: ignore[attr-defined]
-        entity = self._entities.get(schema.this.name)
-        if entity is None:
+        entity = self._made_by.get(id(create))
+        if entity is None or self._tables.get(self._table_id(schema.this)) is not entity:
             return
         # Inline REFERENCES on a column definition: exactly one local column.
         for coldef in schema.find_all(exp.ColumnDef):  # type: ignore[attr-defined]
@@ -571,7 +640,7 @@ class SqlSchemaParser:
             self._index_part(p, exp)
             for p in (params.args.get("columns") or [] if params is not None else [])
         ]
-        columns = self._column_keys[entity.name]
+        columns = self._column_keys[self._id_of[id(entity)]]
         indexed = {
             _lookup(self._key(p), columns)
             for p in parts
@@ -598,16 +667,47 @@ class SqlSchemaParser:
 
     def _finalize(self) -> None:
         """Name enum-typed columns' types as their enum, detect link tables,
-        then apply ``exclude_patterns``."""
+        name the tables (:meth:`_name_tables`), then apply ``exclude_patterns``."""
         # Type names fold like table names: `mood` is the enum `Mood` (#328).
         for field, prefix, key in self._typed_fields:
             enum_name = self._enum_keys.get(key)
             if enum_name is not None:
                 field.type_str = prefix + enum_name
-        for entity in self._entities.values():
+        for entity in self._tables.values():
             normalize_key_uniqueness(entity.fields)
             entity.is_link_table = is_structural_link_table(entity.fields)
+        self._name_tables()
         self._apply_excludes()
+
+    def _name_tables(self) -> None:
+        """Name each table, and key the entities by name.
+
+        A table is named as declared, without its schema. Tables of the same
+        name in different schemas are each named ``schema.table`` instead, so
+        they stay apart (#353); one of them declared without a schema keeps
+        the bare name. So do tables in different schemas whose names only
+        collide as written (PostgreSQL ``core."Customer"`` and
+        ``mart.Customer``). Two tables that still share a name (``"Customer"``
+        and ``Customer`` in one schema) can't be told apart: the later one is
+        drawn, with a warning on stderr.
+        """
+        # By table key: CORE.customer and MART.CUSTOMER are one name in Snowflake.
+        counts = Counter(tid[1] for tid in self._tables)
+        for tid, entity in self._tables.items():
+            if counts[tid[1]] > 1 and entity.schema:
+                entity.name = f"{entity.schema}.{entity.table_name}"
+        names = Counter(e.name for e in self._tables.values())
+        for entity in self._tables.values():
+            if names[entity.name] > 1 and entity.schema:
+                entity.name = f"{entity.schema}.{entity.table_name}"
+        names = Counter(e.name for e in self._tables.values())
+        for name in sorted(n for n, count in names.items() if count > 1):
+            print(
+                f"Warning: {names[name]} SQL tables are named {name!r} (they differ only in "
+                "quoting); only the last one is drawn.",
+                file=sys.stderr,
+            )
+        self._entities = {e.name: e for e in self._tables.values()}
 
     def _apply_excludes(self) -> None:
         """Drop excluded tables and relationships pointing at them."""

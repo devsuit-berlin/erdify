@@ -147,6 +147,10 @@ class _EdgeBuilder:
 
     def __init__(self, entities: Mapping[str, EntityInfo]):
         self.entities = entities
+        #: Table name -> the entities of that table name, in entity order.
+        self._by_table: Dict[str, List[EntityInfo]] = {}
+        for entity in entities.values():
+            self._by_table.setdefault(entity.table_name, []).append(entity)
 
     def edges(self) -> List[Edge]:
         """Every edge, de-duplicated by how it is drawn, in diagram order."""
@@ -159,12 +163,7 @@ class _EdgeBuilder:
             if link_entity.is_link_table:
                 found.extend(self._link_table_edges(link_entity))
 
-        link_pairs: set[frozenset[str]] = set()
-        for table_a, table_b in link_table_map:
-            entity_a = self._entity_by_table(table_a)
-            entity_b = self._entity_by_table(table_b)
-            if entity_a and entity_b:
-                link_pairs.add(frozenset((entity_a.name, entity_b.name)))
+        link_pairs = {frozenset(pair) for pair in link_table_map}
         found.extend(self._declared_edges(self._connected_pairs(), link_pairs))
 
         edges: List[Edge] = []
@@ -181,25 +180,17 @@ class _EdgeBuilder:
         return self.entities[key].name if key in self.entities else key
 
     def _build_link_table_map(self) -> Dict[Tuple[str, str], str]:
-        """Build a map of (table1, table2) -> link_table_name for many-to-many."""
+        """Map (entity1, entity2) -> link entity name for binary many-to-many tables."""
         link_map: Dict[Tuple[str, str], str] = {}
         for entity in self.entities.values():
             if entity.is_link_table and len(entity.fields) == 2:
                 fk_fields = [f for f in entity.fields if f.is_foreign_key]
                 if len(fk_fields) == 2:
-                    table1 = (
-                        fk_fields[0].foreign_table.split(".")[0]
-                        if fk_fields[0].foreign_table
-                        else None
-                    )
-                    table2 = (
-                        fk_fields[1].foreign_table.split(".")[0]
-                        if fk_fields[1].foreign_table
-                        else None
-                    )
-                    if table1 and table2:
-                        link_map[(table1, table2)] = entity.name
-                        link_map[(table2, table1)] = entity.name
+                    target1 = self._fk_target(entity, fk_fields[0])
+                    target2 = self._fk_target(entity, fk_fields[1])
+                    if target1 and target2:
+                        link_map[(target1.name, target2.name)] = entity.name
+                        link_map[(target2.name, target1.name)] = entity.name
         return link_map
 
     @staticmethod
@@ -223,20 +214,58 @@ class _EdgeBuilder:
         parent = EdgeEnd(optional=field.is_nullable, many=False)
         return child, parent
 
-    def _entity_by_table(self, table_name: str) -> EntityInfo | None:
-        """Find an entity by its table name."""
-        for entity in self.entities.values():
-            if entity.table_name == table_name:
-                return entity
-        return None
+    def _fk_target(self, entity: EntityInfo, field: FieldInfo) -> EntityInfo | None:
+        """The entity the foreign-key column ``field`` of ``entity`` references.
+
+        ``foreign_table`` is ``table.column`` or ``schema.table.column``. With
+        a schema, the table of that name in that schema is meant (#353). When
+        that schema has none, a table of that name from another source (a
+        Python model a SQL ``REFERENCES`` names) whose schema differs only in
+        case (``CORE`` / ``core``), else one without a schema; never one of
+        the same source, which resolved its own names already: an excluded,
+        unscanned or ambiguous target draws no edge. Without a
+        schema, the only table of that name; of several, the (first) one
+        declared without a schema, else the (first) one in ``entity``'s
+        schema. Several entities drawing one table (a Python model and a SQL
+        table) take the first, as before schemas counted. Anything else is
+        ambiguous: no edge.
+        """
+        if not field.foreign_table:
+            return None
+        target = field.foreign_table.rpartition(".")[0]
+        candidates = self._by_table.get(target, [])
+        if not candidates and "." in target:
+            schema, _, table = target.rpartition(".")
+            schema = schema.rpartition(".")[2]  # a database part is not compared
+            same_table = self._by_table.get(table, [])
+            found = (
+                [e for e in same_table if e.schema == schema]
+                # Another source only: a name the parser could not resolve itself.
+                or [
+                    e
+                    for e in same_table
+                    if e.source != entity.source and e.schema and e.schema.lower() == schema.lower()
+                ]
+                or [e for e in same_table if e.schema is None and e.source != entity.source]
+            )
+            return found[0] if found else None
+        if len(candidates) <= 1:
+            return candidates[0] if candidates else None
+        # Several without a schema (a Python model and a SQL table drawing the
+        # same table): the first, the Python model, as before schemas counted.
+        unqualified = [e for e in candidates if e.schema is None]
+        if unqualified:
+            return unqualified[0]
+        in_schema = [e for e in candidates if e.schema == entity.schema]
+        return in_schema[0] if in_schema else None
 
     def _connected_pairs(self) -> "set[frozenset[str]]":
         """Compute entity-name pairs already connected by a foreign-key column."""
         pairs: set[frozenset[str]] = set()
         for entity in self.entities.values():
             for field in entity.fields:
-                if field.is_foreign_key and field.foreign_table:
-                    target = self._entity_by_table(field.foreign_table.split(".")[0])
+                if field.is_foreign_key:
+                    target = self._fk_target(entity, field)
                     if target:
                         pairs.add(frozenset((entity.name, target.name)))
         return pairs
@@ -246,8 +275,8 @@ class _EdgeBuilder:
         edges: List[Edge] = []
         single_pk = sum(f.is_primary_key for f in entity.fields) == 1
         for field in entity.fields:
-            if field.is_foreign_key and field.foreign_table:
-                target_entity = self._entity_by_table(field.foreign_table.split(".")[0])
+            if field.is_foreign_key:
+                target_entity = self._fk_target(entity, field)
                 if target_entity:
                     child, parent = self._fk_ends(field, sole_pk=single_pk and field.is_primary_key)
                     edges.append(
@@ -278,7 +307,7 @@ class _EdgeBuilder:
         entities_to_link: List[Tuple[EntityInfo, str]] = []
         for fk_field in fk_fields:
             if fk_field.foreign_table:
-                target = self._entity_by_table(fk_field.foreign_table.split(".")[0])
+                target = self._fk_target(link_entity, fk_field)
                 if target is not None:
                     entities_to_link.append((target, fk_field.name))
 
