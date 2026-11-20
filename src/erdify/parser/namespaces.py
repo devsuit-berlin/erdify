@@ -254,8 +254,11 @@ class _Rewriter:
             A candidate's internal name; :data:`_OUTSIDE` when the import names
             none of them (a module that isn't scanned, or a scanned one that
             binds the name itself: a class, function or assignment of its
-            own); :data:`_ABSENT` when the scanned module has no such name;
-            :data:`_AMBIGUOUS` when several candidates could be meant (also
+            own, or a star from a module that isn't scanned is the only
+            source, or several scanned modules match and none reaches a
+            candidate); :data:`_ABSENT` when the one scanned module that
+            matches has no such name; :data:`_AMBIGUOUS` when several
+            candidates could be meant (also
             through several modules the import matches), or it is re-exported
             in a way erdify doesn't follow. Bindings in function bodies and
             ``if TYPE_CHECKING:`` blocks don't count: a star import never
@@ -391,33 +394,31 @@ def _own_names(body: Sequence[ast.stmt]) -> List[str]:
 def _binds_at_module_level(body: Sequence[ast.stmt], name: str) -> bool:
     """Whether a module binds ``name`` at its top level in a way not followed.
 
-    Statements under ``if`` / ``try`` / ``with`` count (they run on import);
-    function and class bodies and ``if TYPE_CHECKING:`` blocks don't (a star
-    import never exports what they bind).
+    Everything that runs on import counts: statements under ``if`` / ``try``
+    (``except`` handlers included) / ``with`` / ``for`` / ``match``, and any
+    name they store (``for x in``, ``as x``, ``:=``). Function and class
+    bodies and ``if TYPE_CHECKING:`` blocks don't: a star import never
+    exports what they bind.
     """
-    pending: List[ast.stmt] = list(body)
+    pending: List[ast.AST] = list(body)
     while pending:
-        stmt = pending.pop()
-        if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            if stmt.name == name:
+        node = pending.pop()
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == name:
                 return True
             continue
-        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
-            if any((alias.asname or alias.name).split(".")[0] == name for alias in stmt.names):
-                return True
+        if isinstance(node, (ast.Lambda, ast.expr_context)):
             continue
-        if isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-            targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
-            for target in targets:
-                if any(isinstance(n, ast.Name) and n.id == name for n in ast.walk(target)):
-                    return True
+        if isinstance(node, ast.alias) and (node.asname or node.name).split(".")[0] == name:
+            return True
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == name:
+            return True
+        if isinstance(node, ast.ExceptHandler) and node.name == name:
+            return True
+        if isinstance(node, ast.If) and _is_type_checking(node.test):
+            pending.extend(node.orelse)
             continue
-        if isinstance(stmt, ast.If) and _is_type_checking(stmt.test):
-            pending.extend(stmt.orelse)
-            continue
-        for child in ast.iter_child_nodes(stmt):
-            if isinstance(child, ast.stmt):
-                pending.append(child)
+        pending.extend(ast.iter_child_nodes(node))
     return False
 
 

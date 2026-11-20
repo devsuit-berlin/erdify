@@ -743,6 +743,21 @@ class TestReExports:
         assert _edges(self._parse(tmp_path)) == []
         assert "refers to" not in capsys.readouterr().err
 
+    def test_a_binding_in_an_except_branch_is_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self._layout(tmp_path, "from .address import *\nfrom .compat import *\n")
+        _write(
+            tmp_path,
+            {
+                "billing/models/compat.py": "try:\n    import fastlib\n"
+                "except ImportError:\n    from .legacy import Address\n"
+            },
+        )
+
+        assert _edges(self._parse(tmp_path)) == []
+        assert "orders/models.py refers to 'Address'" in capsys.readouterr().err
+
     def test_a_re_export_erdify_cannot_follow_is_reported(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
