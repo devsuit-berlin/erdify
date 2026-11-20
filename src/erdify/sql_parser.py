@@ -673,8 +673,11 @@ class SqlSchemaParser:
         A table is named as declared, without its schema. Tables of the same
         name in different schemas are each named ``schema.table`` instead, so
         they stay apart (#353); one of them declared without a schema keeps
-        the bare name. So do tables whose names only collide as written
-        (PostgreSQL ``core."Customer"`` and ``mart.Customer``).
+        the bare name. So do tables in different schemas whose names only
+        collide as written (PostgreSQL ``core."Customer"`` and
+        ``mart.Customer``). Two tables that still share a name (``"Customer"``
+        and ``Customer`` in one schema) can't be told apart: the later one is
+        drawn, with a warning on stderr.
         """
         # By table key: CORE.customer and MART.CUSTOMER are one name in Snowflake.
         counts = Counter(tid[1] for tid in self._tables)
@@ -685,6 +688,13 @@ class SqlSchemaParser:
         for entity in self._tables.values():
             if names[entity.name] > 1 and entity.schema:
                 entity.name = f"{entity.schema}.{entity.table_name}"
+        names = Counter(e.name for e in self._tables.values())
+        for name in sorted(n for n, count in names.items() if count > 1):
+            print(
+                f"Warning: {names[name]} SQL tables are named {name!r} (they differ only in "
+                "quoting); only the last one is drawn.",
+                file=sys.stderr,
+            )
         self._entities = {e.name: e for e in self._tables.values()}
 
     def _apply_excludes(self) -> None:

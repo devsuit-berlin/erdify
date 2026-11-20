@@ -28,11 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SQL DDL with same-name tables in several schemas: two entities named
   `schema.table` instead of one, and edges to the right one. PlantUML titles a
-  box `schema.table` when its table name is used in more than one schema (SQL
-  and SQLAlchemy / SQLModel).
+  box `schema.table` when the entities drawing its table name are in more than
+  one schema, no schema counting as one (SQL and SQLAlchemy / SQLModel).
 - SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` now draws its edge.
 - `--format json`: a SQL DDL foreign key to a table in a schema has
   `foreign_table` `schema.table.column` (was `table.column`).
+- SQL DDL: one table declared twice in different case (`CREATE TABLE Customer`
+  and later `CREATE TABLE CUSTOMER`, unquoted) is one entity, the later
+  definition, as the database sees it; it used to be two.
 
 ## [1.7.0] - 2026-11-20
 

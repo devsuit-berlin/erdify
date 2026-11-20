@@ -183,6 +183,10 @@ OTHER_FILE = "an alias from another file of the test"
 COMPLETED = "a source the test completes with a parameter"
 TEMPLATE = "a str.format template"
 EXPECTED_UNLOADABLE = {
+    "test_schema_identity.py::TestSameNameClasses"
+    ".test_a_table_model_extending_its_namesake_is_not_reported[2]": (
+        "one file of a multi-file source: its base class is in another file"
+    ),
     "test_schema_identity.py::TestSqlAlchemy"
     ".test_foreign_key_to_a_schema_not_scanned_draws_no_edge": (
         "a foreign key to a schema's table the source leaves out on purpose (#353)"

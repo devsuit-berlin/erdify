@@ -111,7 +111,9 @@ class Match(Base):
   other files give no schema. A foreign key naming a schema
   (`ForeignKey("core.customer.id")`) is drawn to the table of that name in
   that schema; two tables of the same name in different schemas are told
-  apart in the diagram (PlantUML titles their boxes `schema.table`) ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
+  apart in the diagram (PlantUML titles their boxes `schema.table`). A schema
+  erdify doesn't read (a non-literal one) draws no edge from a foreign key
+  that names it ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 
 A Django model's `__table_args__` is ignored, as Django ignores it. Django's
 own single-field `Meta.constraints` / `Meta.unique_together` uniqueness is read

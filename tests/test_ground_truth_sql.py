@@ -121,6 +121,7 @@ EXPECTED_REJECTED = {
             "a_schema_finds_the_only_table_of_that_name",
             "names_collide_as_the_dialect_folds_them",
             "names_that_collide_only_as_written_stay_apart",
+            "names_that_still_collide_are_reported",
             "a_schema_never_finds_a_table_in_another_schema",
             "a_table_without_a_schema_keeps_the_short_name",
             "unqualified_reference_prefers_the_referencing_tables_schema",

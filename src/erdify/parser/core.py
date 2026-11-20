@@ -206,10 +206,14 @@ class ASTDatabaseParser:
 
         Classes are keyed by name, so of two model classes of one name in
         different modules only the one scanned last is drawn (#367). This
-        is reported on stderr instead of happening silently (#353).
+        is reported on stderr instead of happening silently (#353). A table
+        model extending a same-named table model (``class Item(Item)``) is
+        not: drawing only the extending class is documented behaviour.
         """
         hidden: Dict[str, List[ast.ClassDef]] = {}
         for replaced, kept in self._replaced:
+            if _extends_namesake(kept):
+                continue
             source = self._classify_source(replaced)
             if source is not None and (self.sources is None or source in self.sources):
                 hidden.setdefault(kept.name, []).append(replaced)

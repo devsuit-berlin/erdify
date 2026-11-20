@@ -3,8 +3,7 @@
 import html
 import json
 import re
-from collections import Counter
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 from .config import EntityInfo, EnumInfo, FieldInfo, is_sole_primary_key
 from .edges import diagram_edges
@@ -39,7 +38,7 @@ class _ERGenerator:
         self.title = title
         self.include_relationships = include_relationships
         self._ids: Dict[Tuple[str, str], str] | None = None
-        self._table_counts: Counter[str] | None = None
+        self._table_schemas: Dict[str, Set[str | None]] | None = None
 
     # -- Names in the diagram source (#288) ---------------------------------
     #
@@ -169,7 +168,7 @@ class PlantUMLGenerator(_ERGenerator):
             PlantUML source, from ``@startuml`` to ``@enduml``.
         """
         self._ids = None  # the entities may have changed since the last call
-        self._table_counts = None
+        self._table_schemas = None
         lines = [
             f"@startuml {self.title}",
             '!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>',
@@ -217,15 +216,18 @@ class PlantUMLGenerator(_ERGenerator):
 
         Same-name tables in different schemas are told apart (#353): an
         entity named ``schema.table`` (SQL) keeps that title even when the
-        other table is excluded; otherwise table names are compared without
-        regard to case, as SQL folds unquoted names.
+        other table is excluded; otherwise a table name is qualified when the
+        entities drawing it are in more than one schema (no schema counts as
+        one), compared without regard to case, as SQL folds unquoted names.
         """
         qualified = f"{entity.schema}.{entity.table_name}" if entity.schema else None
         if entity.name == qualified:
             return entity.name
-        if self._table_counts is None:
-            self._table_counts = Counter(e.table_name.lower() for e in self.entities.values())
-        if qualified and self._table_counts[entity.table_name.lower()] > 1:
+        if self._table_schemas is None:
+            self._table_schemas = {}
+            for e in self.entities.values():
+                self._table_schemas.setdefault(e.table_name.lower(), set()).add(e.schema)
+        if qualified and len(self._table_schemas[entity.table_name.lower()]) > 1:
             return qualified
         return entity.table_name
 
@@ -383,7 +385,7 @@ class MermaidGenerator(_ERGenerator):
             Mermaid ``erDiagram`` source.
         """
         self._ids = None  # the entities may have changed since the last call
-        self._table_counts = None
+        self._table_schemas = None
         lines = ["erDiagram"]
 
         for entity in self.entities.values():

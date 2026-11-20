@@ -212,6 +212,19 @@ class TestSqlTables:
         assert list(entities) == ["customer", "orders"]
         assert _edges(dict(entities)) == []
 
+    def test_names_that_still_collide_are_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        entities = _sql(
+            tmp_path,
+            'CREATE TABLE core."Customer" (id INT PRIMARY KEY);\n'
+            "CREATE TABLE core.Customer (id INT PRIMARY KEY, email TEXT);\n",
+            "postgres",
+        )
+
+        assert list(entities) == ["core.Customer"]
+        assert "2 SQL tables are named 'core.Customer'" in capsys.readouterr().err
+
     def test_a_qualified_name_can_be_excluded(self, tmp_path: Path) -> None:
         pytest.importorskip("sqlglot")
         path = tmp_path / "schema.sql"
@@ -421,6 +434,10 @@ class Customer(Base):
         entities, _ = parse_models_directory(tmp_path, include_patterns=["models.py", "*.sql"])
 
         assert _edges(dict(entities)) == [("orders", "Customer", "customer_id")]
+        # One schema: the table name alone tells them apart.
+        plantuml = generate_plantuml(dict(entities))
+        assert 'entity "customer" as Customer {' in plantuml
+        assert 'entity "customer" as customer {' in plantuml
 
 
 class TestSameNameClasses:
@@ -490,6 +507,35 @@ class TestSameNameClasses:
             )
 
         parse_models_directory(tmp_path, exclude_patterns=["Address"])
+
+        assert "Warning" not in capsys.readouterr().err
+
+    def test_a_table_model_extending_its_namesake_is_not_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (tmp_path / "base").mkdir()
+        (tmp_path / "app").mkdir()
+        (tmp_path / "base" / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class Item(Base):
+    __tablename__ = "item"
+    id: Mapped[int] = mapped_column(primary_key=True)
+""",
+            encoding="utf-8",
+        )
+        (tmp_path / "app" / "models.py").write_text(
+            """from base.models import Item
+
+
+class Item(Item):
+    __tablename__ = "special_item"
+""",
+            encoding="utf-8",
+        )
+
+        parse_models_directory(tmp_path)
 
         assert "Warning" not in capsys.readouterr().err
 
