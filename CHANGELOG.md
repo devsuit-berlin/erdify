@@ -20,18 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Model classes of the same name in different modules (a Pydantic `Address`
   in `billing` and `shipping`, a Django `Profile` in two apps) are separate
   entities, named `module.Class` (`billing.models.Address`) when more than
-  one of them is built (before `--exclude`; `--sources` can leave one); they used to be one entity, the class scanned last.
-  Each reference goes to the class its file defines or imports (`from ...
-  import X [as Y]`, also re-exported by a package's `__init__.py` (`from .x
-  import X` or `from .x import *`), `from pkg
-  import module`, a star import, `module.X`, a quoted name,
-  `relationship("billing.models.X")`); a Django string by its app label
-  (`"app.Model"`, any case, `Meta.app_label` included) or, bare, the
-  referencing model's app (its `Meta.app_label`, else its app).
+  one of them is built (before `--exclude`; `--sources` can leave one). They
+  used to be one entity, the class scanned last. Each reference goes to the
+  class its file defines or imports: `from ... import X [as Y]` (also through
+  a package's `__init__.py` re-export, `from .x import X` or `from .x import
+  *`), `from pkg import module`, a star import, `module.X`, a quoted name,
+  `relationship("billing.models.X")`; a Django string by its app label
+  (`"app.Model"`, the model name in any case, `Meta.app_label` included) or,
+  bare, the referencing model's app (its `Meta.app_label`, else its app).
   `Literal[...]` values and SQLAlchemy `ForeignKey("table.column")` strings
-  stay as written.
-  A reference several of them could mean is not drawn and is reported on
-  stderr; one that names none of them is not drawn.
+  stay as written. A reference several of them could mean is not drawn and
+  is reported on stderr; one that names none of them is not drawn. A foreign
+  key by table name goes to the namesake in the referencing model's module,
+  else its Django app, else another entity of that table (a SQL table), and
+  is not drawn when none of these decides.
   `--exclude X` still matches each of them, and a Python model still wins
   over a SQL table of its class name. Projects without same-name model
   classes are unchanged
@@ -40,8 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Output changes
 
 - Same-name model classes in different modules: one entity per class, named
-  `module.Class`, with the edges to the right one
-  ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
+  `module.Class`, with the edges to the right one. In PlantUML their boxes
+  are titled `module.Class` too where they draw the same table name (two
+  Pydantic `Address` classes); Django's app-prefixed tables keep their
+  table titles ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
 - `--format json`: every enum gains the `used_by` key; a committed `.json`
   file fails `--check` once
   ([#378](https://github.com/devsuit-berlin/erdify/issues/378)).

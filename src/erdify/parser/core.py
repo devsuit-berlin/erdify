@@ -46,7 +46,8 @@ class ASTDatabaseParser:
     Args:
         database_path: Directory to scan for model files.
         exclude_patterns: Case-sensitive globs; an entity is dropped if one
-            matches its class name or table name.
+            matches its name (``module.Class`` for same-name classes, #367),
+            its class name or its table name.
         infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
             key from ``id`` and a foreign key from ``<x>_id``.
         sources: Restrict which model kinds become entities (subset of
@@ -499,9 +500,11 @@ class ASTDatabaseParser:
     def _apply_exclude_patterns(self) -> None:
         """Remove excluded entities and strip relationships pointing at them.
 
-        A pattern matches an entity if its case-sensitive glob matches either
-        the class name or the table name. Relationships in surviving entities
-        that target an excluded entity are dropped so no dangling lines remain.
+        A pattern matches an entity if its case-sensitive glob matches its
+        name (``module.Class`` for a same-name class, #367), its table name
+        or, for such a class, its class name. Relationships in surviving
+        entities that target an excluded entity are dropped so no dangling
+        lines remain.
         """
         if not self.exclude_patterns:
             return

@@ -32,8 +32,8 @@ options:
   --title TITLE         Diagram title (default: 'Database ERD')
   --exclude [PATTERN ...]
                         Glob patterns (case-sensitive) to exclude entities by
-                        class name or table name, e.g. --exclude '*Link'
-                        audit_log
+                        class name, table name or module.Class, e.g. --exclude
+                        '*Link' audit_log
   --exclude-paths [PATTERN ...]
                         Glob patterns (case-sensitive) for models.py files to
                         skip before parsing, matched against the path relative
@@ -395,7 +395,10 @@ for edge in diagram_edges(entities):
   table in the named schema, else (from another source, such as a Python model
   a SQL reference names) one whose schema differs only in case or one without
   a schema. A target found none of these ways, or ambiguous (in several
-  schemas, none preferred), gives no edge.
+  schemas, none preferred), gives no edge. Of same-name model classes in
+  several modules (`module.Class`) drawing the table, it is the one in the
+  referencing entity's module, else its Django app, else another entity
+  drawing that table (a SQL table); with none of these, there is no edge.
 - A detected link table (`is_link_table`) stays an entity: two edges through
   it (`Post ||--o{ post_tag`, `post_tag }o--|| Tag`), or a star from each
   parent for three or more keys. `kind` is `link_table`.

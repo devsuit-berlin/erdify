@@ -232,8 +232,9 @@ class _EdgeBuilder:
         schema. Several entities drawing one table (a Python model and a SQL
         table) take the first, as before schemas counted; same-name model
         classes of several modules (``module.Class``, #367) the one in the
-        referencing entity's module, else its Django app. Anything else is
-        ambiguous: no edge.
+        referencing entity's module, else its Django app, else another entity
+        drawing the table (a SQL table); with none of these, no edge. Anything
+        else is ambiguous: no edge.
         """
         if not field.foreign_table:
             return None
@@ -267,6 +268,9 @@ class _EdgeBuilder:
             ]
             if len(near) == 1:
                 return near[0]
+            others = [e for e in unqualified if e not in namesakes]
+            # Which namesake is meant can't be told: none rather than a guess.
+            return others[0] if others else None
         if unqualified:
             return unqualified[0]
         in_schema = [e for e in candidates if e.schema == entity.schema]
