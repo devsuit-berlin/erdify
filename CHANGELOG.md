@@ -31,22 +31,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first definition; it now has those of the definition that is drawn
   ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 - Same-name SQL tables in different schemas (`core.customer`, `mart.customer`)
-  are no longer merged into one entity. Each is its own entity named
-  `schema.table`; a table name used in one schema only keeps its short name.
+  are no longer merged into one entity. Each one in a schema is its own entity
+  named `schema.table`; one declared without a schema keeps its bare name, and
+  a table name used in one schema only keeps its short name.
   `REFERENCES`, `ALTER TABLE` and `CREATE INDEX` find the table in the schema
-  they name, never one in another schema; an unqualified name prefers the
-  referencing table's schema, then a table without a schema. Two tables that
+  they name (else a same-name table without a schema), never one in another
+  schema. An unqualified `REFERENCES` prefers the referencing table's schema,
+  then a table without a schema; an unqualified `ALTER TABLE` / `CREATE INDEX`
+  only a table without a schema. Two tables that
   still share a name (PostgreSQL `"Customer"` and `Customer` in one schema)
   are reported on stderr
   ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
 - A foreign key that names a schema (SQLAlchemy
-  `ForeignKey("core.customer.id")`) drew no edge; it is now drawn to the table
-  of that name in that schema
-  ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
+  `ForeignKey("core.customer.id")`, SQLModel
+  `Field(foreign_key="core.customer.id")`) drew no edge; it is now drawn to
+  the table of that name in that schema
+  ([#353](https://github.com/devsuit-berlin/erdify/issues/353),
+  [#373](https://github.com/devsuit-berlin/erdify/issues/373)).
 - Of two model classes of the same name in different modules, only the class
   scanned last is drawn (none if it is not a model); erdify now warns about
   it on stderr instead of dropping the other silently
-  ([#367](https://github.com/devsuit-berlin/erdify/issues/367)).
+  ([#353](https://github.com/devsuit-berlin/erdify/issues/353); telling them
+  apart is [#367](https://github.com/devsuit-berlin/erdify/issues/367)).
 
 ### Output changes
 

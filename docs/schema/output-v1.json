@@ -46,7 +46,7 @@
       ],
       "properties": {
         "name": {
-          "description": "Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named schema.table.",
+          "description": "Class name (or table name for SQL DDL). Unique within the document: same-name SQL tables in different schemas are named schema.table; one declared without a schema keeps its bare name.",
           "type": "string"
         },
         "table_name": {
@@ -108,7 +108,7 @@
         "foreign_key": { "description": "References another table.", "type": "boolean" },
         "nullable": { "description": "Column accepts NULL.", "type": "boolean" },
         "foreign_table": {
-          "description": "Referenced table.column when foreign_key is true; schema.table.column when the source names the schema, when SQLAlchemy resolves an unqualified target in its MetaData(schema=...), or, for SQL DDL, the referenced table is in a schema.",
+          "description": "Referenced table.column when foreign_key is true; schema.table.column when the source names the schema, when SQLAlchemy resolves an unqualified target in its MetaData(schema=...), or, for SQL DDL, when the table the reference resolves to is in a schema (an unresolved reference keeps the schema it names).",
           "type": ["string", "null"]
         },
         "index": { "description": "Column is indexed.", "type": "boolean" },

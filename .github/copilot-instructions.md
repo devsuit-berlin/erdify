@@ -144,8 +144,8 @@ catalog** `tests/fixtures/sql_edge_cases/` and every inline string with a
 `CREATE TABLE`.
 
 - The same rules apply: a mismatch is an erdify bug (`KNOWN_DIFFERENCES` with
-  an issue); DDL SQLite can't run (`ALTER TABLE ... ADD CONSTRAINT`, a syntax
-  error on purpose) is listed in `EXPECTED_REJECTED` with a reason.
+  an issue); DDL SQLite can't run (`ALTER TABLE ... ADD CONSTRAINT`, schema-qualified
+  tables, a syntax error on purpose) is listed in `EXPECTED_REJECTED` with a reason.
 - A source in another dialect is listed in `DIALECTS` (passed to erdify as
   `--sql-dialect`); only the statements SQLite rejects are transpiled by
   sqlglot, and a `CREATE TYPE` is dropped.
@@ -255,7 +255,8 @@ parser/    ──►  config.py (IR)  ──►  generator.py
   Mermaid render its edges, and `--format json` lists them.
 
 - **`enums.py`** — `enum_users()`: the enums erdify draws (a field's type
-  names them) and the entities using each. The generators draw exactly these.
+  names them) and the entities using each. The PlantUML and Mermaid generators
+  draw exactly these; the JSON lists every parsed enum (unless `--no-enums`).
 
 - **`generator.py`** — `_ERGenerator` base with `PlantUMLGenerator` and
   `MermaidGenerator` subclasses, plus the `generate_plantuml/mermaid/json/html`

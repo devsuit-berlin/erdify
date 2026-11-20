@@ -565,7 +565,9 @@ def parse_models_directory(
             a file is given it is treated as the sole include target (base is the
             parent directory).
         exclude_patterns: List of case-sensitive glob patterns. An entity is
-            excluded if a pattern matches its class name or its table name.
+            excluded if a pattern matches its name (a class name, a Core
+            ``Table`` variable name, a SQL table's name, or ``schema.table``
+            for same-name SQL tables in several schemas) or its table name.
         infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
             key from a field named ``id`` and a foreign key from ``<x>_id``.
         sources: Restrict which model kinds become entities (subset of
@@ -594,8 +596,10 @@ def parse_models_directory(
             skipped, and the rest is still returned.
 
     Returns:
-        Tuple of (entities, enums), both keyed by name. Python models win over
-        SQL tables of the same name.
+        Tuple of (entities, enums), both keyed by name: a class name, a Core
+        ``Table`` variable name, a SQL table's name, or ``schema.table`` when
+        SQL tables of that name exist in several schemas (#353). Python models
+        win over SQL tables of the same name.
 
     Raises:
         SqlDependencyError: ``.sql`` files were found but the optional
