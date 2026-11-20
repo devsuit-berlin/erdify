@@ -184,6 +184,34 @@ class TestSqlTables:
 
         assert list(entities) == ["core.customer", "MART.CUSTOMER"]
 
+    def test_names_that_collide_only_as_written_stay_apart(self, tmp_path: Path) -> None:
+        entities = _sql(
+            tmp_path,
+            'CREATE TABLE core."Customer" (id INT PRIMARY KEY);\n'
+            "CREATE TABLE mart.Customer (id INT PRIMARY KEY,"
+            ' core_id INT REFERENCES core."Customer"(id));\n',
+            "postgres",
+        )
+
+        assert list(entities) == ["core.Customer", "mart.Customer"]
+        assert _edges(entities) == [("mart.Customer", "core.Customer", "core_id")]
+
+    def test_an_excluded_target_draws_no_edge_to_another_table(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        path = tmp_path / "schema.sql"
+        path.write_text(
+            "CREATE TABLE customer (id INT PRIMARY KEY);\n"
+            "CREATE TABLE core.customer (id INT PRIMARY KEY);\n"
+            "CREATE TABLE core.orders (id INT PRIMARY KEY,"
+            " customer_id INT REFERENCES core.customer(id));\n",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(path, exclude_patterns=["core.customer"])
+
+        assert list(entities) == ["customer", "orders"]
+        assert _edges(dict(entities)) == []
+
     def test_a_qualified_name_can_be_excluded(self, tmp_path: Path) -> None:
         pytest.importorskip("sqlglot")
         path = tmp_path / "schema.sql"
@@ -195,19 +223,6 @@ class TestSqlTables:
 
         assert list(entities) == ["CORE.CUSTOMER"]
         assert 'entity "CORE.CUSTOMER" as CORE_CUSTOMER' in generate_plantuml(entities)
-
-    def test_a_whole_schema_can_be_excluded(self, tmp_path: Path) -> None:
-        pytest.importorskip("sqlglot")
-        path = tmp_path / "schema.sql"
-        path.write_text(
-            ISSUE_REPRO + "create TABLE MART.ORDERS (ID NUMBER PRIMARY KEY);\n", encoding="utf-8"
-        )
-
-        entities, _ = parse_models_directory(
-            path, sql_dialect="snowflake", exclude_patterns=["MART.*"]
-        )
-
-        assert list(entities) == ["CORE.CUSTOMER"]
 
     def test_link_table_between_same_name_tables(self, tmp_path: Path) -> None:
         entities = _sql(
@@ -328,28 +343,6 @@ class MartCustomer(Base):
 
         assert _edges(dict(entities)) == []
 
-    def test_schema_table_can_be_excluded(self, tmp_path: Path) -> None:
-        (tmp_path / "models.py").write_text(
-            SQLALCHEMY_HEADER
-            + """
-
-class Customer(Base):
-    __tablename__ = "customer"
-    __table_args__ = {"schema": "staging"}
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-
-class Order(Base):
-    __tablename__ = "orders"
-    id: Mapped[int] = mapped_column(primary_key=True)
-""",
-            encoding="utf-8",
-        )
-
-        entities, _ = parse_models_directory(tmp_path, exclude_patterns=["staging.*"])
-
-        assert list(entities) == ["Order"]
-
     def test_unqualified_foreign_key_prefers_the_table_without_a_schema(
         self, tmp_path: Path
     ) -> None:
@@ -404,6 +397,30 @@ class Post(Base):
 
         assert set(entities) == {"User", "Post", "users"}
         assert _edges(dict(entities)) == [("Post", "User", "user_id")]
+
+    def test_python_model_and_sql_table_in_one_schema_keep_their_edge(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class Customer(Base):
+    __tablename__ = "customer"
+    __table_args__ = {"schema": "core"}
+    id: Mapped[int] = mapped_column(primary_key=True)
+""",
+            encoding="utf-8",
+        )
+        (tmp_path / "schema.sql").write_text(
+            "CREATE TABLE core.customer (id INT PRIMARY KEY);\n"
+            "CREATE TABLE core.orders (id INT PRIMARY KEY,"
+            " customer_id INT REFERENCES core.customer(id));\n",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["models.py", "*.sql"])
+
+        assert _edges(dict(entities)) == [("orders", "Customer", "customer_id")]
 
 
 class TestSameNameClasses:

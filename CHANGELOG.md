@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `--exclude` (and `exclude` in `[tool.erdify]`) also matches `schema.table`
-  for a table in a database schema, so `--exclude 'staging.*'` drops a whole
-  schema ([#353](https://github.com/devsuit-berlin/erdify/issues/353)).
-
 ### Fixed
 
 - Same-name SQL tables in different schemas (`core.customer`, `mart.customer`)
@@ -39,8 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLAlchemy / SQLModel: a schema-qualified `ForeignKey(...)` now draws its edge.
 - `--format json`: a SQL DDL foreign key to a table in a schema has
   `foreign_table` `schema.table.column` (was `table.column`).
-- An `--exclude` pattern that matches `schema.table` of a table in a schema
-  (`*.audit*`) now excludes it.
 
 ## [1.7.0] - 2026-11-20
 

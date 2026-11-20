@@ -32,8 +32,8 @@ options:
   --title TITLE         Diagram title (default: 'Database ERD')
   --exclude [PATTERN ...]
                         Glob patterns (case-sensitive) to exclude entities by
-                        class name, table name or schema.table, e.g. --exclude
-                        '*Link' audit_log 'staging.*'
+                        class name or table name, e.g. --exclude '*Link'
+                        audit_log
   --exclude-paths [PATTERN ...]
                         Glob patterns (case-sensitive) for models.py files to
                         skip before parsing, matched against the path relative

@@ -218,9 +218,8 @@ class _EdgeBuilder:
         """The entity the foreign-key column ``field`` of ``entity`` references.
 
         ``foreign_table`` is ``table.column`` or ``schema.table.column``. With
-        a schema, the table of that name in that schema is meant; when that
-        schema has none, a table of that name without a schema, never one in
-        another schema (#353). Without one, the only table of that name; of
+        a schema, only the table of that name in that schema is meant (#353):
+        an excluded or unscanned target draws no edge. Without one, the only table of that name; of
         several, the (first) one declared without a schema, else the one in
         ``entity``'s schema. Anything else is ambiguous: no edge.
         """
@@ -231,11 +230,10 @@ class _EdgeBuilder:
         if not candidates and "." in target:
             schema, _, table = target.rpartition(".")
             schema = schema.rpartition(".")[2]  # a database part is not compared
-            candidates = self._by_table.get(table, [])
-            found = [e for e in candidates if e.schema == schema] or [
-                e for e in candidates if e.schema is None
-            ]
-            return found[0] if len(found) == 1 else None
+            # The first of several (a Python model and a SQL table of one
+            # table), as before schemas counted.
+            found = [e for e in self._by_table.get(table, []) if e.schema == schema]
+            return found[0] if found else None
         if len(candidates) <= 1:
             return candidates[0] if candidates else None
         # Several without a schema (a Python model and a SQL table drawing the

@@ -44,8 +44,7 @@ class ASTDatabaseParser:
     Args:
         database_path: Directory to scan for model files.
         exclude_patterns: Case-sensitive globs; an entity is dropped if one
-            matches its class name, its table name or, in a schema,
-            ``schema.table``.
+            matches its class name or table name.
         infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
             key from ``id`` and a foreign key from ``<x>_id``.
         sources: Restrict which model kinds become entities (subset of
@@ -385,19 +384,18 @@ class ASTDatabaseParser:
     def _apply_exclude_patterns(self) -> None:
         """Remove excluded entities and strip relationships pointing at them.
 
-        A pattern matches an entity if its case-sensitive glob matches the
-        class name, the table name or, for a table in a schema,
-        ``schema.table``. Relationships in surviving entities that target an
-        excluded entity are dropped so no dangling lines remain.
+        A pattern matches an entity if its case-sensitive glob matches either
+        the class name or the table name. Relationships in surviving entities
+        that target an excluded entity are dropped so no dangling lines remain.
         """
         if not self.exclude_patterns:
             return
 
         def is_excluded(entity: EntityInfo) -> bool:
-            names = [entity.name, entity.table_name]
-            if entity.schema:
-                names.append(f"{entity.schema}.{entity.table_name}")
-            return any(fnmatchcase(n, p) for n in names for p in self.exclude_patterns)
+            return any(
+                fnmatchcase(entity.name, pattern) or fnmatchcase(entity.table_name, pattern)
+                for pattern in self.exclude_patterns
+            )
 
         excluded_names = {name for name, e in self._entities.items() if is_excluded(e)}
 
@@ -554,8 +552,7 @@ def parse_models_directory(
             a file is given it is treated as the sole include target (base is the
             parent directory).
         exclude_patterns: List of case-sensitive glob patterns. An entity is
-            excluded if a pattern matches its class name, its table name or,
-            for a table in a schema, ``schema.table``.
+            excluded if a pattern matches its class name or its table name.
         infer_keys: For keyless sources (Pydantic/dataclass), infer a primary
             key from a field named ``id`` and a foreign key from ``<x>_id``.
         sources: Restrict which model kinds become entities (subset of

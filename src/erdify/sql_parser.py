@@ -136,7 +136,8 @@ class SqlSchemaParser:
         dialect: sqlglot dialect name (e.g. ``"postgres"``). ``None`` uses
             sqlglot's dialect-agnostic mode.
         exclude_patterns: Case-sensitive globs; a table is dropped if one
-            matches its name, its table name or, in a schema, ``schema.table``.
+            matches its name (``schema.table`` for same-name tables in several
+            schemas) or its table name.
         strict: Raise :class:`~erdify.ModelParseError` if any file fails to
             parse, instead of reporting it on stderr and skipping it.
     """
@@ -163,13 +164,13 @@ class SqlSchemaParser:
         #: Table key -> the tables of that name; the same by lower-case key.
         self._by_table: dict[str, list[TableId]] = {}
         self._by_lower: dict[str, list[TableId]] = {}
-        #: id() of a table's entity -> its identity.
+        #: id() of each current table's entity -> its identity.
         self._id_of: dict[int, TableId] = {}
-        #: id() of a table's entity -> its primary-key columns, in key order.
-        self._primary_keys: dict[int, list[str]] = {}
-        #: id() of a table's entity -> its column name keys (identifiers as
-        #: the dialect folds them) -> declared names.
-        self._column_keys: dict[int, dict[str, str]] = {}
+        #: Table -> its primary-key columns, in key order.
+        self._primary_keys: dict[TableId, list[str]] = {}
+        #: Table -> its column name keys (identifiers as the dialect folds
+        #: them) -> declared names.
+        self._column_keys: dict[TableId, dict[str, str]] = {}
         #: Enum type name keys -> declared names.
         self._enum_keys: dict[str, str] = {}
         #: Columns of a user-defined type: (field, schema prefix, type name key),
@@ -329,12 +330,15 @@ class SqlSchemaParser:
         columns = {self._key(c.this): c.name for c in coldefs}
         # A second definition of the same table (CREATE OR REPLACE) replaces it.
         tid = self._table_id(schema.this)
-        if tid not in self._tables:
+        replaced = self._tables.get(tid)
+        if replaced is None:
             self._by_table.setdefault(tid[1], []).append(tid)
             self._by_lower.setdefault(tid[1].lower(), []).append(tid)
+        else:
+            del self._id_of[id(replaced)]
         self._tables[tid] = entity
         self._id_of[id(entity)] = tid
-        self._column_keys[id(entity)] = columns
+        self._column_keys[tid] = columns
         # Constraint columns name declared columns as the dialect folds names.
         pk_order = [
             name
@@ -349,9 +353,7 @@ class SqlSchemaParser:
         }
         for coldef in coldefs:
             entity.fields.append(self._column(coldef, exp, pk_cols, unique_cols))
-        self._primary_keys[id(entity)] = pk_order or [
-            f.name for f in entity.fields if f.is_primary_key
-        ]
+        self._primary_keys[tid] = pk_order or [f.name for f in entity.fields if f.is_primary_key]
 
     def _add_enum(self, create: "object", exp: "object") -> None:
         """Register a ``CREATE TYPE ... AS ENUM`` with its string literal values."""
@@ -554,14 +556,15 @@ class SqlSchemaParser:
         schema_node = ref.this  # type: ignore[attr-defined]
         ref_idents = list(getattr(schema_node, "expressions", None) or [])
         if target is not None:
-            target_columns = self._column_keys[id(target)]
+            target_id = self._id_of[id(target)]
+            target_columns = self._column_keys[target_id]
             ref_cols = [_lookup(self._key(i), target_columns) or i.name for i in ref_idents]
-            ref_cols = ref_cols or self._primary_keys.get(id(target), [])
+            ref_cols = ref_cols or self._primary_keys.get(target_id, [])
             ref_table = f"{target.schema}.{target.table_name}" if target.schema else target.name
         else:
             ref_cols = [i.name for i in ref_idents]
             ref_table = ".".join(p for p in (table_node.db, table_node.name) if p)
-        local = self._column_keys[id(entity)]
+        local = self._column_keys[self._id_of[id(entity)]]
         for i, ident in enumerate(columns):
             rc = ref_cols[i] if i < len(ref_cols) else (ref_cols[0] if ref_cols else "id")
             name = _lookup(self._key(ident), local)
@@ -625,7 +628,7 @@ class SqlSchemaParser:
             self._index_part(p, exp)
             for p in (params.args.get("columns") or [] if params is not None else [])
         ]
-        columns = self._column_keys[id(entity)]
+        columns = self._column_keys[self._id_of[id(entity)]]
         indexed = {
             _lookup(self._key(p), columns)
             for p in parts
@@ -670,12 +673,17 @@ class SqlSchemaParser:
         A table is named as declared, without its schema. Tables of the same
         name in different schemas are each named ``schema.table`` instead, so
         they stay apart (#353); one of them declared without a schema keeps
-        the bare name.
+        the bare name. So do tables whose names only collide as written
+        (PostgreSQL ``core."Customer"`` and ``mart.Customer``).
         """
         # By table key: CORE.customer and MART.CUSTOMER are one name in Snowflake.
         counts = Counter(tid[1] for tid in self._tables)
         for tid, entity in self._tables.items():
             if counts[tid[1]] > 1 and entity.schema:
+                entity.name = f"{entity.schema}.{entity.table_name}"
+        names = Counter(e.name for e in self._tables.values())
+        for entity in self._tables.values():
+            if names[entity.name] > 1 and entity.schema:
                 entity.name = f"{entity.schema}.{entity.table_name}"
         self._entities = {e.name: e for e in self._tables.values()}
 
@@ -685,8 +693,10 @@ class SqlSchemaParser:
             return
 
         def excluded(e: EntityInfo) -> bool:
-            names = [e.name, e.table_name] + ([f"{e.schema}.{e.table_name}"] if e.schema else [])
-            return any(fnmatchcase(n, p) for n in names for p in self.exclude_patterns)
+            return any(
+                fnmatchcase(e.name, p) or fnmatchcase(e.table_name, p)
+                for p in self.exclude_patterns
+            )
 
         names = {n for n, e in self._entities.items() if excluded(e)}
         self._entities = {n: e for n, e in self._entities.items() if n not in names}
