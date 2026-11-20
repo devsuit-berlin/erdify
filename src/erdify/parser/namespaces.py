@@ -267,13 +267,26 @@ class _Rewriter:
         modules = [path for path in self.trees if is_module_file(path, importer, source)]
         if not modules:
             return _OUTSIDE
-        if len(modules) > 1 or depth > 4:
+        if depth > 4:
             return _AMBIGUOUS
-        module = modules[0]
+        results = [self._in_module(name, module, depth) for module in modules]
+        reached = {r for r in results if r not in (_OUTSIDE, _ABSENT)}
+        if not reached:
+            # A module that has no such name: reported where it is used; one
+            # of several (`from utils import X` matching two utils.py) that
+            # reach none of the classes: not a reference to them.
+            return _ABSENT if results == [_ABSENT] else _OUTSIDE
+        if len(modules) == 1 and len(reached) == 1:
+            return reached.pop()
+        return _AMBIGUOUS
+
+    def _in_module(self, name: str, module: Path, depth: int) -> str:
+        """What ``name`` is in a scanned module (see :meth:`_imported`)."""
         body = self.trees[module].body
         if name in _own_names(body):
             return _OUTSIDE
         results: List[str] = []
+        star_outside = False
         for stmt in body:
             if not isinstance(stmt, ast.ImportFrom):
                 continue
@@ -282,11 +295,16 @@ class _Rewriter:
                 results.append(self._imported(name, module, inner, depth + 1))
             elif any(alias.name == "*" for alias in stmt.names):
                 result = self._imported(name, module, inner, depth + 1)
-                if result not in (_ABSENT, _OUTSIDE):  # a star of other names
+                if result == _OUTSIDE:
+                    star_outside = True  # may come from a module that isn't scanned
+                elif result != _ABSENT:  # a star of other names
                     results.append(result)
         if not results:
-            # Bound some other way (under `if` / `try`, renamed): can't follow.
-            return _AMBIGUOUS if _binds_somehow(body, name) else _ABSENT
+            # Bound some other way at module level (under `if` / `try`,
+            # renamed): can't follow.
+            if _binds_at_module_level(body, name):
+                return _AMBIGUOUS
+            return _OUTSIDE if star_outside else _ABSENT
         if _AMBIGUOUS in results or len(set(results)) > 1:
             return _AMBIGUOUS
         return results[0]
@@ -367,17 +385,44 @@ def _own_names(body: Sequence[ast.stmt]) -> List[str]:
     return names
 
 
-def _binds_somehow(body: Sequence[ast.stmt], name: str) -> bool:
-    """Whether a module binds ``name`` anywhere (nested, imported under another name)."""
-    for node in ast.walk(ast.Module(body=list(body), type_ignores=[])):
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name == name:
+def _binds_at_module_level(body: Sequence[ast.stmt], name: str) -> bool:
+    """Whether a module binds ``name`` at its top level in a way not followed.
+
+    Statements under ``if`` / ``try`` / ``with`` count (they run on import);
+    function and class bodies and ``if TYPE_CHECKING:`` blocks don't (a star
+    import never exports what they bind).
+    """
+    pending: List[ast.stmt] = list(body)
+    while pending:
+        stmt = pending.pop()
+        if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if stmt.name == name:
                 return True
-        elif isinstance(node, ast.alias) and (node.asname or node.name) == name:
-            return True
-        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == name:
-            return True
+            continue
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            if any((alias.asname or alias.name).split(".")[0] == name for alias in stmt.names):
+                return True
+            continue
+        if isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+            for target in targets:
+                if any(isinstance(n, ast.Name) and n.id == name for n in ast.walk(target)):
+                    return True
+            continue
+        if isinstance(stmt, ast.If) and _is_type_checking(stmt.test):
+            pending.extend(stmt.orelse)
+            continue
+        for child in ast.iter_child_nodes(stmt):
+            if isinstance(child, ast.stmt):
+                pending.append(child)
     return False
+
+
+def _is_type_checking(test: ast.expr) -> bool:
+    """``TYPE_CHECKING`` or ``typing.TYPE_CHECKING``."""
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
 
 
 def _meta_app_label(node: ast.ClassDef) -> str | None:

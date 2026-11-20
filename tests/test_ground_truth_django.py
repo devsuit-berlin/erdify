@@ -124,6 +124,9 @@ EXPECTED_UNLOADABLE = {
     ".test_a_bare_django_name_uses_the_referencing_models_app_label[2]": (
         "one file of a multi-file source (#367): relations to another file's model"
     ),
+    "test_namespaces.py::test_a_bare_django_name_is_not_resolved_by_the_files_directory": (
+        "a relation to another file's model, unresolved on purpose (#367)"
+    ),
     "test_namespaces.py::TestReviewCases.test_django_model_names_in_any_case": (
         "one file of a multi-file source (#367): relations to another app's model"
     ),

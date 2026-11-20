@@ -693,6 +693,56 @@ class TestReExports:
 
         assert edges == [("Order", "billing.models.address.Address", "address")]
 
+    def test_a_sibling_with_type_checking_imports_does_not_spoil_a_star(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self._layout(tmp_path, "from .address import *\nfrom .invoice import *\n")
+        _write(
+            tmp_path,
+            {
+                "billing/models/invoice.py": "from typing import TYPE_CHECKING\n"
+                "from pydantic import BaseModel\n\n"
+                "if TYPE_CHECKING:\n    from .address import Address\n\n\n"
+                "def load():\n    from .address import Address\n    return Address\n\n\n"
+                "class Invoice(BaseModel):\n    number: str\n"
+            },
+        )
+
+        assert _edges(self._parse(tmp_path)) == [
+            ("Order", "billing.models.address.Address", "address")
+        ]
+        assert "refers to" not in capsys.readouterr().err
+
+    def test_an_explicit_re_export_next_to_such_a_star(self, tmp_path: Path) -> None:
+        self._layout(tmp_path, "from .address import Address\nfrom .invoice import *\n")
+        _write(
+            tmp_path,
+            {
+                "billing/models/invoice.py": "from typing import TYPE_CHECKING\n\n"
+                "if TYPE_CHECKING:\n    from .address import Address\n"
+            },
+        )
+
+        assert _edges(self._parse(tmp_path)) == [
+            ("Order", "billing.models.address.Address", "address")
+        ]
+
+    def test_a_star_from_an_unscanned_module_is_quiet(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self._layout(tmp_path, "from somepkg import *\n")
+
+        assert _edges(self._parse(tmp_path)) == []
+        assert "refers to" not in capsys.readouterr().err
+
+    def test_a_module_defining_the_name_itself_is_quiet(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self._layout(tmp_path, "from .address import *\n\n\nclass Address:\n    pass\n")
+
+        assert _edges(self._parse(tmp_path)) == []
+        assert "refers to" not in capsys.readouterr().err
+
     def test_a_re_export_erdify_cannot_follow_is_reported(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -702,3 +752,51 @@ class TestReExports:
 
         assert _edges(self._parse(tmp_path)) == []
         assert "orders/models.py refers to 'Address'" in capsys.readouterr().err
+
+
+def test_two_scanned_modules_reaching_no_candidate_are_quiet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _packages(tmp_path, "billing", "shipping")
+    _write(tmp_path, ADDRESS)
+    _write(
+        tmp_path,
+        {
+            "a/utils.py": "VALUE = 1\n",
+            "b/utils.py": "VALUE = 2\n",
+            "c/models.py": "from pydantic import BaseModel\nfrom utils import Address\n\n\n"
+            "class Order(BaseModel):\n    note: str\n\n\n"
+            "def make() -> Address:\n    return Address()\n",
+        },
+    )
+
+    parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+
+    assert "refers to" not in capsys.readouterr().err
+
+
+def test_a_bare_django_name_is_not_resolved_by_the_files_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Django resolves a bare name only in the model's app label."""
+    _packages(tmp_path, "billing", "shipping")
+    profile = (
+        "from django.db import models\n\n\n"
+        "class Profile(models.Model):\n    name = models.CharField(max_length=9)\n"
+    )
+    _write(
+        tmp_path,
+        {
+            "billing/models.py": profile,
+            "shipping/models.py": profile,
+            "billing/other.py": "from django.db import models\n\n\n"
+            "class Payment(models.Model):\n"
+            '    profile = models.ForeignKey("Profile", on_delete=models.CASCADE)\n\n'
+            "    class Meta:\n        app_label = 'payments'\n",
+        },
+    )
+
+    entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+
+    assert _edges(dict(entities)) == []
+    assert "billing/other.py refers to 'Profile'" in capsys.readouterr().err
