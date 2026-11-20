@@ -9,16 +9,15 @@ to the schema and to the docs tables (also checked here) in the same change.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
 
+from tests.render_outputs_loader import render_outputs as load_render_outputs
 from erdify import JSON_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,18 +26,7 @@ DOCS = ROOT / "docs" / "usage" / "output-formats.md"
 SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
-def _load_render_outputs() -> Any:
-    spec = importlib.util.spec_from_file_location(
-        "render_outputs", ROOT / "scripts" / "render_outputs.py"
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up
-    spec.loader.exec_module(module)
-    return module
-
-
-render_outputs = _load_render_outputs()
+render_outputs = load_render_outputs()
 SOURCES = list(render_outputs.sources())
 
 

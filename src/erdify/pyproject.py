@@ -75,8 +75,17 @@ def _validate(table: Dict[str, Any], source: Path) -> Dict[str, Any]:
         else:
             print(f"Warning: unknown [tool.erdify] key '{key}' in {source}", file=sys.stderr)
 
-    for str_key in ("title", "output", "sql_dialect"):
+    for str_key in ("title", "output", "inject", "sql_dialect"):
         if str_key in clean and not isinstance(clean[str_key], str):
             raise ConfigError(f"[tool.erdify] '{str_key}' must be a string in {source}")
+    list_keys = ("sources", "exclude", "exclude_paths", "include", "base_classes", "format")
+    for list_key in list_keys:
+        value = clean.get(list_key)
+        if list_key == "format" and isinstance(value, str):
+            continue  # one format may be given as a string
+        if value is not None and not (
+            isinstance(value, list) and all(isinstance(item, str) for item in value)
+        ):
+            raise ConfigError(f"[tool.erdify] '{list_key}' must be a list of strings in {source}")
 
     return clean

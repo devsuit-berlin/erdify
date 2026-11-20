@@ -266,9 +266,12 @@ parser/    ──►  config.py (IR)  ──►  generator.py
 
 - **`project.py`** — the public `resolve_settings()` / `load_project()`: the one
   implementation of how a path + options + `[tool.erdify]` become settings and a
-  model set. Precedence is **explicit CLI flag / override > `[tool.erdify]`
-  config > default**; boolean flags merge by OR; `output` / `inject` from the
-  config resolve from the `pyproject.toml` folder. Tools built on erdify use it
+  model set. Precedence is **explicit CLI flag / keyword argument >
+  `[tool.erdify]` config > default**; `None` means "not given", so the CLI
+  passes an omitted flag as `None` and flags merge by OR there, while an API
+  caller can pass `False`; `output` / `inject` from the config resolve from the
+  `pyproject.toml` folder. A new `[tool.erdify]` key needs its keyword in
+  `resolve_settings` / `load_project` and the CLI call (a test checks). Tools built on erdify use it
   to read the same models the CLI draws.
 
 - **`pyproject.py`** — `load_config()` finds the nearest `pyproject.toml`

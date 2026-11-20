@@ -2,16 +2,16 @@
 
 :func:`load_project` takes an input path and option overrides, resolves them
 against the ``[tool.erdify]`` table of the nearest ``pyproject.toml`` exactly
-like the CLI (an override beats the config, the config beats the default,
-boolean flags merge by OR, ``output`` / ``inject`` from the config resolve
-from the ``pyproject.toml`` folder) and parses the models. A tool built on
-erdify reads the same model set ``erdify`` would draw for the project.
+like the CLI (an override beats the config, the config beats the default;
+``output`` / ``inject`` from the config resolve from the ``pyproject.toml``
+folder) and parses the models. A tool built on erdify reads the same model
+set ``erdify`` would draw for the project.
 """
 
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
 
 from .config import EntityInfo, EnumInfo
 from .pyproject import ConfigError, load_config
@@ -19,35 +19,27 @@ from .pyproject import ConfigError, load_config
 #: Output formats, in the order ``--format`` lists them.
 FORMAT_NAMES = ("plantuml", "mermaid", "json", "html")
 
-_LIST_KEYS = ("sources", "exclude", "exclude_paths", "include", "base_classes")
-_FLAG_KEYS = (
-    "infer_keys",
-    "django_raw_types",
-    "no_enums",
-    "no_relationships",
-    "no_default_excludes",
-    "allow_empty",
-    "strict",
-)
-
 
 @dataclass(frozen=True)
 class Settings:
     """Settings resolved from overrides, ``[tool.erdify]`` and the defaults.
 
     The attributes mirror the CLI options and ``[tool.erdify]`` keys
-    (``format`` is ``formats``, always a list).
+    (``format`` is ``formats``, always a tuple). Build one with
+    :func:`resolve_settings`; constructing it yourself is not supported, and
+    new attributes may be added in a minor release.
 
     Attributes:
         input: The input path (a directory or a file), as given.
-        pyproject: The ``pyproject.toml`` whose ``[tool.erdify]`` table was
-            read: the nearest one above ``input``. None when there is none.
+        pyproject: The nearest ``pyproject.toml`` above ``input``, whose
+            ``[tool.erdify]`` table the settings come from; None when there
+            is none. A file that can't be read is reported on stderr and
+            gives no settings, but is still named here.
         title: Diagram title.
         sources: Model kinds to draw (``MODEL_SOURCES``); None for all.
         sql_dialect: sqlglot dialect for ``.sql`` files; None for generic.
-        include: Globs selecting the scanned files (default ``["models.py"]``).
-        include_is_default: ``include`` was set neither by an override nor by
-            the config.
+        include: Globs selecting the scanned files (default ``("models.py",)``).
+            Not used when ``input`` is a file: then only that file is read.
         exclude: Entity name / table name globs to leave out.
         exclude_paths: File path globs to skip.
         base_classes: Extra Pydantic base-class names.
@@ -56,27 +48,26 @@ class Settings:
         no_enums: Leave enums out of the diagram.
         no_relationships: Leave relationships out of the diagram.
         no_default_excludes: Scan virtualenvs and caches too.
-        allow_empty: An input without entities is not an error.
+        allow_empty: An input without entities is not an error (CLI).
         strict: A file that fails to parse is an error.
         output: Output path (a config path resolved from the ``pyproject.toml``
             folder); None for stdout.
         inject: Markdown file to embed the diagram in (resolved like
             ``output``); None when not injecting.
-        formats: Output formats; the default is ``["mermaid"]`` when
-            injecting, else ``["plantuml"]``. Unknown names are dropped with a
-            warning on stderr.
+        formats: Output formats; the default is ``("mermaid",)`` when
+            injecting, else ``("plantuml",)``. Unknown names are dropped with
+            a warning on stderr.
     """
 
     input: Path
     pyproject: Path | None
     title: str
-    sources: List[str] | None
+    sources: Tuple[str, ...] | None
     sql_dialect: str | None
-    include: List[str]
-    include_is_default: bool
-    exclude: List[str]
-    exclude_paths: List[str]
-    base_classes: List[str]
+    include: Tuple[str, ...]
+    exclude: Tuple[str, ...]
+    exclude_paths: Tuple[str, ...]
+    base_classes: Tuple[str, ...]
     infer_keys: bool
     django_raw_types: bool
     no_enums: bool
@@ -86,12 +77,15 @@ class Settings:
     strict: bool
     output: Path | None
     inject: Path | None
-    formats: List[str]
+    formats: Tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class Project:
     """A parsed project: its resolved settings and the model set erdify draws.
+
+    Built by :func:`load_project`; constructing it yourself is not
+    supported, and new attributes may be added in a minor release.
 
     Attributes:
         settings: The resolved :class:`Settings`.
@@ -104,32 +98,75 @@ class Project:
     enums: Dict[str, EnumInfo]
 
 
-def resolve_settings(path: Path, **overrides: Any) -> Settings:
+def resolve_settings(
+    path: Path,
+    *,
+    title: str | None = None,
+    output: Path | str | None = None,
+    inject: Path | str | None = None,
+    format: str | Sequence[str] | None = None,
+    sources: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    exclude_paths: Sequence[str] | None = None,
+    include: Sequence[str] | None = None,
+    base_classes: Sequence[str] | None = None,
+    sql_dialect: str | None = None,
+    infer_keys: bool | None = None,
+    django_raw_types: bool | None = None,
+    no_enums: bool | None = None,
+    no_relationships: bool | None = None,
+    no_default_excludes: bool | None = None,
+    allow_empty: bool | None = None,
+    strict: bool | None = None,
+) -> Settings:
     """Resolve the settings for ``path`` like the ``erdify`` command.
+
+    Every keyword is named like its ``[tool.erdify]`` key and wins over it;
+    ``None`` (the default) means "not given": the config's value, else the
+    built-in default, applies. A boolean ``False`` turns a setting off even
+    when the config turns it on. ``output`` / ``inject`` are taken as given,
+    not resolved from the ``pyproject.toml`` folder (the CLI passes paths
+    relative to the working directory).
 
     Args:
         path: Input directory or file, as passed to ``erdify``.
-        **overrides: Settings that win over ``[tool.erdify]``, named like its
-            keys (``title``, ``include``, ``sql_dialect``, ``format``,
-            ``infer_keys``, ...). ``None`` means "not given", as an omitted
-            CLI option. A boolean flag only turns a setting on: ``True``
-            enables it, ``False`` leaves the config's value (flags merge by
-            OR, as on the command line). ``output`` / ``inject`` overrides
-            are taken as given, not resolved from the ``pyproject.toml``.
 
     Returns:
-        The resolved settings, naming the ``pyproject.toml`` they read.
+        The resolved settings, naming the ``pyproject.toml`` they come from.
 
     Raises:
         FileNotFoundError: ``path`` does not exist.
-        ConfigError: ``[tool.erdify]`` has an invalid value, or an override
-            names an unknown setting.
+        ConfigError: ``[tool.erdify]`` or an override has a value of the
+            wrong type (e.g. a string where a list of strings belongs).
     """
+    overrides = {
+        "title": title,
+        "output": output,
+        "inject": inject,
+        "format": format,
+        "sources": sources,
+        "exclude": exclude,
+        "exclude_paths": exclude_paths,
+        "include": include,
+        "base_classes": base_classes,
+        "sql_dialect": sql_dialect,
+        "infer_keys": infer_keys,
+        "django_raw_types": django_raw_types,
+        "no_enums": no_enums,
+        "no_relationships": no_relationships,
+        "no_default_excludes": no_default_excludes,
+        "allow_empty": allow_empty,
+        "strict": strict,
+    }
+    return _resolve(path, overrides)[0]
+
+
+def _resolve(path: Path, overrides: Mapping[str, Any]) -> Tuple[Settings, bool]:
+    """The settings, and whether ``include`` was left at its default (the CLI's hint)."""
     if not path.exists():
         raise FileNotFoundError(f"Input path does not exist: {path}")
-    unknown = set(overrides) - _OVERRIDE_KEYS
-    if unknown:
-        raise ConfigError(f"unknown setting(s): {', '.join(sorted(unknown))}")
+    for key in ("sources", "exclude", "exclude_paths", "include", "base_classes"):
+        _check_strings(key, overrides.get(key), "argument")
     config, base_dir = load_config(path)
 
     def pick(key: str, default: Any) -> Any:
@@ -137,7 +174,8 @@ def resolve_settings(path: Path, **overrides: Any) -> Settings:
         return value if value is not None else config.get(key, default)
 
     def flag(key: str) -> bool:
-        return bool(overrides.get(key)) or bool(config.get(key, False))
+        value = overrides.get(key)
+        return bool(value) if value is not None else bool(config.get(key, False))
 
     def config_path(key: str) -> Path | None:
         value = overrides.get(key)
@@ -155,6 +193,7 @@ def resolve_settings(path: Path, **overrides: Any) -> Settings:
     formats = pick("format", [default_format])
     if isinstance(formats, str):
         formats = [formats]
+    _check_strings("format", formats, "argument")
     known = []
     for fmt in formats:
         if fmt in FORMAT_NAMES:
@@ -162,69 +201,122 @@ def resolve_settings(path: Path, **overrides: Any) -> Settings:
         else:
             print(f"Warning: unknown format '{fmt}', ignoring", file=sys.stderr)
 
-    return Settings(
+    sources = pick("sources", None)
+    settings = Settings(
         input=path,
         pyproject=base_dir / "pyproject.toml" if base_dir is not None else None,
         title=pick("title", "Database ERD"),
-        sources=pick("sources", None),
+        sources=tuple(sources) if sources is not None else None,
         sql_dialect=pick("sql_dialect", None),
-        include=pick("include", ["models.py"]),
-        include_is_default=overrides.get("include") is None and "include" not in config,
-        exclude=pick("exclude", []),
-        exclude_paths=pick("exclude_paths", []),
-        base_classes=pick("base_classes", []),
-        **{key: flag(key) for key in _FLAG_KEYS},
+        include=tuple(pick("include", ["models.py"])),
+        exclude=tuple(pick("exclude", [])),
+        exclude_paths=tuple(pick("exclude_paths", [])),
+        base_classes=tuple(pick("base_classes", [])),
+        infer_keys=flag("infer_keys"),
+        django_raw_types=flag("django_raw_types"),
+        no_enums=flag("no_enums"),
+        no_relationships=flag("no_relationships"),
+        no_default_excludes=flag("no_default_excludes"),
+        allow_empty=flag("allow_empty"),
+        strict=flag("strict"),
         output=config_path("output"),
         inject=inject,
-        formats=known or [default_format],
+        formats=tuple(known or [default_format]),
     )
+    include_is_default = overrides.get("include") is None and "include" not in config
+    return settings, include_is_default
 
 
-_OVERRIDE_KEYS = frozenset(
-    {"title", "sql_dialect", "output", "inject", "format", *_LIST_KEYS, *_FLAG_KEYS}
-)
+def _check_strings(key: str, value: object, what: str) -> None:
+    """Raise :class:`ConfigError` unless ``value`` is None or a list of strings."""
+    if value is None:
+        return
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise ConfigError(f"{what} '{key}' must be a list of strings, got {value!r}")
+    if not all(isinstance(item, str) for item in value):
+        raise ConfigError(f"{what} '{key}' must be a list of strings, got {value!r}")
 
 
-def load_project(path: Path, **overrides: Any) -> Project:
+def load_project(
+    path: Path,
+    *,
+    title: str | None = None,
+    output: Path | str | None = None,
+    inject: Path | str | None = None,
+    format: str | Sequence[str] | None = None,
+    sources: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    exclude_paths: Sequence[str] | None = None,
+    include: Sequence[str] | None = None,
+    base_classes: Sequence[str] | None = None,
+    sql_dialect: str | None = None,
+    infer_keys: bool | None = None,
+    django_raw_types: bool | None = None,
+    no_enums: bool | None = None,
+    no_relationships: bool | None = None,
+    no_default_excludes: bool | None = None,
+    allow_empty: bool | None = None,
+    strict: bool | None = None,
+) -> Project:
     """Resolve the settings for ``path`` and parse its models, like ``erdify``.
 
     Returns the model set the ``erdify`` command would draw for the same
-    input and options. Warnings (an unknown ``[tool.erdify]`` key, a file that
-    fails to parse without ``strict``) go to stderr, as on the command line.
+    input and options. The keywords are those of :func:`resolve_settings`.
+    Warnings (an unknown ``[tool.erdify]`` key or format, a file that fails
+    to parse without ``strict``) go to stderr, as on the command line; the
+    CLI's hint about a skipped ``models/`` package does not.
 
     Args:
         path: Input directory or file, as passed to ``erdify``.
-        **overrides: As for :func:`resolve_settings`.
 
     Raises:
         FileNotFoundError: ``path`` does not exist.
-        ConfigError: An invalid ``[tool.erdify]`` value or unknown override.
+        ConfigError: An invalid ``[tool.erdify]`` value or override.
         SqlDependencyError: ``.sql`` files were found but ``erdify[sql]`` is
             not installed.
         ModelParseError: ``strict`` is on and a file failed to parse.
     """
-    settings = resolve_settings(path, **overrides)
+    settings = resolve_settings(
+        path,
+        title=title,
+        output=output,
+        inject=inject,
+        format=format,
+        sources=sources,
+        exclude=exclude,
+        exclude_paths=exclude_paths,
+        include=include,
+        base_classes=base_classes,
+        sql_dialect=sql_dialect,
+        infer_keys=infer_keys,
+        django_raw_types=django_raw_types,
+        no_enums=no_enums,
+        no_relationships=no_relationships,
+        no_default_excludes=no_default_excludes,
+        allow_empty=allow_empty,
+        strict=strict,
+    )
     entities, enums = parse_settings(settings)
     return Project(settings=settings, entities=entities, enums=enums)
 
 
 def parse_settings(
     settings: Settings, *, hint_unmatched_model_packages: bool = False
-) -> "tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]":
+) -> Tuple[Dict[str, EntityInfo], Dict[str, EnumInfo]]:
     """Parse the models ``settings`` select (internal; the CLI passes the hint)."""
     from .parser import parse_models_directory
 
     return parse_models_directory(
         settings.input,
-        exclude_patterns=settings.exclude,
+        exclude_patterns=list(settings.exclude),
         infer_keys=settings.infer_keys,
-        sources=settings.sources,
+        sources=list(settings.sources) if settings.sources is not None else None,
         django_raw_types=settings.django_raw_types,
-        exclude_paths=settings.exclude_paths,
+        exclude_paths=list(settings.exclude_paths),
         use_default_excludes=not settings.no_default_excludes,
-        include_patterns=settings.include,
+        include_patterns=list(settings.include),
         hint_unmatched_model_packages=hint_unmatched_model_packages,
         sql_dialect=settings.sql_dialect,
-        base_classes=settings.base_classes,
+        base_classes=list(settings.base_classes),
         strict=settings.strict,
     )

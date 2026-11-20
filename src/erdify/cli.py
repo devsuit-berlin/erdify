@@ -8,7 +8,7 @@ from . import __version__
 from .generator import generate_html, generate_json, generate_mermaid, generate_plantuml
 from .inject import MarkerError, current_region, inject, render_region
 from .parser import MODEL_SOURCES, scan_report
-from .project import parse_settings, resolve_settings
+from .project import _resolve, parse_settings
 from .pyproject import ConfigError
 
 #: Supported output formats: name -> (generator function, file extension).
@@ -214,39 +214,43 @@ def main() -> int:
 
     # Resolve settings: explicit CLI flag > [tool.erdify] in pyproject.toml > default.
     try:
-        settings = resolve_settings(
+        # A store_true flag that isn't given is None ("not given"), so the
+        # config can still turn it on: flags merge by OR on the command line.
+        settings, include_is_default = _resolve(
             args.input,
-            title=args.title,
-            sources=args.sources,
-            sql_dialect=args.sql_dialect,
-            exclude=args.exclude,
-            exclude_paths=args.exclude_paths,
-            include=args.include,
-            base_classes=args.base_classes,
-            infer_keys=args.infer_keys,
-            django_raw_types=args.django_raw_types,
-            no_enums=args.no_enums,
-            no_relationships=args.no_relationships,
-            no_default_excludes=args.no_default_excludes,
-            allow_empty=args.allow_empty,
-            strict=args.strict,
-            output=args.output,
-            inject=args.inject,
-            format=args.format,
+            {
+                "title": args.title,
+                "sources": args.sources,
+                "sql_dialect": args.sql_dialect,
+                "exclude": args.exclude,
+                "exclude_paths": args.exclude_paths,
+                "include": args.include,
+                "base_classes": args.base_classes,
+                "infer_keys": args.infer_keys or None,
+                "django_raw_types": args.django_raw_types or None,
+                "no_enums": args.no_enums or None,
+                "no_relationships": args.no_relationships or None,
+                "no_default_excludes": args.no_default_excludes or None,
+                "allow_empty": args.allow_empty or None,
+                "strict": args.strict or None,
+                "output": args.output,
+                "inject": args.inject,
+                "format": args.format,
+            },
         )
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     title = settings.title
-    exclude_paths = settings.exclude_paths
-    include = settings.include
+    exclude_paths = list(settings.exclude_paths)
+    include = list(settings.include)
     no_enums = settings.no_enums
     no_relationships = settings.no_relationships
     no_default_excludes = settings.no_default_excludes
     allow_empty = settings.allow_empty
     output_path = settings.output
     inject_path = settings.inject
-    formats = settings.formats
+    formats = list(settings.formats)
 
     if args.check and output_path is None and inject_path is None:
         print(
@@ -269,9 +273,7 @@ def main() -> int:
 
     # Parse models; the models.py-package hint only at the default --include.
     try:
-        entities, enums = parse_settings(
-            settings, hint_unmatched_model_packages=settings.include_is_default
-        )
+        entities, enums = parse_settings(settings, hint_unmatched_model_packages=include_is_default)
     except Exception as e:
         print(f"Error parsing models: {e}", file=sys.stderr)
         return 1
