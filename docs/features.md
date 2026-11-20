@@ -23,7 +23,7 @@ framework is detected and a worked example, see the
 | Link Tables | ✅ | Many-to-many detection (structural) |
 | Custom Table Names | ✅ | `__tablename__` attribute; without one, SQLModel's default, the lower-cased class name (`HeroTeam` → `heroteam`) |
 | Exclude Patterns | ✅ | `--exclude` glob on class/table name |
-| Same-name classes | ✅ | Model classes of the same name in different modules are separate entities (`billing.models.Address`); each reference goes to the class its file defines or imports (`from ... import`, also through a package's re-export, `module.Class`, a quoted name, Django `"app.Model"`); a reference erdify can't tell apart is reported on stderr |
+| Same-name classes | ✅ | Model classes of the same name in different modules are separate entities (`billing.models.Address`); each reference goes to the class its file defines or imports (`from ... import`, also through an explicit package re-export, `module.Class`, a quoted name, Django `"app.Model"`); a reference erdify can't tell apart is reported on stderr |
 | Key Inference | ✅ | `--infer-keys` for Pydantic/dataclass (`id`, `<x>_id`) |
 | File Discovery | ✅ | `--include` globs (`models/` packages, custom filenames) |
 | Markdown Embed | ✅ | `--inject` into Markdown between `erdify:start`/`erdify:end` markers |

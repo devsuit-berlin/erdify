@@ -511,7 +511,7 @@ class TestSecondReview:
             {
                 "orders/models.py": "from pydantic import BaseModel\n\n\n"
                 "class Address:\n    pass\n\n\n"
-                "class Order(BaseModel):\n    note: str\n\n\n"
+                "class Order(BaseModel):\n    note: str\n    other: 'x.y.Address'\n\n\n"
                 "def make() -> Address:\n    return Address()\n"
             },
         )
@@ -596,3 +596,68 @@ def test_same_module_preference_is_only_for_namesakes() -> None:
     }
 
     assert _edges(entities) == [("Flag", "Article", "article_id")]
+
+
+class TestThirdReview:
+    """Cases a third review found (#367)."""
+
+    def test_a_scanned_module_binding_the_name_otherwise_is_quiet(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _packages(tmp_path, "billing", "shipping", "orders")
+        _write(tmp_path, ADDRESS)
+        _write(
+            tmp_path,
+            {
+                "orders/forms.py": "class Address:\n    pass\n",
+                "orders/models.py": "from pydantic import BaseModel\n"
+                "from orders.forms import Address\n\n\n"
+                "class Order(BaseModel):\n    note: str\n\n\n"
+                "def make() -> Address:\n    return Address()\n",
+            },
+        )
+
+        parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+
+        assert "refers to" not in capsys.readouterr().err
+
+    def test_a_bare_django_name_uses_the_referencing_models_app_label(self, tmp_path: Path) -> None:
+        _packages(tmp_path, "billing", "shipping")
+        meta = "\n    class Meta:\n        app_label = 'invoicing'\n"
+        _write(
+            tmp_path,
+            {
+                "billing/models.py": "from django.db import models\n\n\n"
+                "class Profile(models.Model):\n    name = models.CharField(max_length=9)\n" + meta,
+                "billing/other.py": "from django.db import models\n\n\n"
+                "class Payment(models.Model):\n"
+                '    profile = models.ForeignKey("Profile", on_delete=models.CASCADE)\n' + meta,
+                "shipping/models.py": "from django.db import models\n\n\n"
+                "class Profile(models.Model):\n    name = models.CharField(max_length=9)\n",
+            },
+        )
+
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["**/*.py"])
+
+        assert _edges(dict(entities)) == [("Payment", "billing.models.Profile", "profile_id")]
+
+
+def test_namesake_preference_ignores_a_sql_table_of_the_same_name() -> None:
+    from erdify.config import FieldInfo
+
+    def address(name: str, module: str | None, source: str) -> EntityInfo:
+        return EntityInfo(name=name, table_name="address", module=module, source=source)
+
+    fk = FieldInfo("address_id", "int", is_foreign_key=True, foreign_table="address.id")
+    entities = {
+        "billing.models.Address": address("billing.models.Address", "billing.models", "pydantic"),
+        "shipping.models.Address": address(
+            "shipping.models.Address", "shipping.models", "pydantic"
+        ),
+        "address": address("address", None, "sql"),
+        "Order": EntityInfo(
+            name="Order", table_name="order", module="shipping.models", fields=[fk]
+        ),
+    }
+
+    assert _edges(entities) == [("Order", "shipping.models.Address", "address_id")]

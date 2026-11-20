@@ -259,10 +259,11 @@ class _EdgeBuilder:
         # Several without a schema (a Python model and a SQL table drawing the
         # same table): the first, the Python model, as before schemas counted.
         unqualified = [e for e in candidates if e.schema is None]
-        if len(unqualified) > 1 and _namesakes(unqualified):
+        namesakes = [e for e in unqualified if "." in e.name]
+        if len(namesakes) > 1 and _namesakes(namesakes):
             # Same-name models of several modules (#367): the referencing one's.
-            near = [e for e in unqualified if e.module and e.module == entity.module] or [
-                e for e in unqualified if e.app and e.app == entity.app
+            near = [e for e in namesakes if e.module and e.module == entity.module] or [
+                e for e in namesakes if e.app and e.app == entity.app
             ]
             if len(near) == 1:
                 return near[0]

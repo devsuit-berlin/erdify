@@ -182,6 +182,14 @@ EXPECTED_UNLOADABLE = {
             "test_a_reference_to_an_unbuilt_namesake_keeps_its_module[2]",
         )
     },
+    "test_namespaces.py::TestSecondReview"
+    ".test_own_non_model_binding_and_unmatched_dotted_strings_are_quiet": (
+        "an annotation naming a module that doesn't exist, on purpose (#367)"
+    ),
+    "test_namespaces.py::TestThirdReview"
+    ".test_a_scanned_module_binding_the_name_otherwise_is_quiet": (
+        "one file of a multi-file source (#367): imports from another file"
+    ),
     **{
         f"{REFS}[{annotation}]": QUALIFIED
         for annotation in ("schemas.User", '"schemas.User"', "Optional[schemas.User]")

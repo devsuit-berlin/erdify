@@ -11,19 +11,21 @@ name (:func:`~erdify.parser.common.original_class_name`), and the entities are
 renamed to ``module.Class`` (``billing.models.Address``) once they are built.
 
 A reference means the definition in its own file, else the one its imports
-name: ``from billing.models import Address [as A]`` (also re-exported by a
-package's ``__init__.py``), a star import, or an attribute
-(``models.Address`` after ``from billing import models``,
-``billing.models.Address``) whose module path ends a candidate's module. A
-string reference (``"Address"``, ``relationship("billing.models.Address")``,
-Django's ``"billing.Address"`` / ``ForeignKey("Address")``, model names in
-any case) is resolved the same way, a Django app label by the candidates'
-``Meta.app_label`` or app, a bare Django name in the referencing file's app
-first. ``Literal[...]`` values, ``Annotated`` metadata and ``ForeignKey``
-strings outside Django files (SQLAlchemy's ``"table.column"``) are not
-references. A reference several definitions could mean is left unresolved
-(no edge) and reported on stderr; a name imported from a module that isn't
-scanned, or bound by the file itself, is not a reference to them.
+name: ``from billing.models import Address [as A]`` (also an explicit
+re-export, ``from .address import Address``, in a package's
+``__init__.py``), a star import, or an attribute (``models.Address`` after ``from billing import
+models``, ``billing.models.Address``) whose module path ends a candidate's
+module. A string reference (``"Address"``,
+``relationship("billing.models.Address")``, Django's ``"billing.Address"`` /
+``ForeignKey("Address")``, model names in any case) is resolved the same
+way, a Django app label by the candidates' ``Meta.app_label`` or app, a bare
+Django name in the referencing model's app (its ``Meta.app_label``, else its
+file's app) first. ``Literal[...]`` values, ``Annotated`` metadata and
+``ForeignKey`` strings outside Django files (SQLAlchemy's
+``"table.column"``) are not references. A reference several definitions
+could mean is left unresolved (no edge) and reported on stderr; a name
+imported from a module that isn't scanned, or bound by the file itself, is
+not a reference to them.
 """
 
 import ast
@@ -34,6 +36,9 @@ from typing import Dict, List, Mapping, Sequence, Tuple
 
 from .common import is_module_file, module_name
 from .dialects.django_apps import app_label, app_package
+
+#: :meth:`_Rewriter._imported` for an import several candidates could mean.
+_AMBIGUOUS = "\0ambiguous"
 
 #: Calls whose first argument (or ``to=`` / ``argument=``) names a model.
 _REFERENCE_CALLS = {
@@ -72,19 +77,7 @@ class _Candidate:
     @property
     def app(self) -> str:
         """The Django app label: ``Meta.app_label``, else the file's app."""
-        for stmt in self.node.body:
-            if isinstance(stmt, ast.ClassDef) and stmt.name == "Meta":
-                for item in stmt.body:
-                    if (
-                        isinstance(item, ast.Assign)
-                        and any(
-                            isinstance(t, ast.Name) and t.id == "app_label" for t in item.targets
-                        )
-                        and isinstance(item.value, ast.Constant)
-                        and isinstance(item.value.value, str)
-                    ):
-                        return item.value.value
-        return _app(self.file)
+        return _meta_app_label(self.node) or _app(self.file)
 
 
 def namespace_models(
@@ -246,17 +239,21 @@ class _Rewriter:
                     continue
                 bound = name if alias.name == "*" else (alias.asname or name)
                 internal = self._imported(name, self.path, source, depth=0)
+                if internal == _AMBIGUOUS:
+                    continue  # reported where it is used
                 if internal is not None:
                     self.bindings[bound] = internal
-                elif alias.name != "*" and not any(
-                    is_module_file(path, self.path, source) for path in self.trees
-                ):
-                    self.elsewhere.add(bound)  # from a module that isn't scanned
+                elif alias.name != "*":
+                    self.elsewhere.add(bound)  # not one of the scanned classes
 
     def _imported(
         self, name: str, importer: Path, source: Tuple[int, str], depth: int
     ) -> str | None:
         """The candidate ``from <source> import name`` means, following re-exports.
+
+        :data:`_AMBIGUOUS` when several candidates could be meant, None when
+        the import names none of them (a module that isn't scanned, or one
+        that binds the name otherwise).
 
         ``from shop.models import Address``, where ``shop/models/__init__.py``
         does ``from .address import Address``, means the class in
@@ -266,7 +263,9 @@ class _Rewriter:
         found = [c for c in group if is_module_file(c.file, importer, source)]
         if len(found) == 1:
             return found[0].internal
-        if found or depth > 4:
+        if found:
+            return _AMBIGUOUS
+        if depth > 4:
             return None
         modules = [path for path in self.trees if is_module_file(path, importer, source)]
         if len(modules) != 1:
@@ -304,7 +303,7 @@ class _Rewriter:
             self._report(name)
         return None
 
-    def string(self, value: str, *, django: bool) -> str | None:
+    def string(self, value: str, *, django: bool, owner: ast.ClassDef | None = None) -> str | None:
         """A string reference rewritten, or None when it names no colliding class.
 
         Django matches a model name without regard to case
@@ -318,8 +317,10 @@ class _Rewriter:
         if dot:
             return self.dotted(f"{module}.{name}")
         if django:
-            app = _app(self.path)
-            found = [c for c in self.candidates[name] if c.app == app]
+            app = (_meta_app_label(owner) if owner is not None else None) or _app(self.path)
+            found = [c for c in self.candidates[name] if c.app == app] or [
+                c for c in self.candidates[name] if _app(c.file) == _app(self.path)
+            ]
             if len(found) == 1:
                 return found[0].internal
         internal = self.bindings.get(name)
@@ -344,6 +345,21 @@ class _Rewriter:
             self.result.unresolved.append((self.path, name, files))
 
 
+def _meta_app_label(node: ast.ClassDef) -> str | None:
+    """A literal ``Meta.app_label`` in the class body, if any."""
+    for stmt in node.body:
+        if isinstance(stmt, ast.ClassDef) and stmt.name == "Meta":
+            for item in stmt.body:
+                if (
+                    isinstance(item, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == "app_label" for t in item.targets)
+                    and isinstance(item.value, ast.Constant)
+                    and isinstance(item.value.value, str)
+                ):
+                    return item.value.value
+    return None
+
+
 def _app(path: Path) -> str:
     """The Django app label of a file's app (its package name outside Django)."""
     return app_label(app_package(path))
@@ -352,6 +368,14 @@ def _app(path: Path) -> str:
 class _Transformer(ast.NodeTransformer):
     def __init__(self, rewriter: _Rewriter):
         self.r = rewriter
+        #: The classes being visited, innermost last (the referencing model).
+        self.owners: List[ast.ClassDef] = []
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
+        self.owners.append(node)
+        self.generic_visit(node)
+        self.owners.pop()
+        return node
 
     def visit_Name(self, node: ast.Name) -> ast.AST:
         if not isinstance(node.ctx, ast.Load):
@@ -399,7 +423,8 @@ class _Transformer(ast.NodeTransformer):
 
     def _string(self, value: ast.expr, *, django: bool) -> ast.expr:
         if isinstance(value, ast.Constant) and isinstance(value.value, str):
-            internal = self.r.string(value.value, django=django)
+            owner = self.owners[-1] if self.owners else None
+            internal = self.r.string(value.value, django=django, owner=owner)
             if internal is not None:
                 return ast.copy_location(ast.Constant(value=internal), value)
         return value

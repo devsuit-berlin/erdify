@@ -366,10 +366,12 @@ dataclass field with such a name is a real field
 | A reference to a model name defined in several modules that its file neither defines nor imports (`address: Address` with no `from billing.models import Address`) | Not drawn; a warning on stderr names the candidates. Same-name model classes are otherwise kept apart as `module.Class` ([#367](https://github.com/devsuit-berlin/erdify/issues/367)) |
 | A model class and a same-name class that is not a model (a plain class) in another module | Only the one scanned last is kept, with a warning on stderr |
 | Same-name model classes when one of them extends a namesake (`class Item(Item)`) | Not kept apart: the namesake handling above applies, and the others collapse to the class scanned last |
-| Same-name model classes defined under a module-level `if` / `try` | Not kept apart: only top-level definitions are; the class scanned last is kept, with a warning on stderr |
+| Same-name model classes defined under a module-level `if` / `try` | Not kept apart: only top-level definitions are. Without top-level namesakes the class scanned last is kept, with a warning on stderr; next to them it stays a separate entity under its plain name |
+| A package re-export other than an explicit top-level `from .x import Name` (a star re-export, one under `try` / `if`, a renamed one) | Not followed: a reference imported through it doesn't reach the same-name class, so no edge |
+| A Django models file that gets `models` through a project wrapper (`from core.db import models`), with same-name models in several apps | Its `ForeignKey("Model")` strings are not resolved among them: no edge, no warning |
 | Same-name enum classes in different modules | One enum, the class scanned last; a field of either type uses it |
 | Same-name SQLAlchemy Core `Table` variables in different modules | Drawn once, the first one scanned |
-| A dotted reference longer than the scanned module path (`relationship("app.billing.models.Address")` with the scan inside `app`) | Not resolved among same-name classes, reported on stderr |
+| A dotted reference longer than the scanned module path (`relationship("app.billing.models.Address")` with the scan inside `app`) | Not resolved among same-name classes: no edge, no warning |
 | Django composite `Meta.unique_together` / `Meta.constraints`, conditional or expression `UniqueConstraint`, `Meta.indexes` | Not read; a single-field, unconditional unique constraint is |
 | Django app label from an `AppConfig` named in `INSTALLED_APPS` (`"shop.apps.Custom"`), or a non-literal `label` | The app's default `AppConfig` or the package name is used |
 | Django base built on a class outside the scanned files (`class Stamped(LibBase)`) | Read like an abstract model: its fields are columns. A scanned plain class (not a `models.Model` subclass, also on `Generic[...]` / `Protocol` / `ABC`) adds none |
