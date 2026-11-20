@@ -218,10 +218,19 @@ class ASTDatabaseParser:
             if source is not None and (self.sources is None or source in self.sources):
                 hidden.setdefault(kept.name, []).append(replaced)
         for name, nodes in hidden.items():
-            if name not in self._entities:
-                continue
             drawn = self._display_path(self._all_classes[name])
             files = ", ".join(self._display_path(node) for node in nodes)
+            if name not in self._entities:
+                kind = self._classify_source(self._all_classes[name])
+                if kind is not None and (self.sources is None or kind in self.sources):
+                    continue  # a model left out on purpose (--exclude)
+                print(
+                    f"Warning: model class {name!r} in {files} is not drawn: the class of "
+                    f"that name in {drawn} replaces it. Same-name classes in different "
+                    "modules are not told apart yet (#367).",
+                    file=sys.stderr,
+                )
+                continue
             print(
                 f"Warning: model class {name!r} is defined in {files} and in {drawn}; "
                 f"only the one in {drawn} is drawn. Same-name classes in different "

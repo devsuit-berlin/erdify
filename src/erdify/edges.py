@@ -218,10 +218,16 @@ class _EdgeBuilder:
         """The entity the foreign-key column ``field`` of ``entity`` references.
 
         ``foreign_table`` is ``table.column`` or ``schema.table.column``. With
-        a schema, only the table of that name in that schema is meant (#353):
-        an excluded or unscanned target draws no edge. Without one, the only table of that name; of
-        several, the (first) one declared without a schema, else the one in
-        ``entity``'s schema. Anything else is ambiguous: no edge.
+        a schema, the table of that name in that schema is meant (#353). When
+        that schema has none, a table of that name without a schema from
+        another source (a Python model a SQL ``REFERENCES public.t``
+        names); never one of the same source, which resolved its own names
+        already: an excluded or unscanned target draws no edge. Without a
+        schema, the only table of that name; of several, the (first) one
+        declared without a schema, else the (first) one in ``entity``'s
+        schema. Several entities drawing one table (a Python model and a SQL
+        table) take the first, as before schemas counted. Anything else is
+        ambiguous: no edge.
         """
         if not field.foreign_table:
             return None
@@ -230,9 +236,10 @@ class _EdgeBuilder:
         if not candidates and "." in target:
             schema, _, table = target.rpartition(".")
             schema = schema.rpartition(".")[2]  # a database part is not compared
-            # The first of several (a Python model and a SQL table of one
-            # table), as before schemas counted.
-            found = [e for e in self._by_table.get(table, []) if e.schema == schema]
+            same_table = self._by_table.get(table, [])
+            found = [e for e in same_table if e.schema == schema] or [
+                e for e in same_table if e.schema is None and e.source != entity.source
+            ]
             return found[0] if found else None
         if len(candidates) <= 1:
             return candidates[0] if candidates else None
@@ -242,7 +249,7 @@ class _EdgeBuilder:
         if unqualified:
             return unqualified[0]
         in_schema = [e for e in candidates if e.schema == entity.schema]
-        return in_schema[0] if len(in_schema) == 1 else None
+        return in_schema[0] if in_schema else None
 
     def _connected_pairs(self) -> "set[frozenset[str]]":
         """Compute entity-name pairs already connected by a foreign-key column."""

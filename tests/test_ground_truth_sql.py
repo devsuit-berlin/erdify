@@ -110,6 +110,10 @@ EXPECTED_CHECK_ERRORS = {
 NO_ALTER_CONSTRAINT = "SQLite has no ALTER TABLE ... ADD CONSTRAINT"
 SCHEMAS = "same-name tables in several schemas (#353); SQLite has no schemas"
 EXPECTED_REJECTED = {
+    "test_schema_identity.py::TestMixedSources"
+    ".test_sql_reference_to_a_python_model_without_a_schema": SCHEMAS,
+    "test_schema_identity.py::TestMixedSources"
+    ".test_one_table_drawn_twice_in_one_schema_keeps_its_edge": SCHEMAS,
     "test_schema_identity.py::TestSqlTables"
     ".test_an_excluded_target_draws_no_edge_to_another_table": SCHEMAS,
     "test_schema_identity.py::TestMixedSources"

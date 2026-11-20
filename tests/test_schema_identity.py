@@ -439,6 +439,60 @@ class Customer(Base):
         assert 'entity "customer" as Customer {' in plantuml
         assert 'entity "customer" as customer {' in plantuml
 
+    def test_sql_reference_to_a_python_model_without_a_schema(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        (tmp_path / "models.py").write_text(
+            SQLALCHEMY_HEADER
+            + """
+
+class Order(Base):
+    __tablename__ = "shop_order"
+    id: Mapped[int] = mapped_column(primary_key=True)
+""",
+            encoding="utf-8",
+        )
+        (tmp_path / "schema.sql").write_text(
+            "CREATE TABLE public.invoice (id INT PRIMARY KEY,"
+            " order_id INT REFERENCES public.shop_order(id));\n",
+            encoding="utf-8",
+        )
+
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["models.py", "*.sql"])
+
+        assert _edges(dict(entities)) == [("invoice", "Order", "order_id")]
+
+    def test_one_table_drawn_twice_in_one_schema_keeps_its_edge(self, tmp_path: Path) -> None:
+        pytest.importorskip("sqlglot")
+        (tmp_path / "models.py").write_text(
+            """
+from sqlalchemy import ForeignKey, MetaData
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    metadata = MetaData(schema="core")
+
+
+class Customer(Base):
+    __tablename__ = "customer"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"))
+""",
+            encoding="utf-8",
+        )
+        (tmp_path / "schema.sql").write_text(
+            "CREATE TABLE core.customer (id INT PRIMARY KEY);\n", encoding="utf-8"
+        )
+
+        entities, _ = parse_models_directory(tmp_path, include_patterns=["models.py", "*.sql"])
+
+        assert _edges(dict(entities)) == [("Order", "Customer", "customer_id")]
+
 
 class TestSameNameClasses:
     def test_a_hidden_model_is_reported(
@@ -495,6 +549,24 @@ class TestSameNameClasses:
         parse_models_directory(tmp_path, sources=["dataclass"])
 
         assert "Warning" not in capsys.readouterr().err
+
+    def test_a_model_hidden_by_a_plain_class_is_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        (tmp_path / "a" / "models.py").write_text(
+            "from pydantic import BaseModel\n\n\nclass Address(BaseModel):\n    city: str\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "b" / "models.py").write_text("class Address:\n    pass\n", encoding="utf-8")
+
+        entities, _ = parse_models_directory(tmp_path)
+
+        assert list(entities) == []
+        err = capsys.readouterr().err
+        assert "model class 'Address' in a/models.py is not drawn" in err
+        assert "the class of that name in b/models.py replaces it" in err
 
     def test_an_excluded_class_is_not_reported(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

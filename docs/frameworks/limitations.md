@@ -356,7 +356,7 @@ dataclass field with such a name is a real field
 | Non-literal Django `db_column` / `Meta.db_table` | Falls back to the attribute name / Django's default table name, silently |
 | Non-literal `CompositePrimaryKey(*names)` arguments | No implicit `id` is added, but no column is marked as the primary key |
 | `__table_args__` (composite FKs, composite `UniqueConstraint`, partial or non-unique `Index`) | Not read; single-column `UniqueConstraint` / unique `Index` and `"schema"` are read |
-| Same-name model classes in different modules (a Pydantic `Address` in two packages, a Django `Profile` in two apps) | Only the one scanned last is drawn, with a warning on stderr ([#367](https://github.com/devsuit-berlin/erdify/issues/367)) |
+| Same-name model classes in different modules (a Pydantic `Address` in two packages, a Django `Profile` in two apps) | Only the class scanned last is kept (none is drawn if that one is not a model), with a warning on stderr ([#367](https://github.com/devsuit-berlin/erdify/issues/367)) |
 | Django composite `Meta.unique_together` / `Meta.constraints`, conditional or expression `UniqueConstraint`, `Meta.indexes` | Not read; a single-field, unconditional unique constraint is |
 | Django app label from an `AppConfig` named in `INSTALLED_APPS` (`"shop.apps.Custom"`), or a non-literal `label` | The app's default `AppConfig` or the package name is used |
 | Django base built on a class outside the scanned files (`class Stamped(LibBase)`) | Read like an abstract model: its fields are columns. A scanned plain class (not a `models.Model` subclass, also on `Generic[...]` / `Protocol` / `ABC`) adds none |

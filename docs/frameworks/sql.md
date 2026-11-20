@@ -121,7 +121,7 @@ The following constructs are intentionally out of scope for v1:
 | `CREATE VIRTUAL TABLE` (SQLite FTS, R*Tree, …) | Not supported (skipped) |
 | `CHECK` constraints | Not supported |
 | Generated columns with `STORED` / `VIRTUAL` without `--sql-dialect` | sqlglot's generic dialect can't parse them: that `CREATE TABLE` is skipped with a parse error. Pass `--sql-dialect` (e.g. `postgres`, `mysql`, `sqlite`) |
-| Enum types in several schemas | The schema is not part of an enum's name: `a.mood` and `b.mood` are one enum `mood` |
+| Enum types in several schemas | The schema is not part of an enum's name: `a.mood` and `b.mood` are one enum `mood` ([#371](https://github.com/devsuit-berlin/erdify/issues/371)) |
 | Enum names containing a dot (`CREATE TYPE "billing.state"`) | The enum is not drawn ([#336](https://github.com/devsuit-berlin/erdify/issues/336)) |
 | Triggers / stored procedures | Not supported |
 | Live database introspection | Not supported (no connection required by design) |
