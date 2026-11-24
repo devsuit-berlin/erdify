@@ -16,6 +16,7 @@ import logging
 import posixpath
 import re
 from typing import Any
+from urllib.parse import unquote
 
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
@@ -23,9 +24,12 @@ from mkdocs.utils import get_relative_url
 
 log = logging.getLogger(f"mkdocs.hooks.{__name__}")
 
-# Attribute values in the rendered HTML, in single or double quotes; code blocks are
-# escaped (&quot;), so they don't match. The lookbehind keeps `data-src=` and the like out.
+# Attribute values in the rendered HTML, in single or double quotes. The lookbehind keeps
+# `data-src=` and the like out.
 _ATTR = re.compile(r'(?<![\w-])(?P<attr>src|srcset)=(?P<q>["\'])(?P<value>.+?)(?P=q)')
+# Code is example text, not markup: an inline code span keeps its quotes
+# (`<img src="x">` renders as <code>&lt;img src="x"&gt;</code>), so skip it entirely.
+_CODE = re.compile(r"<code\b.*?</code>", re.DOTALL | re.IGNORECASE)
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")  # https:, data:, mailto:, ...
 
 
@@ -34,7 +38,8 @@ def _is_relative(url: str) -> bool:
 
 
 def _file(base: str, path: str, files: Files) -> File | None:
-    return files.get_file_from_path(posixpath.normpath(posixpath.join(base, path)))
+    # The URL may be percent-encoded ("my%20logo.svg"); the file path is not.
+    return files.get_file_from_path(posixpath.normpath(posixpath.join(base, unquote(path))))
 
 
 def _resolve(url: str, page: Page, files: Files) -> str:
@@ -76,4 +81,10 @@ def on_page_content(html: str, *, page: Page, config: Any, files: Files) -> str:
             new = _resolve(value, page, files)
         return f"{match['attr']}={match['q']}{new}{match['q']}"
 
-    return _ATTR.sub(rewrite, html)
+    # Rewrite only outside <code> elements; the code itself is kept as it is.
+    out, pos = [], 0
+    for code in _CODE.finditer(html):
+        out += [_ATTR.sub(rewrite, html[pos : code.start()]), code[0]]
+        pos = code.end()
+    out.append(_ATTR.sub(rewrite, html[pos:]))
+    return "".join(out)

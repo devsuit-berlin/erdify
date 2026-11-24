@@ -34,7 +34,14 @@ hook = _load()
 FILES = Files(
     [
         File(path, "docs", "site", use_directory_urls=True)
-        for path in ["index.md", "brand.md", "a/b.md", "img.png", "assets/x.svg"]
+        for path in [
+            "index.md",
+            "brand.md",
+            "a/b.md",
+            "img.png",
+            "assets/x.svg",
+            "assets/my logo.svg",
+        ]
     ]
 )
 
@@ -63,6 +70,7 @@ def _render(html: str, page_path: str = "brand.md") -> Any:
         ('<source srcset="assets/x.svg\t2x">', '<source srcset="../assets/x.svg 2x">'),
         ('<source srcset="assets/x.svg, ">', '<source srcset="../assets/x.svg">'),
         ("<img src='assets/x.svg'>", "<img src='../assets/x.svg'>"),
+        ('<img src="assets/my%20logo.svg">', '<img src="../assets/my%20logo.svg">'),
     ],
 )
 def test_resolves_relative_urls_for_the_page_url(html: str, expected: str) -> None:
@@ -79,6 +87,7 @@ def test_resolves_relative_urls_for_the_page_url(html: str, expected: str) -> No
         '<img data-src="assets/x.svg">',
         '<source srcset="data:image/svg+xml,a,b">',
         "<code>src=&quot;assets/x.svg&quot;</code>",  # escaped in a code block
+        '<pre><code class="language-html">&lt;img src="assets/missing.svg"&gt;</code></pre>',
     ],
 )
 def test_leaves_non_relative_and_non_attribute_urls_alone(html: str) -> None:
@@ -100,3 +109,17 @@ def test_a_url_that_names_no_file_is_a_warning(caplog: pytest.LogCaptureFixture)
     with caplog.at_level(logging.WARNING):
         assert _render(html) == html
     assert "'assets/missing.svg' names no file in docs/" in caplog.text
+
+
+def test_an_inline_code_span_is_left_alone_and_does_not_warn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Markdown keeps the quotes in a code span, so the attribute pattern would match it.
+    import markdown
+
+    html = markdown.markdown('See `<img src="assets/missing.svg">`, then <img src="assets/x.svg">.')
+    assert '<code>&lt;img src="assets/missing.svg"&gt;</code>' in html
+    with caplog.at_level(logging.WARNING):
+        out = _render(html)
+    assert out == html.replace('src="assets/x.svg"', 'src="../assets/x.svg"')
+    assert caplog.text == ""
