@@ -15,7 +15,7 @@ separate package built on erdify:
 It reads the same sources and options as erdify (`[tool.erdify]` in `pyproject.toml`),
 plus a `[tool.erdify-studio]` section, and draws erdify's own entities and edges.
 
-It needs Python 3.11+ and erdify 1.9+, which `pip` installs with it.
+It needs Python 3.11+ and installs erdify 1.9 or newer with it.
 
 ```bash
 pip install erdify-studio          # or: pip install "erdify-studio[sql]" for SQL DDL
