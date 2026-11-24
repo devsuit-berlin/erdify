@@ -105,6 +105,7 @@ The runnable sources live in [`docs/examples/`](https://github.com/devsuit-berli
 - [Filtering & Key Inference](https://erdify.devsuit.io/usage/filtering/) — `--exclude`, `--exclude-paths`, `--include`, `--sources`, `--infer-keys`
 - [Viewing the Diagram](https://erdify.devsuit.io/usage/viewing/) — render online, locally with PlantUML, or in VS Code
 - [CI/CD & pre-commit](https://erdify.devsuit.io/usage/ci/) — automate ERD generation in CI and on commit
+- [Arrange with erdify-studio](https://erdify.devsuit.io/usage/studio/) — drag and drop your ERDs, commit the layout, check it in CI
 - [Frameworks Overview](https://erdify.devsuit.io/frameworks/) — a worked example with the generated PlantUML output
 - [Django ORM](https://erdify.devsuit.io/frameworks/django/) — Django-specific parsing details
 - [SQL DDL](https://erdify.devsuit.io/frameworks/sql/) — generate ERDs from `.sql` files with `erdify[sql]`

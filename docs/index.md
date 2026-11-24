@@ -46,6 +46,7 @@ including where each of those is the better choice.
 - [Filtering & Key Inference](usage/filtering.md) — `--exclude`, `--exclude-paths`, `--sources`, and `--infer-keys`
 - [Viewing the Diagram](usage/viewing.md) — render online, locally with PlantUML, or in VS Code
 - [CI/CD & pre-commit](usage/ci.md) — keep ERDs up to date in CI and via pre-commit hooks
+- [Arrange with erdify-studio](usage/studio.md) — drag and drop your ERDs, commit the layout, check it in CI
 - [Frameworks Overview](frameworks/index.md) — the five frameworks side by side, how each is detected, and a worked example with the generated PlantUML
 - [Django ORM](frameworks/django.md) — Django-specific parsing details (table names, FK mapping, `db_column`, type mapping, enums, abstract bases, the user model)
 - [SQL DDL](frameworks/sql.md) — generate ERDs from `.sql` files via the optional `erdify[sql]` extra (`CREATE TABLE`, foreign keys, enums)

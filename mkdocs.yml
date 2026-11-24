@@ -46,6 +46,7 @@ nav:
       - Filtering & Key Inference: usage/filtering.md
       - Viewing the Diagram: usage/viewing.md
       - CI/CD & pre-commit: usage/ci.md
+      - Arrange with erdify-studio: usage/studio.md
   - Frameworks:
       - Overview: frameworks/index.md
       - Django ORM: frameworks/django.md
