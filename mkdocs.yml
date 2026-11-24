@@ -75,6 +75,9 @@ markdown_extensions:
 
 plugins:
   - search
+  # Downloads external assets (the Google Fonts) at build time and serves them from
+  # the site itself: no third-party requests for readers (GDPR).
+  - privacy
   # Renders the social card (og:image) for every page. Needs the imaging
   # dependencies from `mkdocs-material[imaging]` and their system libraries.
   - social:
