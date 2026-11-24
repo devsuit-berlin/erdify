@@ -331,6 +331,20 @@ locally after committing your change (it installs that commit):
 uv run --group hooks python scripts/check_precommit_hook.py
 ```
 
+### The Docs Site Build
+
+The `Docs` workflow builds the site with `mkdocs build --strict` on every PR
+and deploys it only from `main`. `scripts/mkdocs_raw_html_urls.py` (an MkDocs
+hook) resolves relative `src` / `srcset` URLs in raw HTML for the page URL, so
+an `<img src="assets/...">` works both on GitHub and on the site; a path that
+names no file fails the strict build. Its tests need mkdocs and are skipped in
+the test matrix:
+
+```bash
+uv run --group docs pytest tests/test_mkdocs_hook.py --no-cov
+uv run --group docs mkdocs build --strict
+```
+
 ### Adding New Test Fixtures
 
 1. Create a new directory under `tests/fixtures/`

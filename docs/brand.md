@@ -15,10 +15,8 @@ erdify such as [erdify-studio](https://github.com/devsuit-berlin/erdify-studio).
 <p align="center">
   <img alt="erdify icon" src="assets/erdify-icon.svg" width="160">
   &nbsp;&nbsp;
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/erdify-wordmark-dark.svg">
-    <img alt="erdify wordmark" src="assets/erdify-wordmark-light.svg" width="400">
-  </picture>
+  <img alt="erdify wordmark" src="assets/erdify-wordmark-light.svg#gh-light-mode-only" width="400">
+  <img alt="erdify wordmark" src="assets/erdify-wordmark-dark.svg#gh-dark-mode-only" width="400">
 </p>
 
 ### Anatomy
@@ -36,8 +34,10 @@ erdify such as [erdify-studio](https://github.com/devsuit-berlin/erdify-studio).
 - **Clear space:** keep at least a quarter of the icon's height free on every side.
 - **Minimum size:** icon 16 px (favicon), wordmark 120 px wide.
 - **Light/dark:** use the light wordmark on light backgrounds and the dark one on dark
-  backgrounds. In READMEs, switch with `<picture>` and `prefers-color-scheme`. The icon
-  works on both.
+  backgrounds. In READMEs, switch with `<picture>` and `prefers-color-scheme`. On the docs
+  site, which has its own light/dark toggle, use two `<img>` with GitHub's
+  `#gh-light-mode-only` / `#gh-dark-mode-only` fragments instead (as above); the site's
+  stylesheet hides the wrong one for the selected palette. The icon works on both.
 - **README and PyPI:** reference the assets by absolute `raw.githubusercontent.com` URLs
   on `main`. PyPI renders the README as the long description, and relative paths break
   there. erdify's README heading:
