@@ -10,10 +10,12 @@ separate package built on erdify:
 - **Check it in CI** and pre-commit: `erdify-studio check` fails when the layout is out
   of date, the same way `erdify --check` does for a committed diagram.
 - **Place new tables** automatically (`erdify-studio place --auto`), and **export** one
-  SVG per diagram.
+  SVG per diagram (`erdify-studio export`, with `export_dir` set).
 
 It reads the same sources and options as erdify (`[tool.erdify]` in `pyproject.toml`),
 plus a `[tool.erdify-studio]` section, and draws erdify's own entities and edges.
+
+It needs Python 3.11+ and erdify 1.9+, which `pip` installs with it.
 
 ```bash
 pip install erdify-studio          # or: pip install "erdify-studio[sql]" for SQL DDL
