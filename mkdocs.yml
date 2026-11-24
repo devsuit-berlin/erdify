@@ -53,6 +53,7 @@ nav:
       - Python Parsing Limitations: frameworks/limitations.md
   - Troubleshooting: troubleshooting.md
   - Stability & Versioning: stability.md
+  - Brand: brand.md
   - Changelog: changelog.md
 
 markdown_extensions:
