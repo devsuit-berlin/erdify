@@ -49,6 +49,8 @@ def _resolve(url: str, page: Page, files: Files) -> str:
     split = min((i for i in (url.find("?"), url.find("#")) if i != -1), default=len(url))
     path, suffix = url[:split], url[split:]
     # Already right for the page URL (e.g. a Markdown image MkDocs rewrote): leave it.
+    # This check comes first, so a path that names a file both relative to the page URL
+    # and relative to the source file is taken as page-relative.
     if _file(posixpath.dirname(page.url), path, files) is not None:
         return url
     file = _file(posixpath.dirname(page.file.src_uri), path, files)

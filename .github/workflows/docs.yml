@@ -50,9 +50,6 @@ jobs:
         # The hook needs mkdocs (docs group), so its tests run here; the test matrix
         # skips them.
         run: uv run --group docs pytest tests/test_mkdocs_hook.py --no-cov
-      - name: Configure Pages
-        if: github.event_name == 'push'
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Build site
         run: uv run --group docs mkdocs build --strict
       - name: Upload Pages artifact

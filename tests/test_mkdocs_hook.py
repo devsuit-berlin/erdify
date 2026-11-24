@@ -6,6 +6,7 @@ it with ``uv run --group docs pytest tests/test_mkdocs_hook.py``.
 
 import importlib.util
 import logging
+import textwrap
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -123,3 +124,37 @@ def test_an_inline_code_span_is_left_alone_and_does_not_warn(
         out = _render(html)
     assert out == html.replace('src="assets/x.svg"', 'src="../assets/x.svg"')
     assert caplog.text == ""
+
+
+def _build_site(tmp_path: Path, brand: str) -> None:
+    from mkdocs.commands.build import build
+    from mkdocs.config import load_config
+
+    docs = tmp_path / "docs"
+    (docs / "assets").mkdir(parents=True)
+    (docs / "assets" / "x.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+    (docs / "index.md").write_text("# Home\n")
+    (docs / "brand.md").write_text(brand)
+    config_file = tmp_path / "mkdocs.yml"
+    config_file.write_text(
+        textwrap.dedent(f"""\
+            site_name: test
+            strict: true
+            hooks:
+              - {SCRIPT}
+            """)
+    )
+    build(load_config(str(config_file), site_dir=str(tmp_path / "site")))
+
+
+def test_a_strict_build_rewrites_raw_html_for_the_page_url(tmp_path: Path) -> None:
+    _build_site(tmp_path, '# Brand\n\n<p><img alt="x" src="assets/x.svg"></p>\n')
+    html = (tmp_path / "site" / "brand" / "index.html").read_text()
+    assert 'src="../assets/x.svg"' in html
+
+
+def test_a_broken_raw_html_path_fails_a_strict_build(tmp_path: Path) -> None:
+    from mkdocs.exceptions import Abort
+
+    with pytest.raises(Abort, match="strict mode"):
+        _build_site(tmp_path, '# Brand\n\n<p><img alt="x" src="assets/missing.svg"></p>\n')
