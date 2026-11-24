@@ -69,6 +69,16 @@ through pre-commit in a sample project pinned to the current commit; a change
 to the hooks or to how `-o` / `--check` write and compare files must keep it
 passing.
 
+### Docs site
+
+The `Docs` workflow runs `mkdocs build --strict` on PRs and deploys from `main`
+only. Raw HTML images in `docs/` use paths relative to the Markdown file (so
+they work on GitHub); the hook `scripts/mkdocs_raw_html_urls.py` rewrites them
+for the page URL and warns (fails `--strict`) on a path that names no file.
+Theme-specific images use `#gh-light-mode-only` / `#gh-dark-mode-only`, which
+`docs/stylesheets/extra.css` maps to the site's palette toggle. Hook tests:
+`uv run --group docs pytest tests/test_mkdocs_hook.py --no-cov`.
+
 ### Ground-truth tests
 
 Golden files only lock in erdify's own output. The ground-truth tests check it

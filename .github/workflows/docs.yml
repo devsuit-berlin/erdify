@@ -8,14 +8,17 @@ on:
   push:
     branches:
       - main
+  # Build (and test the docs hook) on PRs too, so `mkdocs build --strict` catches a
+  # broken link or image path before merge. Only a push to main deploys.
+  pull_request:
+    branches:
+      - main
 
 # Deploy the built site via the official GitHub Pages Actions (artifact upload),
 # instead of force-pushing a `gh-pages` branch. This avoids the "Protect GH Pages"
 # ruleset (non-fast-forward / deletion) that a branch push would violate.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   build:
@@ -43,11 +46,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libcairo2-dev libfreetype6-dev libffi-dev libjpeg-dev libpng-dev libz-dev
-      - name: Configure Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Test the docs hook
+        # The hook needs mkdocs (docs group), so its tests run here; the test matrix
+        # skips them.
+        run: uv run --group docs pytest tests/test_mkdocs_hook.py --no-cov
       - name: Build site
         run: uv run --group docs mkdocs build --strict
       - name: Upload Pages artifact
+        if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
@@ -55,7 +61,11 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

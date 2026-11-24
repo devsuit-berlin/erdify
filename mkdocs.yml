@@ -85,5 +85,10 @@ plugins:
       cards_layout_options:
         background_color: "#4150AA"
 
+# Resolves relative src/srcset in raw HTML (e.g. the Brand page's images) for the
+# page URL; MkDocs only rewrites Markdown links and images.
+hooks:
+  - scripts/mkdocs_raw_html_urls.py
+
 extra_css:
   - stylesheets/extra.css

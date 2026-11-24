@@ -26,3 +26,10 @@
 .md-header__button.md-logo img {
   height: 1.6rem;
 }
+
+/* Theme-specific images (GitHub's #gh-light-mode-only / #gh-dark-mode-only fragments):
+   follow the site's palette toggle, which a <picture> media query can't. */
+[data-md-color-scheme="default"] img[src$="#gh-dark-mode-only"],
+[data-md-color-scheme="slate"] img[src$="#gh-light-mode-only"] {
+  display: none;
+}
